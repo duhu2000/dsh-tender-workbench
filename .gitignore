@@ -1,0 +1,30 @@
+# Dependencies and generated output
+node_modules/
+.pnpm-store/
+lib/
+coverage/
+dist/
+*.tgz
+
+# Tool caches and logs
+.cache/
+.vite/
+*.log
+pnpm-debug.log*
+npm-debug.log*
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local development instructions and design references
+/AGENTS.md
+/docs/
