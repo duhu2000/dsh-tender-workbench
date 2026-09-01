@@ -3,11 +3,17 @@ import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
 import type { TenderWorkflowProjectionV1 } from '../../contracts/workflow.ts'
 import type { TenderQueryIntentV1 } from '../../contracts/query-schema.ts'
+import type { TenderWorkbenchIntentV1 } from '../../contracts/screening-intents.ts'
 import type { TenderTranslate } from '../fields/field-props.ts'
-import { fetchArtifactRows } from '../artifact-api.ts'
+import {
+  fetchArtifactRows,
+  fetchClassifiedArtifactRows,
+  fetchRuleArtifactContent,
+} from '../artifact-api.ts'
 import type { TenderWorkbenchRevealController } from '../better-sidebar-adapter.ts'
 import { useTenderWorkbenchReveal } from '../better-sidebar-adapter.ts'
 import { createTenderQueryIntent } from '../intents/query-intent.ts'
+import { createContinueScreeningIntent } from '../intents/screening-intent.ts'
 import {
   useTenderProjection,
   type TenderProjectionPort,
@@ -32,6 +38,12 @@ import {
   TenderDataOverview,
   type TenderRowsLoader,
 } from './TenderDataViews.tsx'
+import {
+  TenderClassificationView,
+  TenderRulesView,
+  type ClassifiedRowsLoader,
+  type RuleContentLoader,
+} from './TenderScreeningViews.tsx'
 import css from './tender-workbench.module.css'
 
 export { tenderWorkbenchDisplayStatus }
@@ -45,13 +57,21 @@ export interface TenderWorkbenchViewProps {
   readonly sessionId: SessionId
   readonly projection: TenderProjectionRead
   readonly navigation: TenderWorkbenchNavigationController
-  readonly sendIntent: (intent: TenderQueryIntentV1) => Promise<void>
+  readonly sendIntent: (intent: TenderWorkbenchIntentV1) => Promise<void>
   readonly createCommandId?: () => string
   readonly loadRows?: TenderRowsLoader
+  readonly loadRuleContent?: RuleContentLoader
+  readonly loadClassifiedRows?: ClassifiedRowsLoader
   readonly t: TenderTranslate
 }
 
 const defaultRowsLoader: TenderRowsLoader = (sessionId, artifact, filter, signal) => fetchArtifactRows(
+  globalThis.fetch.bind(globalThis), sessionId, artifact, filter, signal,
+)
+const defaultRuleContentLoader: RuleContentLoader = (sessionId, artifact, signal) => fetchRuleArtifactContent(
+  globalThis.fetch.bind(globalThis), sessionId, artifact, signal,
+)
+const defaultClassifiedRowsLoader: ClassifiedRowsLoader = (sessionId, artifact, filter, signal) => fetchClassifiedArtifactRows(
   globalThis.fetch.bind(globalThis), sessionId, artifact, filter, signal,
 )
 
@@ -104,7 +124,7 @@ function WorkbenchFeedback({ tone, title, children, role }: WorkbenchFeedbackPro
   )
 }
 
-/** S1a vertical slice: four business phases over seven non-linear internal Projection nodes. */
+/** S3 vertical slice: S1a shell + S2 data + explicit screening/classification. */
 export function TenderWorkbenchView({
   sessionId,
   projection,
@@ -112,6 +132,8 @@ export function TenderWorkbenchView({
   sendIntent,
   createCommandId = () => globalThis.crypto.randomUUID(),
   loadRows = defaultRowsLoader,
+  loadRuleContent = defaultRuleContentLoader,
+  loadClassifiedRows = defaultClassifiedRowsLoader,
   t,
 }: TenderWorkbenchViewProps) {
   const workflow = projectionOf(projection)
@@ -124,23 +146,29 @@ export function TenderWorkbenchView({
   const [validationError, setValidationError] = useState<string>()
   const [sendFailed, setSendFailed] = useState(false)
   const [opportunityView, setOpportunityView] = useState<'form' | 'overview' | 'details'>('overview')
+  const [screeningView, setScreeningView] = useState<'rules' | 'classification'>('rules')
   const phaseTabs = useRef<Partial<Record<WorkbenchPhase, HTMLButtonElement | null>>>({})
+  const proposalRequestKey = useRef<string>()
   const navigationId = useId()
   const queryFormId = useId()
   useTenderWorkbenchNavigation(navigation, sessionId, setSelectedPhase)
 
   useEffect(() => {
     if (pending === undefined || workflow === undefined) return
-    const queryFailed = workflow.stages.query.status === 'failed'
+    const pendingStage = pending.stage ?? 'query'
+    const operationFailed = workflow.stages[pendingStage].status === 'failed'
     const completed = workflow.revision > pending.revision
-    if (queryFailed || completed) setPending(undefined)
-    if (completed && !queryFailed && workflow.query?.normalizedData !== undefined) setOpportunityView('overview')
+    if (operationFailed || completed) setPending(undefined)
+    if (pendingStage === 'query' && completed && !operationFailed && workflow.query?.normalizedData !== undefined) setOpportunityView('overview')
   }, [pending, workflow])
 
   const status = tenderWorkbenchDisplayStatus(projection, pending, sendFailed)
   const capabilityAvailable = projection.status === 'empty' || projection.status === 'ready'
   const queryCompleted = hasCompletedLightweightQuery(workflow)
   const activeDataset = workflow?.query?.normalizedData
+  useEffect(() => {
+    proposalRequestKey.current = undefined
+  }, [activeDataset?.id, sessionId, workflow?.revision])
   const replacementRequired = activeDataset !== undefined
     || workflow?.rules !== undefined
     || workflow?.classification !== undefined
@@ -189,20 +217,46 @@ export function TenderWorkbenchView({
     try {
       const intent = createTenderQueryIntent({ scope, target: trimmedTarget, keywords }, createCommandId())
       await sendIntent(intent)
-      setPending({ commandId: intent.commandId, revision: workflow?.revision ?? 0 })
+      setPending({ commandId: intent.commandId, revision: workflow?.revision ?? 0, stage: 'query' })
     } catch {
       setSendFailed(true)
     } finally {
       setSubmitting(false)
     }
   }
+  const requestRules = async (): Promise<void> => {
+    if (activeDataset === undefined || workflow === undefined) return
+    const requestKey = `${String(sessionId)}:${activeDataset.id}:${workflow.revision}`
+    if (proposalRequestKey.current === requestKey) return
+    proposalRequestKey.current = requestKey
+    setSelectedPhase('screening')
+    setScreeningView('rules')
+    setSendFailed(false)
+    const intent = createContinueScreeningIntent({
+      commandId: createCommandId(),
+      activeDatasetRef: activeDataset.id,
+      projectionRevision: workflow.revision,
+    })
+    setPending({ commandId: intent.commandId, revision: workflow.revision, stage: 'rules' })
+    try {
+      await sendIntent(intent)
+    } catch {
+      proposalRequestKey.current = undefined
+      setPending(undefined)
+      setSendFailed(true)
+    }
+  }
+
+  useEffect(() => {
+    if (workflow?.classification !== undefined) setScreeningView('classification')
+  }, [workflow?.classification?.data.id])
 
   return (
     <section
       className={css.shell}
       aria-label={t('workbench.title')}
       data-workbench-status={status}
-      data-visual-shell="s2"
+      data-visual-shell="s3"
     >
       <header className={css.header}>
         <div className={css.brandBlock}>
@@ -293,7 +347,7 @@ export function TenderWorkbenchView({
               workflow={workflow}
               onOpenDetails={() => { setOpportunityView('details') }}
               onRequery={() => { setOpportunityView('form') }}
-              onContinue={() => { setSelectedPhase('screening') }}
+              onContinue={() => { void requestRules() }}
               t={t}
             />
           </section>
@@ -412,7 +466,45 @@ export function TenderWorkbenchView({
               </div>
             </form>
           </section>
-        )) : (
+        )) : selectedPhase === 'screening' && workflow !== undefined && activeDataset !== undefined ? (
+          <section
+            className={css.stagePanel}
+            id={`${navigationId}-screening-panel`}
+            role="tabpanel"
+            aria-labelledby={`${navigationId}-screening-tab`}
+            tabIndex={0}
+          >
+            {workflow.classification !== undefined && (
+              <div className={css.subNavigation} role="tablist" aria-label={t('workbench.screening.views')}>
+                <button type="button" role="tab" aria-selected={screeningView === 'rules'} onClick={() => { setScreeningView('rules') }}>{t('workbench.rules.title')}</button>
+                <button type="button" role="tab" aria-selected={screeningView === 'classification'} onClick={() => { setScreeningView('classification') }}>{t('workbench.classification.title')}</button>
+              </div>
+            )}
+            {screeningView === 'classification' && workflow.classification !== undefined ? (
+              <TenderClassificationView
+                key={`${sessionId}:${workflow.classification.data.id}`}
+                sessionId={sessionId}
+                workflow={workflow}
+                loadRows={loadClassifiedRows}
+                loadContent={loadRuleContent}
+                t={t}
+              />
+            ) : (
+              <TenderRulesView
+                key={`${sessionId}:${activeDataset.id}`}
+                sessionId={sessionId}
+                workflow={workflow}
+                loadContent={loadRuleContent}
+                sendIntent={sendIntent}
+                createCommandId={createCommandId}
+                proposalPending={pending?.stage === 'rules'}
+                proposalFailed={sendFailed}
+                onRequestProposal={() => { void requestRules() }}
+                t={t}
+              />
+            )}
+          </section>
+        ) : (
           <section
             className={css.stagePanel}
             id={`${navigationId}-${selectedPhase}-panel`}
@@ -463,7 +555,7 @@ export interface TenderWorkbenchTabProps extends TabComponentProps {
   readonly projectionPort: TenderProjectionPort
   readonly reveal: TenderWorkbenchRevealController
   readonly navigation: TenderWorkbenchNavigationController
-  readonly sendIntent: (sessionId: SessionId, intent: TenderQueryIntentV1) => Promise<void>
+  readonly sendIntent: (sessionId: SessionId, intent: TenderWorkbenchIntentV1) => Promise<void>
   readonly t: TenderTranslate
 }
 

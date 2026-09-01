@@ -28,9 +28,14 @@ describe('official Host seam contracts', () => {
       stateVersion: 1,
       wire: expect.any(Object),
     })
-    expect(toolRegister.mock.calls[0]?.[0]).toMatchObject({ name: 'tender_workbench_query' })
+    expect(toolRegister.mock.calls.map(call => call[0])).toEqual([
+      expect.objectContaining({ name: 'tender_workbench_query' }),
+      expect.objectContaining({ name: 'tender_workbench_get_screening_context' }),
+      expect.objectContaining({ name: 'tender_workbench_preview_rules' }),
+      expect.objectContaining({ name: 'tender_workbench_confirm_rules' }),
+    ])
     expect(routeRegister).toHaveBeenCalledWith(expect.objectContaining({ kind: 'prefix', path: ARTIFACT_ROUTE_PREFIX }))
-    expect(effect).toHaveBeenCalledTimes(2)
+    expect(effect).toHaveBeenCalledTimes(5)
   })
 
   it('threads the official parent/root/agent/signal identity into nested calls', () => {

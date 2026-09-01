@@ -24,6 +24,9 @@ import {
   type TenderWorkflowProjectionV1,
 } from '../../contracts/workflow.ts'
 import {
+  ScreeningDraftContextV1Schema,
+} from '../../contracts/screening.ts'
+import {
   CommandReceiptCoordinator,
   type JsonValue as ReceiptJsonValue,
 } from '../artifacts/command-receipts.ts'
@@ -40,11 +43,13 @@ import {
   type QccTenderSourceItem,
 } from '../pipeline/qcc-adapters.ts'
 import { normalizeQccSources } from '../pipeline/normalize.ts'
+import { createScreeningDraftContext } from '../pipeline/screening-context.ts'
 
 const QueryToolResultV1Schema = z.object({
   outcome: z.enum(['succeeded', 'partial', 'failed']),
   message: z.string().min(1).max(512),
   state: TenderWorkflowProjectionV1Schema,
+  screeningContext: ScreeningDraftContextV1Schema.optional(),
 }).strict()
 
 export type QueryToolResultV1 = z.infer<typeof QueryToolResultV1Schema>
@@ -263,6 +268,7 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
           outcome: { type: 'string', enum: ['succeeded', 'partial', 'failed'], required: true },
           message: { type: 'string', required: true },
           state: { type: 'json', required: true },
+          screeningContext: { type: 'json' },
         },
       },
       render(_args, value) {
@@ -349,7 +355,17 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
           const message = outcome === 'partial'
             ? `查询部分完成：已保留 ${successes.length} 个可用来源，失败来源已明确记录。`
             : `查询完成：已生成包含 ${dataset.rows.length} 个规范化项目的新活动快照。`
-          return jsonValue(QueryToolResultV1Schema.parse({ outcome, message, state })) as ReceiptJsonValue
+          return jsonValue(QueryToolResultV1Schema.parse({
+            outcome,
+            message,
+            state,
+            screeningContext: createScreeningDraftContext({
+              activeDatasetRef: normalizedData.id,
+              projectionRevision: state.revision,
+              intent,
+              dataset,
+            }),
+          })) as ReceiptJsonValue
         },
       })
       return QueryToolResultV1Schema.parse(command.result)

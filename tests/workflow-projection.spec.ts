@@ -211,4 +211,45 @@ describe('tenderWorkflowProjectionDefinition', () => {
     expect(afterLate?.revision).toBe(2)
     expect(afterLate?.query?.normalizedData?.id).toBe('new-data')
   })
+
+  it('does not let a late historical S3 confirmation reactivate old rules or classification after a new query', () => {
+    const empty = createEmptyTenderWorkflowProjection()
+    const now = '2026-09-01T00:00:00.000Z'
+    const artifact = (id: string, kind: 'query-spec' | 'normalized-data' | 'rule-set' | 'classified-data') => ({
+      id, kind, fileName: `${id}.json`, mediaType: 'application/json', createdAt: now, accessToken: `${id}-token`,
+    })
+    const newQuery: TenderWorkflowProjectionV1 = {
+      ...empty,
+      revision: 5,
+      currentStage: 'overview',
+      stages: { ...empty.stages, query: { status: 'succeeded' }, overview: { status: 'succeeded' } },
+      query: {
+        scope: 'tender', targetSummary: 'new', querySpec: artifact('query-new', 'query-spec'),
+        sources: { tender: { status: 'succeeded', loaded: 1 } }, normalizedData: artifact('data-new', 'normalized-data'),
+        total: 1, duplicateCount: 0, invalidCount: 0,
+      },
+    }
+    const oldConfirmed: TenderWorkflowProjectionV1 = {
+      ...newQuery,
+      revision: 4,
+      currentStage: 'classification',
+      rules: { confirmed: artifact('rules-old', 'rule-set'), ruleSetVersion: 'rsv-old', ruleCount: 1, rawMatches: 1, covered: 1, conflicts: 0 },
+      classification: {
+        data: artifact('classified-old', 'classified-data'), include: 1, observe: 0, manualReview: 0, exclude: 0,
+        unmatched: 0, covered: 1, conflicts: 0, ruleSetVersion: 'rsv-old', activeDatasetId: 'data-old',
+      },
+    }
+    const pending = tenderWorkflowProjectionDefinition.apply(
+      newQuery,
+      call(10, 'late-confirm', 'tender_workbench_confirm_rules', 'old-confirm-command'),
+    )
+    const settled = tenderWorkflowProjectionDefinition.apply(
+      pending,
+      result(11, 'late-confirm', meta('old-confirm-command', 'tender_workbench_confirm_rules', oldConfirmed)),
+    )
+    expect(settled?.revision).toBe(5)
+    expect(settled?.query?.normalizedData?.id).toBe('data-new')
+    expect(settled?.rules).toBeUndefined()
+    expect(settled?.classification).toBeUndefined()
+  })
 })

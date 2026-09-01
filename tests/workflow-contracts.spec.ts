@@ -30,6 +30,7 @@ describe('V1 workflow contracts', () => {
       name: '大数据项目',
       enabled: true,
       action: 'include',
+      sources: ['tender'],
       scope: 'all',
       keywords: ['大数据', '数据平台'],
       priority: 10,
@@ -61,5 +62,32 @@ describe('V1 workflow contracts', () => {
     })
     expect(projectionSizeBytes(largestCore)).toBeLessThan(MAX_PROJECTION_BYTES)
     expect(() => parseTenderWorkflowProjectionV1({ ...largestCore, unownedRecords: [] })).toThrow()
+  })
+
+  it('keeps S3 rules/classification as summaries and Artifact refs rather than record arrays', () => {
+    const empty = createEmptyTenderWorkflowProjection()
+    const ref = (kind: 'rule-draft' | 'rule-preview' | 'rule-set' | 'classified-data', suffix: string) => ({
+      id: `artifact-${suffix}`, kind, fileName: `${suffix}.json`, mediaType: 'application/json', rowCount: 20_000,
+      createdAt: '2026-09-01T00:00:00.000Z', accessToken: `token-${suffix}`,
+    })
+    const projection = parseTenderWorkflowProjectionV1({
+      ...empty,
+      revision: 3,
+      currentStage: 'classification',
+      rules: {
+        draft: ref('rule-draft', 'draft'), draftOrigin: 'user', draftFingerprint: 'r_0123456789abcdef',
+        preview: ref('rule-preview', 'preview'), previewRevision: 2, activeDatasetId: 'active-data',
+        confirmed: ref('rule-set', 'confirmed'), ruleSetVersion: 'rsv-3', ruleCount: 100,
+        rawMatches: 2_000_000, covered: 20_000, conflicts: 20_000,
+      },
+      classification: {
+        data: ref('classified-data', 'classified'), include: 4_000, observe: 4_000, manualReview: 4_000,
+        exclude: 4_000, unmatched: 4_000, covered: 16_000, conflicts: 2_000,
+        ruleSetVersion: 'rsv-3', activeDatasetId: 'active-data',
+      },
+    })
+    expect(projectionSizeBytes(projection)).toBeLessThan(MAX_PROJECTION_BYTES)
+    expect(JSON.stringify(projection)).not.toContain('rawMatches":[')
+    expect(JSON.stringify(projection)).not.toContain('"rows"')
   })
 })

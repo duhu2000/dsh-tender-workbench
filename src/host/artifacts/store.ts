@@ -202,6 +202,20 @@ export class ArtifactTransaction implements CommandReceiptStore<JsonValue> {
       accessToken: entry.accessToken,
     })
   }
+
+  async readJsonArtifact(id: string, expectedKind: ArtifactRefV1['kind']): Promise<unknown> {
+    if (this.base === undefined) throw new ArtifactManifestError('Artifact 事务尚未加载 manifest。')
+    const entry = this.base.artifacts[id]
+    if (entry === undefined || entry.kind !== expectedKind) {
+      throw new ArtifactManifestError('Artifact 不存在、类型不匹配或不属于当前 Session。')
+    }
+    const bytes = await readManifestArtifact(this.root, entry)
+    try {
+      return JSON.parse(bytes.toString('utf8')) as unknown
+    } catch {
+      throw new ArtifactManifestError('Artifact 不是合法 JSON。')
+    }
+  }
 }
 
 export function createArtifactTransaction(

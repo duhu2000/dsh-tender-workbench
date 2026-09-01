@@ -1,6 +1,12 @@
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { describe, expect, it, vi } from 'vitest'
-import { ArtifactApiError, fetchArtifactRows, type ArtifactFetch } from '../src/client/artifact-api.ts'
+import {
+  ArtifactApiError,
+  fetchArtifactRows,
+  fetchClassifiedArtifactRows,
+  fetchRuleArtifactContent,
+  type ArtifactFetch,
+} from '../src/client/artifact-api.ts'
 
 const artifact = {
   id: 'a_0123456789abcdef0123456789abcdef',
@@ -54,5 +60,32 @@ describe('Client Artifact rows API', () => {
       artifact,
       { page: 1, pageSize: 50 },
     )).rejects.toThrow()
+  })
+
+  it('reads only validated classified pages and bounded rule content through the same header boundary', async () => {
+    const classified = { ...artifact, id: 'a_11111111111111111111111111111111', kind: 'classified-data' as const, accessToken: 'classified-token' }
+    const fetchRows = vi.fn<ArtifactFetch>(async () => new Response(JSON.stringify({
+      schemaVersion: 1, artifactId: classified.id, page: 1, pageSize: 50, total: 0, rows: [],
+    }), { status: 200 }))
+    await fetchClassifiedArtifactRows(fetchRows, 'session-1' as SessionId, classified, {
+      page: 1, pageSize: 50, classification: 'include', ruleId: 'r1', conflict: true, fieldStatus: 'missing',
+    })
+    const [rowsUrl, rowsInit] = fetchRows.mock.calls[0] ?? []
+    expect(String(rowsUrl)).toContain('classification=include&ruleId=r1&conflict=true&fieldStatus=missing')
+    expect(String(rowsUrl)).not.toContain('classified-token')
+    expect(rowsInit?.headers).toMatchObject({ 'X-Dsh-Tender-Artifact-Token': 'classified-token' })
+
+    const rule = { ...artifact, id: 'a_22222222222222222222222222222222', kind: 'rule-draft' as const, accessToken: 'rule-token' }
+    const contentValue = {
+      schemaVersion: 1, activeDatasetId: artifact.id, basedOnRevision: 1,
+      draftFingerprint: 'r_0000000000000000', origin: 'user',
+      rules: [{ id: 'r1', name: '数据', enabled: true, action: 'include', sources: ['tender'], scope: 'title', keywords: ['数据'], priority: 1, exceptions: [], reason: '用户目标' }],
+    }
+    const fetchContent = vi.fn<ArtifactFetch>(async () => new Response(JSON.stringify(contentValue), { status: 200 }))
+    expect(await fetchRuleArtifactContent(fetchContent, 'session-1' as SessionId, rule)).toEqual(contentValue)
+    const [contentUrl, contentInit] = fetchContent.mock.calls[0] ?? []
+    expect(String(contentUrl)).toContain(`/${rule.id}/content`)
+    expect(String(contentUrl)).not.toContain('rule-token')
+    expect(contentInit?.headers).toMatchObject({ 'X-Dsh-Tender-Artifact-Token': 'rule-token' })
   })
 })

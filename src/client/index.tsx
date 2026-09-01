@@ -19,7 +19,7 @@ import {
   openTenderWorkbench,
   registerTenderWorkbenchTab,
 } from './better-sidebar-adapter.ts'
-import { sendSessionTenderQueryIntent } from './intents/send-session-intent.ts'
+import { sendSessionTenderWorkbenchIntent } from './intents/send-session-intent.ts'
 import { en, zh, type TenderKey } from './locales.ts'
 import { createTenderProjectionPort } from './tender-projection-port.ts'
 import { tenderSearchDefinition } from './tender-search-definition.ts'
@@ -94,7 +94,7 @@ export function apply(ctx: TenderClientContext): void {
   const navigation = createTenderWorkbenchNavigationController()
   const projectionPort = createTenderProjectionPort(sessions)
   const sendIntent: TenderWorkbenchTabProps['sendIntent'] = (sessionId, intent) => (
-    sendSessionTenderQueryIntent(sessions, sessionId, intent)
+    sendSessionTenderWorkbenchIntent(sessions, sessionId, intent)
   )
   const openSession = (sessionId: SessionId, phase?: WorkbenchPhase): boolean => {
     const summary = sessions.list.getSnapshot().byId[sessionId]

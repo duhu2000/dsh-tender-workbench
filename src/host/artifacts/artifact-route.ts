@@ -9,6 +9,15 @@ import {
   type ArtifactRowsFilterV1,
   type NormalizedProjectV1,
 } from '../../contracts/dataset.ts'
+import {
+  CLASSIFICATION_VALUES,
+  ClassifiedDatasetV1Schema,
+  ClassifiedRowsPageV1Schema,
+  RuleArtifactContentV1Schema,
+  type ClassifiedRecordV1,
+  type ClassifiedRowsFilterV1,
+} from '../../contracts/screening.ts'
+import type { ArtifactRefV1 } from '../../contracts/workflow.ts'
 import { artifactRequestIdentity } from '../http-trust.ts'
 import { ARTIFACT_ROUTE_PREFIX } from './register-route.ts'
 import {
@@ -126,6 +135,57 @@ function filteredRows(rows: readonly NormalizedProjectV1[], filter: ArtifactRows
   })
 }
 
+function classifiedRowsFilter(parameters: URLSearchParams): ClassifiedRowsFilterV1 {
+  const page = positiveInteger(singleParameter(parameters, 'page'), 1)
+  const pageSize = positiveInteger(singleParameter(parameters, 'pageSize'), 50)
+  if (pageSize > 100) throw new RangeError('pageSize exceeds 100')
+  const query = singleParameter(parameters, 'q')?.trim()
+  const source = singleParameter(parameters, 'source')
+  const classification = singleParameter(parameters, 'classification')
+  const ruleId = singleParameter(parameters, 'ruleId')?.trim()
+  const conflict = singleParameter(parameters, 'conflict')
+  const fieldStatus = singleParameter(parameters, 'fieldStatus')
+  if (query !== undefined && query.length > 200) throw new RangeError('query exceeds 200 characters')
+  if (source !== undefined && !(TENDER_DATA_SOURCES as readonly string[]).includes(source)) throw new RangeError('unknown source filter')
+  if (classification !== undefined && !(CLASSIFICATION_VALUES as readonly string[]).includes(classification)) throw new RangeError('unknown classification filter')
+  if (ruleId !== undefined && ruleId.length > 128) throw new RangeError('ruleId exceeds 128 characters')
+  if (conflict !== undefined && conflict !== 'true' && conflict !== 'false') throw new RangeError('unknown conflict filter')
+  if (fieldStatus !== undefined && fieldStatus !== 'normalized' && fieldStatus !== 'missing' && fieldStatus !== 'unparseable') throw new RangeError('unknown field status filter')
+  return {
+    page,
+    pageSize,
+    ...(query === undefined || query === '' ? {} : { query }),
+    ...(source === undefined ? {} : { source: source as ClassifiedRowsFilterV1['source'] }),
+    ...(classification === undefined ? {} : { classification: classification as ClassifiedRowsFilterV1['classification'] }),
+    ...(ruleId === undefined || ruleId === '' ? {} : { ruleId }),
+    ...(conflict === undefined ? {} : { conflict: conflict === 'true' }),
+    ...(fieldStatus === undefined ? {} : { fieldStatus }),
+  }
+}
+
+function filteredClassifiedRows(
+  rows: readonly ClassifiedRecordV1[],
+  filter: ClassifiedRowsFilterV1,
+): ClassifiedRecordV1[] {
+  const needle = filter.query?.toLocaleLowerCase('zh-CN')
+  return rows.filter(row => {
+    const project = row.project
+    if (filter.source !== undefined && project.source !== filter.source) return false
+    if (filter.classification !== undefined && row.classification !== filter.classification) return false
+    if (filter.ruleId !== undefined && !row.rawMatches.some(match => match.ruleId === filter.ruleId)) return false
+    if (filter.conflict !== undefined && (row.conflictRuleIds.length > 0) !== filter.conflict) return false
+    if (filter.fieldStatus === 'normalized' && (project.disclosure.missingFields.length > 0 || project.disclosure.unparseableFields.length > 0)) return false
+    if (filter.fieldStatus === 'missing' && project.disclosure.missingFields.length === 0) return false
+    if (filter.fieldStatus === 'unparseable' && project.disclosure.unparseableFields.length === 0) return false
+    if (needle !== undefined) {
+      const haystack = [project.title, project.counterparty.original, project.sourceId, ...row.rawMatches.map(match => match.ruleId)]
+        .join('\n').toLocaleLowerCase('zh-CN')
+      if (!haystack.includes(needle)) return false
+    }
+    return true
+  }).sort((left, right) => left.project.recordId.localeCompare(right.project.recordId))
+}
+
 function contentDisposition(fileName: string): string {
   const fallback = fileName.replaceAll(/[^A-Za-z0-9._-]/gu, '_').slice(0, 128) || 'artifact'
   return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
@@ -134,6 +194,7 @@ function contentDisposition(fileName: string): string {
 async function handleRows(
   res: ServerResponse,
   artifactId: string,
+  kind: ArtifactRefV1['kind'],
   bytes: Buffer,
   parameters: URLSearchParams,
 ): Promise<void> {
@@ -142,6 +203,26 @@ async function handleRows(
     value = JSON.parse(bytes.toString('utf8')) as unknown
   } catch {
     throw new ArtifactManifestError('数据 Artifact 不是合法 JSON。')
+  }
+  if (kind === 'classified-data') {
+    const dataset = ClassifiedDatasetV1Schema.parse(value)
+    const filter = classifiedRowsFilter(parameters)
+    const rows = filteredClassifiedRows(dataset.rows, filter)
+    const maximumPage = Math.max(1, Math.ceil(rows.length / filter.pageSize))
+    if (filter.page > maximumPage) {
+      error(res, 416, 'page-out-of-range', '请求页超出当前筛选结果范围。')
+      return
+    }
+    const start = (filter.page - 1) * filter.pageSize
+    json(res, 200, ClassifiedRowsPageV1Schema.parse({
+      schemaVersion: 1,
+      artifactId,
+      page: filter.page,
+      pageSize: filter.pageSize,
+      total: rows.length,
+      rows: rows.slice(start, start + filter.pageSize),
+    }))
+    return
   }
   const dataset = NormalizedDatasetV1Schema.parse(value)
   const filter = rowsFilter(parameters)
@@ -186,7 +267,7 @@ export function createArtifactRouteHandler(services: ArtifactRouteServices) {
     const parts = suffix.split('/').filter(Boolean)
     const artifactId = parts[0]
     const action = parts[1]
-    if (parts.length !== 2 || artifactId === undefined || !/^a_[a-f0-9]{32}$/u.test(artifactId) || (action !== 'rows' && action !== 'download')) {
+    if (parts.length !== 2 || artifactId === undefined || !/^a_[a-f0-9]{32}$/u.test(artifactId) || (action !== 'rows' && action !== 'download' && action !== 'content')) {
       error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
       return
     }
@@ -209,13 +290,23 @@ export function createArtifactRouteHandler(services: ArtifactRouteServices) {
         error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
         return
       }
-      if (action === 'rows' && entry.kind !== 'normalized-data') {
+      if (action === 'rows' && entry.kind !== 'normalized-data' && entry.kind !== 'classified-data') {
+        error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
+        return
+      }
+      if (action === 'content' && entry.kind !== 'rule-draft' && entry.kind !== 'rule-preview' && entry.kind !== 'rule-set') {
         error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
         return
       }
       const bytes = await readManifestArtifact(root, entry, abort.signal)
       if (action === 'rows') {
-        await handleRows(res, artifactId, bytes, requestUrl.searchParams)
+        await handleRows(res, artifactId, entry.kind, bytes, requestUrl.searchParams)
+        return
+      }
+      if (action === 'content') {
+        if (bytes.byteLength > 2 * 1_024 * 1_024) throw new ArtifactManifestError('规则 Artifact 超出读取上限。')
+        const content = RuleArtifactContentV1Schema.parse(JSON.parse(bytes.toString('utf8')) as unknown)
+        json(res, 200, content)
         return
       }
       res.writeHead(200, {

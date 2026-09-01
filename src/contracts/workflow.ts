@@ -23,7 +23,8 @@ export type StageStatus = typeof STAGE_STATUSES[number]
 export type TenderToolName = keyof typeof TENDER_TOOL_CONTRACTS
 export type TenderCommandKind = typeof TENDER_TOOL_CONTRACTS[TenderToolName]['command']
 export type RuleAction = 'include' | 'observe' | 'exclude' | 'manual-review'
-export type RuleScope = 'title' | 'purchaser' | 'summary' | 'body' | 'all'
+/** S3 can execute only against fields retained by NormalizedProjectV1. */
+export type RuleScope = 'title' | 'purchaser' | 'all'
 export type AgentRecommendation = 'priority-review' | 'watch' | 'not-recommended'
 export type UserDecision = 'final' | 'observe' | 'exclude' | 'pending'
 
@@ -101,11 +102,16 @@ export const TenderWorkflowProjectionV1Schema = z.object({
   }).strict().optional(),
   rules: z.object({
     draft: ArtifactRefV1Schema.optional(),
+    draftOrigin: z.enum(['agent', 'user']).optional(),
+    draftFingerprint: idText.optional(),
     preview: ArtifactRefV1Schema.optional(),
+    previewRevision: z.number().int().nonnegative().optional(),
+    activeDatasetId: idText.optional(),
     confirmed: ArtifactRefV1Schema.optional(),
     ruleSetVersion: idText.optional(),
     ruleCount: z.number().int().nonnegative(),
     rawMatches: z.number().int().nonnegative(),
+    covered: z.number().int().nonnegative().optional(),
     conflicts: z.number().int().nonnegative(),
   }).strict().optional(),
   classification: z.object({
@@ -114,6 +120,11 @@ export const TenderWorkflowProjectionV1Schema = z.object({
     observe: z.number().int().nonnegative(),
     exclude: z.number().int().nonnegative(),
     manualReview: z.number().int().nonnegative(),
+    unmatched: z.number().int().nonnegative(),
+    covered: z.number().int().nonnegative(),
+    conflicts: z.number().int().nonnegative(),
+    ruleSetVersion: idText,
+    activeDatasetId: idText,
   }).strict().optional(),
   analysis: z.object({
     version: idText,
@@ -162,7 +173,9 @@ export const TenderRuleV1Schema = z.object({
   name: z.string().trim().min(1).max(128),
   enabled: z.boolean(),
   action: z.enum(['include', 'observe', 'exclude', 'manual-review']),
-  scope: z.enum(['title', 'purchaser', 'summary', 'body', 'all']),
+  sources: z.array(z.enum(['tender', 'proposed'])).min(1).max(2)
+    .refine(values => new Set(values).size === values.length, 'rule sources must be unique'),
+  scope: z.enum(['title', 'purchaser', 'all']),
   keywords: z.array(z.string().trim().min(1).max(128)).min(1).max(50),
   priority: z.number().int().min(-1_000).max(1_000),
   exceptions: z.array(z.string().trim().min(1).max(128)).max(50),
@@ -170,6 +183,17 @@ export const TenderRuleV1Schema = z.object({
 }).strict()
 
 export type TenderRuleV1 = z.infer<typeof TenderRuleV1Schema>
+
+export const TenderRuleSetV1Schema = z.array(TenderRuleV1Schema).min(1).max(100)
+  .superRefine((rules, context) => {
+    const ids = new Set<string>()
+    rules.forEach((rule, index) => {
+      if (ids.has(rule.id)) {
+        context.addIssue({ code: 'custom', path: [index, 'id'], message: 'rule ids must be unique' })
+      }
+      ids.add(rule.id)
+    })
+  })
 
 export const MAX_PROJECTION_BYTES = 64 * 1_024
 

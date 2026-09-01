@@ -17,6 +17,9 @@ import {
 } from '../src/host/artifacts/store.ts'
 import { adaptQccProposedPayload, adaptQccTenderPayload } from '../src/host/pipeline/qcc-adapters.ts'
 import { normalizeQccSources } from '../src/host/pipeline/normalize.ts'
+import { classifyTenderProjects, createClassifiedDataset, createRulePreviewArtifact } from '../src/host/pipeline/classify.ts'
+import { ruleDraftFingerprint } from '../src/contracts/screening.ts'
+import type { TenderRuleV1 } from '../src/contracts/workflow.ts'
 
 const roots: string[] = []
 const servers: Server[] = []
@@ -203,5 +206,47 @@ describe('Session-private Artifact service', () => {
     })
     const next = await get(port, `/dsh-tender-workbench/api/v1/artifacts/${ref.id}/rows`, headers)
     expect(next.status).toBe(200)
+  })
+
+  it('serves S3 rule content and filterable classified rows without exposing either across Sessions', async () => {
+    const first = await sessionFixture('session-s3-a')
+    const second = await sessionFixture('session-s3-b')
+    const persistence = {
+      locate: (header: SessionHeader) => ({ kind: 'jsonl', path: header.id === first.header.id ? first.transcript : second.transcript }),
+    }
+    const normalized = dataset()
+    const rules: readonly TenderRuleV1[] = [
+      { id: 'include-data', name: '数据项目', enabled: true, action: 'include', sources: ['tender'], scope: 'title', keywords: ['数据'], priority: 100, exceptions: [], reason: '当前目标' },
+      { id: 'observe-cloud', name: '云项目', enabled: true, action: 'observe', sources: ['tender'], scope: 'title', keywords: ['云'], priority: 90, exceptions: [], reason: '继续观察' },
+    ]
+    const run = classifyTenderProjects(normalized.rows, rules)
+    const fingerprint = ruleDraftFingerprint(rules)
+    const transaction = new ArtifactTransaction(sessionArtifactRoot(persistence, first.header))
+    await transaction.load()
+    const classified = await transaction.stageJson('classified-data', 'classified.json', json(createClassifiedDataset({
+      activeDatasetId: 'active-data', ruleSetVersion: 'rsv-1', classifiedAt: '2026-09-01T00:00:00.000Z', run,
+    })), run.total)
+    const preview = await transaction.stageJson('rule-preview', 'preview.json', json(createRulePreviewArtifact({
+      activeDatasetId: 'active-data', basedOnRevision: 1, stateRevision: 2, draftFingerprint: fingerprint, origin: 'user', run,
+    })))
+    await transaction.save(emptyCommandReceiptManifest())
+    const sessions = { get: (id: SessionId) => id === first.header.id ? first.session : id === second.header.id ? second.session : undefined }
+    const { port } = await listen(createArtifactRouteHandler({ sessions: sessions as never, sessionPersistence: persistence }))
+    const baseHeaders = {
+      Origin: `http://127.0.0.1:${port}`,
+      'Sec-Fetch-Site': 'same-origin',
+      'X-Dsh-Tender-Session': String(first.header.id),
+    }
+    const classifiedHeaders = { ...baseHeaders, 'X-Dsh-Tender-Artifact-Token': classified.accessToken }
+    const rows = await get(port, `/dsh-tender-workbench/api/v1/artifacts/${classified.id}/rows?page=1&pageSize=50&classification=include&ruleId=include-data&conflict=false&fieldStatus=missing`, classifiedHeaders)
+    expect(rows.status).toBe(200)
+    expect(JSON.parse(rows.body)).toMatchObject({ total: 1, rows: [{ classification: 'include', finalRuleId: 'include-data', project: { title: '江苏数据项目', dataDisposition: 'normalized' } }] })
+
+    const previewHeaders = { ...baseHeaders, 'X-Dsh-Tender-Artifact-Token': preview.accessToken }
+    const content = await get(port, `/dsh-tender-workbench/api/v1/artifacts/${preview.id}/content`, previewHeaders)
+    expect(content.status).toBe(200)
+    expect(JSON.parse(content.body)).toMatchObject({ activeDatasetId: 'active-data', draftFingerprint: fingerprint, total: 3 })
+    expect((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${classified.id}/content`, classifiedHeaders)).status).toBe(404)
+    expect((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${preview.id}/content`, { ...previewHeaders, 'X-Dsh-Tender-Session': String(second.header.id) })).status).toBe(404)
   })
 })

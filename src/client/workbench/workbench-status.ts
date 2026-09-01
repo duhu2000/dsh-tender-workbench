@@ -12,6 +12,7 @@ export type TenderWorkbenchDisplayStatus =
 export interface PendingTenderIntent {
   readonly commandId: string
   readonly revision: number
+  readonly stage?: 'query' | 'rules' | 'classification'
 }
 
 export function hasCompletedLightweightQuery(

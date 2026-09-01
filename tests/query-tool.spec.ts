@@ -151,7 +151,11 @@ describe('tender_workbench_query', () => {
     test.adopt({
       ...first.state,
       rules: { confirmed: artifact('rule-set', 'old-rules'), ruleSetVersion: 'v1', ruleCount: 1, rawMatches: 1, conflicts: 0 },
-      classification: { data: artifact('classified-data', 'old-classification'), include: 1, observe: 0, exclude: 0, manualReview: 0 },
+      classification: {
+        data: artifact('classified-data', 'old-classification'),
+        include: 1, observe: 0, exclude: 0, manualReview: 0, unmatched: 0,
+        covered: 1, conflicts: 0, ruleSetVersion: 'v1', activeDatasetId: first.state.query?.normalizedData?.id ?? 'old-data',
+      },
       analysis: { version: 'a1', data: artifact('analysis-data', 'old-analysis'), total: 1, completed: 1, priorityReview: 1, watch: 0, notRecommended: 0 },
       review: { revision: 1, data: artifact('review-data', 'old-review'), pending: 0, final: 1, observe: 0, exclude: 0, canRevert: true },
       report: { finalSnapshot: artifact('final-snapshot', 'old-report'), excel: { status: 'not-started' }, pdf: { status: 'not-started' } },
