@@ -4,6 +4,7 @@ import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
 import type { TenderWorkflowProjectionV1 } from '../../contracts/workflow.ts'
 import type { TenderQueryIntentV1 } from '../../contracts/query-schema.ts'
 import type { TenderTranslate } from '../fields/field-props.ts'
+import { fetchArtifactRows } from '../artifact-api.ts'
 import type { TenderWorkbenchRevealController } from '../better-sidebar-adapter.ts'
 import { useTenderWorkbenchReveal } from '../better-sidebar-adapter.ts'
 import { createTenderQueryIntent } from '../intents/query-intent.ts'
@@ -26,6 +27,11 @@ import {
   type PendingTenderIntent,
   type TenderWorkbenchDisplayStatus,
 } from './workbench-status.ts'
+import {
+  TenderDataDetails,
+  TenderDataOverview,
+  type TenderRowsLoader,
+} from './TenderDataViews.tsx'
 import css from './tender-workbench.module.css'
 
 export { tenderWorkbenchDisplayStatus }
@@ -41,8 +47,13 @@ export interface TenderWorkbenchViewProps {
   readonly navigation: TenderWorkbenchNavigationController
   readonly sendIntent: (intent: TenderQueryIntentV1) => Promise<void>
   readonly createCommandId?: () => string
+  readonly loadRows?: TenderRowsLoader
   readonly t: TenderTranslate
 }
+
+const defaultRowsLoader: TenderRowsLoader = (sessionId, artifact, filter, signal) => fetchArtifactRows(
+  globalThis.fetch.bind(globalThis), sessionId, artifact, filter, signal,
+)
 
 type WorkbenchIconName = WorkbenchPhaseIcon | 'briefcase' | 'check' | 'clock' | 'warning'
 
@@ -100,6 +111,7 @@ export function TenderWorkbenchView({
   navigation,
   sendIntent,
   createCommandId = () => globalThis.crypto.randomUUID(),
+  loadRows = defaultRowsLoader,
   t,
 }: TenderWorkbenchViewProps) {
   const workflow = projectionOf(projection)
@@ -111,6 +123,7 @@ export function TenderWorkbenchView({
   const [submitting, setSubmitting] = useState(false)
   const [validationError, setValidationError] = useState<string>()
   const [sendFailed, setSendFailed] = useState(false)
+  const [opportunityView, setOpportunityView] = useState<'form' | 'overview' | 'details'>('overview')
   const phaseTabs = useRef<Partial<Record<WorkbenchPhase, HTMLButtonElement | null>>>({})
   const navigationId = useId()
   const queryFormId = useId()
@@ -121,11 +134,19 @@ export function TenderWorkbenchView({
     const queryFailed = workflow.stages.query.status === 'failed'
     const completed = workflow.revision > pending.revision
     if (queryFailed || completed) setPending(undefined)
+    if (completed && !queryFailed && workflow.query?.normalizedData !== undefined) setOpportunityView('overview')
   }, [pending, workflow])
 
   const status = tenderWorkbenchDisplayStatus(projection, pending, sendFailed)
   const capabilityAvailable = projection.status === 'empty' || projection.status === 'ready'
   const queryCompleted = hasCompletedLightweightQuery(workflow)
+  const activeDataset = workflow?.query?.normalizedData
+  const replacementRequired = activeDataset !== undefined
+    || workflow?.rules !== undefined
+    || workflow?.classification !== undefined
+    || workflow?.analysis !== undefined
+    || workflow?.review !== undefined
+    || workflow?.report !== undefined
   const lightweightFailure = workflow?.stages.query.errorMessage
     ?? workflow?.stages.overview.errorMessage
   const selectedPhaseConfig = TENDER_WORKBENCH_PHASES.find(phase => phase.id === selectedPhase)
@@ -181,7 +202,7 @@ export function TenderWorkbenchView({
       className={css.shell}
       aria-label={t('workbench.title')}
       data-workbench-status={status}
-      data-visual-shell="s1a"
+      data-visual-shell="s2"
     >
       <header className={css.header}>
         <div className={css.brandBlock}>
@@ -244,7 +265,39 @@ export function TenderWorkbenchView({
           </WorkbenchFeedback>
         )}
 
-        {selectedPhase === 'opportunity' ? (
+        {selectedPhase === 'opportunity' ? (workflow !== undefined && activeDataset !== undefined && opportunityView === 'details' ? (
+          <section
+            className={css.stagePanel}
+            id={`${navigationId}-opportunity-panel`}
+            role="tabpanel"
+            aria-labelledby={`${navigationId}-opportunity-tab`}
+            tabIndex={0}
+          >
+            <TenderDataDetails
+              sessionId={sessionId}
+              artifact={activeDataset}
+              loadRows={loadRows}
+              onBack={() => { setOpportunityView('overview') }}
+              t={t}
+            />
+          </section>
+        ) : workflow !== undefined && activeDataset !== undefined && opportunityView !== 'form' ? (
+          <section
+            className={css.stagePanel}
+            id={`${navigationId}-opportunity-panel`}
+            role="tabpanel"
+            aria-labelledby={`${navigationId}-opportunity-tab`}
+            tabIndex={0}
+          >
+            <TenderDataOverview
+              workflow={workflow}
+              onOpenDetails={() => { setOpportunityView('details') }}
+              onRequery={() => { setOpportunityView('form') }}
+              onContinue={() => { setSelectedPhase('screening') }}
+              t={t}
+            />
+          </section>
+        ) : (
           <section
             className={css.stagePanel}
             id={`${navigationId}-opportunity-panel`}
@@ -326,6 +379,11 @@ export function TenderWorkbenchView({
               </div>
 
               <div className={css.feedbackStack}>
+                {replacementRequired && (
+                  <WorkbenchFeedback tone="notice" title={t('workbench.query.replacementTitle')} role="status">
+                    {t('workbench.query.replacementWarning')}
+                  </WorkbenchFeedback>
+                )}
                 {sendFailed && (
                   <WorkbenchFeedback tone="error" title={t('workbench.status.failed')} role="alert">
                     {t('workbench.sendFailed')}
@@ -354,7 +412,7 @@ export function TenderWorkbenchView({
               </div>
             </form>
           </section>
-        ) : (
+        )) : (
           <section
             className={css.stagePanel}
             id={`${navigationId}-${selectedPhase}-panel`}
@@ -385,7 +443,7 @@ export function TenderWorkbenchView({
 
       <footer className={css.footer}>
         <span className={css.footerHint}>{t('workbench.footerHint')}</span>
-        {selectedPhase === 'opportunity' && (
+        {selectedPhase === 'opportunity' && (activeDataset === undefined || opportunityView === 'form') && (
           <button
             type="submit"
             form={queryFormId}

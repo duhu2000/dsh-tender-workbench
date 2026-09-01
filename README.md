@@ -1,16 +1,22 @@
 # dsh-tender-workbench
 
-`dsh-tender-workbench` is an open-source DeepSeek Harness tender Agent workbench. The current S1a implementation provides one Session-scoped Better Sidebar workbench, three official entry points, a four-phase progressive shell over seven internal Projection nodes, and directly sent user-visible typed query Intents.
+`dsh-tender-workbench` is an open-source DeepSeek Harness tender Agent workbench. The current S2 implementation provides one Session-scoped Better Sidebar workbench, three official entry points, a four-phase progressive shell over seven internal Projection nodes, directly sent user-visible typed query Intents, and a real Host query/Artifact/data-detail vertical slice.
 
 The three entries are `sidebar.footer.action` (“招投标”), `conversation.input.left` (“搜索招投标”), and `conversation.session.header.actions` (reopen). They all focus the same `dsh-better-sidebar 0.17.1` single-instance Tab for the addressed Session. The workbench reads only that Session's Host Projection through a narrow `TenderProjectionPort`; it does not infer business state from chat text or maintain cross-Session state.
 
-The S1a query surface captures a work goal, source scope (`tender`, `proposed`, or `combined`), and up to ten explicit keywords. Rich query fields already present in the repository remain pure mapping assets for S2 and are not exposed as a second drawer or alternate workflow.
+The current workbench query surface captures a work goal, source scope (`tender`, `proposed`, or `combined`), and up to ten explicit keywords. The high-level Host tool validates the complete `TenderQueryIntentV1` branches, deterministically derives the exact qcc calls, and never accepts a second Agent-authored MCP parameter set. Rich query fields already present in the repository remain reusable mapping assets rather than a second drawer or alternate workflow.
 
 The plugin does not modify DeepSeek Harness source, inspect or write the native composer DOM, fetch MCP from the Client, access connector storage, or hold credentials. Explicit workbench submission validates one `TenderQueryIntentV1`, serializes the same object into a user-visible message, and sends it through the public scoped `conversation.send()` service without touching the composer draft.
 
-S1a does not yet implement the S2 query tools, Artifact storage, data overview/detail, rules, classification, review, or report delivery. The shell presents empty, waiting-for-Agent, running, failed, and capability-missing states without inventing those later results.
+S2 implements `tender_workbench_query`, the exact `mcp__qcc-tender__search_tenders` and `mcp__qcc-tender__search_proposed_projects` nested calls, source-specific runtime validation, deterministic normalization, conservative announcement linking, Session-private Artifact storage, the Host Projection result, data overview, and paged/filterable data details. Empty, waiting-for-Agent, running, partial, failed, completed, and capability-missing states are projected without parsing model text.
+
+Every successful query replaces the Session's single active dataset snapshot atomically; it never appends or merges earlier batches. Historical Artifacts remain in the Session directory, while old rules, classification, analysis, review, and reports leave the active chain. The same `commandId` and canonical parameters replay the first result; a user-triggered rerun receives a new `commandId` even when its parameters are identical. A failed all-source rerun does not replace a previously active successful dataset.
 
 The confirmed S2 data boundary is deliberately narrow: schema-valid `qcc-tender` MCP fields are treated as source facts without Web or multi-source accuracy verification. Missing or unparseable fields retain their source text and are shown as disclosure/parse status, not as source errors. Each Session has one active query dataset; a successful new query replaces that active snapshot instead of appending or merging batches, while historical artifacts remain available for traceability and prior downstream results leave the active workflow.
+
+Internal data is located only through the public `sessionPersistence.locate(session.header)` seam and is stored beside the default JSONL Session transcript under `dsh-tender-workbench/v1/`; the transcript itself is never read or modified. The read-only rows/download API is loopback-only and requires same-origin browser provenance, the Session header, and an Artifact capability token. Tokens stay in request headers rather than URLs.
+
+S2 deliberately does not implement initial-screening rules or classification, Agent candidate analysis, human review, Excel/PDF generation, report preview/versioning, subscriptions, CRM follow-up, enterprise profiles, multi-batch merging, or source-accuracy verification. Query completion is a valid lightweight endpoint; continuing to screening remains an explicit progressive suggestion for S3.
 
 ## Documentation
 
@@ -19,6 +25,8 @@ The confirmed S2 data boundary is deliberately narrow: schema-valid `qcc-tender`
 ## Compatibility
 
 This checkout targets DeepSeek Harness `0.1.1-rc.2` and requires `dsh-better-sidebar 0.17.1`. The Better Sidebar version is exact because S1a relies on its validated `targetedOpen`, `stateSubscription`, public Tab store, and Session scope contracts.
+
+S2 additionally requires the standard JSONL Session Persistence service and an installed, authorized `qcc-tender` MCP connection exposing the exact tools `mcp__qcc-tender__search_tenders` and `mcp__qcc-tender__search_proposed_projects`. Missing tools or non-JSONL persistence fail explicitly; there is no Web-search, Workspace-storage, or alternate-persistence fallback.
 
 ## Build and test
 
@@ -101,5 +109,3 @@ dsh plugin --profile web remove dsh-tender-workbench
 - When no Session is selected, the sidebar entry invokes the native New Session flow.
 - The Better Sidebar registration, Projection subscription, Reveal attachment, and all three Slot entries dispose with the Client Context.
 - Narrow layouts use a container-responsive four-phase navigation and keep the main action reachable below a scrollable content area.
-
-

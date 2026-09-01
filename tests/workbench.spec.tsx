@@ -8,6 +8,7 @@ import {
 } from '../src/contracts/workflow.ts'
 import { en, zh, type TenderKey } from '../src/client/locales.ts'
 import { TenderWorkbenchView } from '../src/client/workbench/TenderWorkbench.tsx'
+import type { TenderRowsLoader } from '../src/client/workbench/TenderDataViews.tsx'
 import {
   TENDER_WORKBENCH_PHASES,
   createTenderWorkbenchNavigationController,
@@ -29,6 +30,7 @@ afterEach(() => { cleanup() })
 function renderWorkbench(
   projection: TenderProjectionRead = { status: 'empty' },
   sendIntent = vi.fn(async (_intent: unknown) => {}),
+  loadRows?: TenderRowsLoader,
 ) {
   const navigation = createTenderWorkbenchNavigationController()
   const result = render(
@@ -38,6 +40,7 @@ function renderWorkbench(
       navigation={navigation}
       sendIntent={sendIntent}
       createCommandId={() => 'command-1'}
+      {...(loadRows === undefined ? {} : { loadRows })}
       t={t}
     />,
   )
@@ -79,7 +82,7 @@ describe('TenderWorkbench S1a shell', () => {
 
   it('renders the S1a visual shell hierarchy without fabricating later-stage content', () => {
     const { container } = renderWorkbench()
-    expect(container.querySelector('[data-visual-shell="s1a"]')).toBeTruthy()
+    expect(container.querySelector('[data-visual-shell="s2"]')).toBeTruthy()
     expect(screen.getByText(zh['workbench.subtitle'])).toBeTruthy()
     expect(screen.getByText(zh['workbench.query.eyebrow'])).toBeTruthy()
     expect(screen.getByRole('form', { name: zh['workbench.query.formTitle'] })).toBeTruthy()
@@ -261,5 +264,108 @@ describe('TenderWorkbench S1a shell', () => {
   it('does not expose decision, probability, or preselected-mode wording in the S1a shell', () => {
     renderWorkbench()
     expect(document.body.textContent).not.toMatch(/最终商机|投标决定|中标概率|轻量模式|完整模式/u)
+  })
+
+  it('renders real S2 data overview, partial source status, paged rows, and basic filters', async () => {
+    const base = createEmptyTenderWorkflowProjection()
+    const createdAt = '2026-09-01T00:00:00.000Z'
+    const querySpec = { id: 'query-spec', kind: 'query-spec' as const, fileName: 'query.json', mediaType: 'application/json', createdAt, accessToken: 'query-token' }
+    const normalizedData = { id: 'normalized-data', kind: 'normalized-data' as const, fileName: 'dataset.json', mediaType: 'application/json', rowCount: 2, createdAt, accessToken: 'dataset-token' }
+    const projection = {
+      ...base,
+      revision: 1,
+      currentStage: 'overview' as const,
+      stages: {
+        ...base.stages,
+        query: { status: 'succeeded' as const, updatedAt: createdAt },
+        overview: { status: 'succeeded' as const, updatedAt: createdAt },
+      },
+      query: {
+        scope: 'combined' as const,
+        targetSummary: '查找数据项目',
+        querySpec,
+        sources: {
+          tender: { status: 'succeeded' as const, loaded: 2 },
+          proposed: { status: 'failed' as const, loaded: 0, errorMessage: '拟建来源不可用' },
+        },
+        normalizedData,
+        sourceRecordCount: 2,
+        total: 2,
+        duplicateCount: 0,
+        invalidCount: 0,
+        missingFieldCount: 1,
+        unparseableFieldCount: 0,
+      },
+    }
+    const row = {
+      schemaVersion: 1 as const,
+      recordId: 'row-1', source: 'tender' as const, sourceId: 't-1', title: '数据治理平台项目', lifecycle: 'active-procurement' as const, dataDisposition: 'normalized' as const,
+      stage: { original: '招标', value: '招标', status: 'normalized' as const },
+      projectNumber: { original: 'T-1', value: 'T-1', status: 'normalized' as const },
+      region: { original: '江苏省', value: '江苏省', parts: ['江苏省'], status: 'normalized' as const },
+      counterparty: { original: '某银行', value: '某银行', status: 'normalized' as const },
+      amount: { original: '1000000', type: 'budget' as const, minCny: 1_000_000, maxCny: 1_000_000, parseStatus: 'exact' as const, display: '1000000' },
+      publishedAt: { original: '2026-08-29', value: '2026-08-29', precision: 'date' as const, timeZone: 'Asia/Shanghai' as const, parseStatus: 'normalized' as const },
+      deadline: { original: '', precision: 'unknown' as const, timeZone: 'Asia/Shanghai' as const, parseStatus: 'missing' as const },
+      announcements: [{
+        sourceRecordId: 't-1', title: '数据治理平台项目', lifecycle: 'active-procurement' as const,
+        stage: { original: '招标', value: '招标', status: 'normalized' as const },
+        projectNumber: { original: 'T-1', value: 'T-1', status: 'normalized' as const },
+        region: { original: '江苏省', value: '江苏省', parts: ['江苏省'], status: 'normalized' as const },
+        amount: { original: '1000000', type: 'budget' as const, minCny: 1_000_000, maxCny: 1_000_000, parseStatus: 'exact' as const, display: '1000000' },
+        publishedAt: { original: '2026-08-29', value: '2026-08-29', precision: 'date' as const, timeZone: 'Asia/Shanghai' as const, parseStatus: 'normalized' as const },
+        deadline: { original: '', precision: 'unknown' as const, timeZone: 'Asia/Shanghai' as const, parseStatus: 'missing' as const },
+        parties: [{ id: 'e-1', name: '某银行' }],
+      }],
+      disclosure: { missingFields: ['投标截止时间'], unparseableFields: [] },
+    }
+    const loadRows = vi.fn<TenderRowsLoader>(async (_sessionId, artifact, filter) => ({
+      schemaVersion: 1,
+      artifactId: artifact.id,
+      page: filter.page,
+      pageSize: filter.pageSize,
+      total: 51,
+      rows: [row],
+    }))
+    renderWorkbench({ status: 'ready', projection }, undefined, loadRows)
+    expect(screen.getByRole('heading', { name: zh['workbench.data.completeTitle'] })).toBeTruthy()
+    expect(screen.getByText(zh['workbench.data.partialTitle'])).toBeTruthy()
+    expect(screen.getByText('拟建来源不可用')).toBeTruthy()
+    expect(screen.getByText('招投标 2 · 拟建 0')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.openDetails'] }))
+    expect(await screen.findByRole('heading', { name: zh['workbench.data.details'] })).toBeTruthy()
+    expect(await screen.findByText('数据治理平台项目')).toBeTruthy()
+    expect(loadRows).toHaveBeenCalledWith('session-1', normalizedData, expect.objectContaining({ page: 1, pageSize: 50 }), expect.any(AbortSignal))
+    fireEvent.change(screen.getByLabelText(zh['workbench.data.filterSource']), { target: { value: 'tender' } })
+    await waitFor(() => { expect(loadRows).toHaveBeenLastCalledWith('session-1', normalizedData, expect.objectContaining({ source: 'tender' }), expect.any(AbortSignal)) })
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.next'] }))
+    await waitFor(() => { expect(loadRows).toHaveBeenLastCalledWith('session-1', normalizedData, expect.objectContaining({ page: 2 }), expect.any(AbortSignal)) })
+  })
+
+  it('shows replacement semantics only when active data or downstream results exist', () => {
+    const base = createEmptyTenderWorkflowProjection()
+    const createdAt = '2026-09-01T00:00:00.000Z'
+    const withData = {
+      ...base,
+      revision: 1,
+      query: {
+        scope: 'tender' as const,
+        targetSummary: '旧查询',
+        querySpec: { id: 'query', kind: 'query-spec' as const, fileName: 'query.json', mediaType: 'application/json', createdAt, accessToken: 'q' },
+        sources: { tender: { status: 'succeeded' as const, loaded: 1 } },
+        normalizedData: { id: 'data', kind: 'normalized-data' as const, fileName: 'data.json', mediaType: 'application/json', rowCount: 1, createdAt, accessToken: 'd' },
+        total: 1, duplicateCount: 0, invalidCount: 0,
+      },
+    }
+    renderWorkbench({ status: 'ready', projection: withData })
+    expect(screen.queryByText(zh['workbench.query.replacementWarning'])).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.requery'] }))
+    expect(screen.getByText(zh['workbench.query.replacementWarning'])).toBeTruthy()
+    expect(zh['workbench.query.replacementWarning']).toContain('替换活动快照、不合并旧结果、旧下游结果失效、历史产物保留')
+
+    cleanup()
+    renderWorkbench({ status: 'empty' })
+    expect(screen.queryByText(zh['workbench.query.replacementWarning'])).toBeNull()
   })
 })

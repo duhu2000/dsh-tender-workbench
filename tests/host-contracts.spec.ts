@@ -8,15 +8,29 @@ import { TENDER_AGENT_SKILL, registerTenderAgentSkill } from '../src/host/skill.
 
 describe('official Host seam contracts', () => {
   it('registers one releasable whole-Session Projection definition', () => {
-    const register = vi.fn(() => () => {})
-    apply({ sessionProjections: { register } } as unknown as Context)
-    expect(register).toHaveBeenCalledOnce()
-    const definition = (register.mock.calls[0] as unknown[] | undefined)?.[0]
+    const projectionRegister = vi.fn((_definition: unknown) => () => {})
+    const toolRegister = vi.fn((_definition: unknown) => () => {})
+    const routeRegister = vi.fn((_route: unknown) => () => {})
+    const persistence = { locate: vi.fn() }
+    const effect = vi.fn((callback: () => unknown) => callback())
+    apply({
+      sessionProjections: { register: projectionRegister },
+      tools: { register: toolRegister },
+      webServer: { host: '127.0.0.1', register: routeRegister },
+      sessions: { get: vi.fn() },
+      get: (name: string) => name === 'sessionPersistence' ? persistence : undefined,
+      effect,
+    } as unknown as Context)
+    expect(projectionRegister).toHaveBeenCalledOnce()
+    const definition = (projectionRegister.mock.calls[0] as unknown[] | undefined)?.[0]
     expect(definition).toMatchObject({
       key: 'dshTenderWorkflow',
       stateVersion: 1,
       wire: expect.any(Object),
     })
+    expect(toolRegister.mock.calls[0]?.[0]).toMatchObject({ name: 'tender_workbench_query' })
+    expect(routeRegister).toHaveBeenCalledWith(expect.objectContaining({ kind: 'prefix', path: ARTIFACT_ROUTE_PREFIX }))
+    expect(effect).toHaveBeenCalledTimes(2)
   })
 
   it('threads the official parent/root/agent/signal identity into nested calls', () => {

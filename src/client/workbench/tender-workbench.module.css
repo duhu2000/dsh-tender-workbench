@@ -10,6 +10,9 @@
   --tw-line: var(--border-color, #e1e5ea);
   --tw-line-strong: color-mix(in srgb, var(--tw-line) 82%, var(--tw-ink));
   --tw-brand-soft: color-mix(in srgb, var(--tw-brand) 11%, var(--tw-surface));
+  --tw-danger: #b42318;
+  --tw-warning-strong: #8a5b0a;
+  --tw-warning-soft: color-mix(in srgb, #d89216 14%, var(--tw-surface));
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   width: 100%;
@@ -773,6 +776,306 @@
   opacity: .48;
 }
 
+.dataView {
+  display: grid;
+  gap: 14px;
+}
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.metricCard,
+.dataCard,
+.nextSuggestion {
+  border: 1px solid var(--tw-line);
+  border-radius: 12px;
+  background: var(--tw-surface);
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--tw-ink) 5%, transparent);
+}
+
+.metricCard {
+  display: grid;
+  gap: 6px;
+  min-height: 108px;
+  padding: 16px;
+}
+
+.metricCard > span,
+.metricCard > small {
+  color: var(--tw-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.metricCard > strong {
+  color: var(--tw-ink);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.dataCard {
+  overflow: hidden;
+}
+
+.dataCardHeader,
+.nextSuggestion,
+.dataActions,
+.tableFooter,
+.tableFooter > div {
+  display: flex;
+  align-items: center;
+}
+
+.dataCardHeader {
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--tw-line);
+}
+
+.dataCardHeader h3,
+.dataCardHeader p,
+.nextSuggestion strong,
+.nextSuggestion p {
+  margin: 0;
+}
+
+.dataCardHeader h3,
+.nextSuggestion strong {
+  color: var(--tw-ink);
+  font-size: 12px;
+}
+
+.dataCardHeader p,
+.nextSuggestion p {
+  margin-top: 4px;
+  color: var(--tw-muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.dataActions,
+.tableFooter > div {
+  gap: 8px;
+}
+
+.secondary {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--tw-line-strong);
+  border-radius: 8px;
+  color: var(--tw-ink);
+  background: var(--tw-surface);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.secondary:hover:not(:disabled) {
+  border-color: var(--tw-brand);
+  color: var(--tw-brand-strong);
+}
+
+.sourceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.sourceCard {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 12px;
+  padding: 13px;
+  border: 1px solid var(--tw-line);
+  border-radius: 9px;
+  background: var(--tw-canvas);
+}
+
+.sourceCard > span {
+  color: var(--tw-muted);
+  font-size: 10px;
+}
+
+.sourceCard > strong {
+  color: var(--tw-ink);
+  font-size: 18px;
+}
+
+.sourceCard > small {
+  grid-column: 1 / -1;
+  color: var(--tw-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.sourceCard[data-source-status='failed'] {
+  border-color: color-mix(in srgb, var(--tw-danger) 38%, var(--tw-line));
+}
+
+.scopeNotice {
+  padding: 12px 16px;
+  border-top: 1px solid var(--tw-line);
+  color: var(--tw-muted);
+  background: color-mix(in srgb, var(--tw-brand-soft) 42%, var(--tw-surface));
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.nextSuggestion {
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 16px;
+}
+
+.backButton {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  color: var(--tw-brand-strong);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.detailToolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(118px, auto));
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--tw-line);
+}
+
+.detailToolbar input,
+.detailToolbar select {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--tw-line-strong);
+  border-radius: 7px;
+  color: var(--tw-ink);
+  background: var(--tw-surface);
+  font: inherit;
+  font-size: 9px;
+}
+
+.dataTableWrap {
+  max-width: 100%;
+  overflow: auto;
+}
+
+.dataTable {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  color: var(--tw-ink);
+  font-size: 9px;
+}
+
+.dataTable th,
+.dataTable td {
+  padding: 10px 11px;
+  border-bottom: 1px solid var(--tw-line);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.dataTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--tw-muted);
+  background: var(--tw-canvas);
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.dataTable td:nth-child(2) {
+  min-width: 250px;
+  white-space: normal;
+}
+
+.dataTable td strong,
+.dataTable td small {
+  display: block;
+}
+
+.dataTable td small {
+  margin-top: 4px;
+  color: var(--tw-muted);
+}
+
+.sourceTag,
+.fieldStatus {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  color: var(--tw-brand-strong);
+  background: var(--tw-brand-soft);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.sourceTag[data-source='proposed'] {
+  color: var(--tw-warning-strong);
+  background: var(--tw-warning-soft);
+}
+
+.fieldStatus {
+  color: var(--tw-muted);
+  background: var(--tw-canvas);
+}
+
+.tableFooter {
+  min-height: 48px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  color: var(--tw-muted);
+  font-size: 9px;
+}
+
+.tableFooter button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--tw-line-strong);
+  border-radius: 7px;
+  color: var(--tw-ink);
+  background: var(--tw-surface);
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+}
+
+.tableFooter button:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
+.dataLoading,
+.dataError {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--tw-muted);
+  font-size: 10px;
+}
+
+.dataError {
+  color: var(--tw-danger);
+}
+
 @keyframes tender-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .62; transform: scale(.94); }
@@ -837,6 +1140,29 @@
     margin-top: 7px;
   }
 
+  .metricGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dataCardHeader,
+  .nextSuggestion {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dataActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .detailToolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .detailToolbar input {
+    grid-column: 1 / -1;
+  }
+
   .footer {
     align-items: stretch;
     flex-direction: column;
@@ -868,6 +1194,17 @@
 
   .scopeGroup {
     grid-template-columns: 1fr;
+  }
+
+  .metricGrid,
+  .sourceGrid,
+  .dataActions,
+  .detailToolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .detailToolbar input {
+    grid-column: auto;
   }
 
   .emptyState {

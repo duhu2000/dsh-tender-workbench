@@ -73,6 +73,8 @@ export const TenderWorkflowProjectionV1Schema = z.object({
     commandId: idText,
     command: z.enum(Object.keys(TENDER_TOOL_CONTRACTS) as [TenderCommandKind, ...TenderCommandKind[]]),
     stage: z.enum(WORKFLOW_STAGES),
+    previousCurrentStage: z.enum(WORKFLOW_STAGES).optional(),
+    previousStageState: stageStateSchema.optional(),
   }).strict().optional(),
   stages: stagesSchema,
   query: z.object({
@@ -90,9 +92,12 @@ export const TenderWorkflowProjectionV1Schema = z.object({
       }).strict().optional(),
     }).strict(),
     normalizedData: ArtifactRefV1Schema.optional(),
+    sourceRecordCount: z.number().int().nonnegative().optional(),
     total: z.number().int().nonnegative(),
     duplicateCount: z.number().int().nonnegative(),
     invalidCount: z.number().int().nonnegative(),
+    missingFieldCount: z.number().int().nonnegative().optional(),
+    unparseableFieldCount: z.number().int().nonnegative().optional(),
   }).strict().optional(),
   rules: z.object({
     draft: ArtifactRefV1Schema.optional(),
@@ -194,4 +199,3 @@ export function createEmptyTenderWorkflowProjection(): TenderWorkflowProjectionV
     stages,
   })
 }
-

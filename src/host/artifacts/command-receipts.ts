@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
+import type { JsonValue } from '@deepseek-ai/dsh-session'
 
-export type JsonPrimitive = null | boolean | number | string
-export type JsonValue = JsonPrimitive | readonly JsonValue[] | { readonly [key: string]: JsonValue }
+export type { JsonValue } from '@deepseek-ai/dsh-session'
 
 export interface CommandReceiptV1<Result extends JsonValue = JsonValue> {
   readonly commandId: string
@@ -124,4 +124,3 @@ export class CommandReceiptCoordinator {
     return { result, replayed: false }
   }
 }
-

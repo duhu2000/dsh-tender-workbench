@@ -86,7 +86,17 @@ describe('tenderWorkflowProjectionDefinition', () => {
   })
 
   it('does not regress on a late duplicate and ignores unrelated calls/results by reference', () => {
-    const current = { ...createEmptyTenderWorkflowProjection(), revision: 2 }
+    const empty = createEmptyTenderWorkflowProjection()
+    const current = {
+      ...empty,
+      revision: 2,
+      currentStage: 'overview' as const,
+      stages: {
+        ...empty.stages,
+        query: { status: 'succeeded' as const },
+        overview: { status: 'succeeded' as const },
+      },
+    }
     const pending = tenderWorkflowProjectionDefinition.apply(current, call(1, 'call-1', 'tender_workbench_query'))
     const stale = { ...createEmptyTenderWorkflowProjection(), revision: 1 }
     const settled = tenderWorkflowProjectionDefinition.apply(
@@ -95,8 +105,35 @@ describe('tenderWorkflowProjectionDefinition', () => {
     )
     expect(settled?.revision).toBe(2)
     expect(settled?.activeOperation).toBeUndefined()
+    expect(settled?.currentStage).toBe('overview')
+    expect(settled?.stages.query.status).toBe('succeeded')
     expect(tenderWorkflowProjectionDefinition.apply(settled, call(3, 'other', 'search_companies'))).toBe(settled)
     expect(tenderWorkflowProjectionDefinition.apply(settled, result(4, 'other', undefined))).toBe(settled)
+  })
+
+  it('adopts the first completed state for a same-command idempotent retry', () => {
+    const empty = createEmptyTenderWorkflowProjection()
+    const completed: TenderWorkflowProjectionV1 = {
+      ...empty,
+      revision: 2,
+      currentStage: 'overview',
+      stages: {
+        ...empty.stages,
+        query: { status: 'succeeded' },
+        overview: { status: 'succeeded' },
+      },
+    }
+    const retry = tenderWorkflowProjectionDefinition.apply(
+      completed,
+      call(3, 'retry-call', 'tender_workbench_query', 'command-1'),
+    )
+    expect(retry?.stages.query.status).toBe('running')
+
+    const settled = tenderWorkflowProjectionDefinition.apply(
+      retry,
+      result(4, 'retry-call', meta('command-1', 'tender_workbench_query', completed)),
+    )
+    expect(settled).toEqual(completed)
   })
 
   it('preserves prior facts and exposes bounded failure for invalid or failed results', () => {
@@ -129,5 +166,49 @@ describe('tenderWorkflowProjectionDefinition', () => {
     let live: TenderWorkflowProjectionV1 | null = null
     for (const event of events) live = tenderWorkflowProjectionDefinition.apply(live, event)
     expect(live).toEqual(replay)
+  })
+
+  it('keeps the newest active dataset across refresh replay, historical prepends, and a late old result', () => {
+    const empty = createEmptyTenderWorkflowProjection()
+    const artifact = (id: string) => ({
+      id,
+      kind: 'normalized-data' as const,
+      fileName: `${id}.json`,
+      mediaType: 'application/json',
+      rowCount: 1,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      accessToken: `${id}-token`,
+    })
+    const querySpec = {
+      id: 'query-spec', kind: 'query-spec' as const, fileName: 'query.json', mediaType: 'application/json',
+      createdAt: '2026-09-01T00:00:00.000Z', accessToken: 'query-token',
+    }
+    const oldState: TenderWorkflowProjectionV1 = {
+      ...empty,
+      revision: 1,
+      currentStage: 'overview',
+      query: { scope: 'tender', targetSummary: 'old', querySpec, sources: { tender: { status: 'succeeded', loaded: 1 } }, normalizedData: artifact('old-data'), total: 1, duplicateCount: 0, invalidCount: 0 },
+    }
+    const newState: TenderWorkflowProjectionV1 = {
+      ...oldState,
+      revision: 2,
+      query: { ...oldState.query!, targetSummary: 'new', normalizedData: artifact('new-data') },
+    }
+    const history = [
+      call(1, 'old-call', 'tender_workbench_query', 'old-command'),
+      result(2, 'old-call', meta('old-command', 'tender_workbench_query', oldState)),
+      call(3, 'new-call', 'tender_workbench_query', 'new-command'),
+      result(4, 'new-call', meta('new-command', 'tender_workbench_query', newState)),
+    ]
+    expect(fold(history)?.query?.normalizedData?.id).toBe('new-data')
+    expect(fold(history)).toEqual(fold([...history]))
+
+    const pendingOld = tenderWorkflowProjectionDefinition.apply(newState, call(5, 'late-old', 'tender_workbench_query', 'old-command'))
+    const afterLate = tenderWorkflowProjectionDefinition.apply(
+      pendingOld,
+      result(6, 'late-old', meta('old-command', 'tender_workbench_query', oldState)),
+    )
+    expect(afterLate?.revision).toBe(2)
+    expect(afterLate?.query?.normalizedData?.id).toBe('new-data')
   })
 })

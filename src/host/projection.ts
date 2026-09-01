@@ -55,7 +55,14 @@ function runningState(
   return {
     ...current,
     currentStage: stage,
-    activeOperation: { callId, commandId, command, stage },
+    activeOperation: {
+      callId,
+      commandId,
+      command,
+      stage,
+      previousCurrentStage: current.currentStage,
+      previousStageState: current.stages[stage],
+    },
     stages: {
       ...current.stages,
       [stage]: { status: 'running' },
@@ -132,7 +139,18 @@ function applyTenderProjection(
   if (meta.commandId !== state.activeOperation.commandId || meta.command !== state.activeOperation.command) {
     return failedState(state, event, 'mismatched-tool-meta', '工具返回的命令身份与当前操作不匹配。')
   }
-  if (meta.state.revision <= state.revision) return withoutActiveOperation(state)
+  if (meta.state.revision < state.revision) {
+    const active = state.activeOperation
+    const base = withoutActiveOperation(state)
+    return {
+      ...base,
+      currentStage: active.previousCurrentStage ?? base.currentStage,
+      stages: {
+        ...base.stages,
+        [active.stage]: active.previousStageState ?? base.stages[active.stage],
+      },
+    }
+  }
   return meta.state.activeOperation === undefined ? meta.state : withoutActiveOperation(meta.state)
 }
 
