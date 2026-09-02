@@ -203,6 +203,43 @@ export class ArtifactTransaction implements CommandReceiptStore<JsonValue> {
     })
   }
 
+  async stageBytes(
+    kind: 'excel' | 'pdf',
+    fileName: string,
+    mediaType: string,
+    bytes: Uint8Array,
+  ): Promise<ArtifactRefV1> {
+    if (this.base === undefined) throw new ArtifactManifestError('Artifact 事务尚未加载 manifest。')
+    const id = `a_${randomBytes(16).toString('hex')}`
+    const accessToken = randomBytes(32).toString('base64url')
+    const createdAt = new Date().toISOString()
+    const extension = kind === 'excel' ? 'xlsx' : 'pdf'
+    const relativePath = `${artifactDirectory(kind)}/${id}.${extension}`
+    const path = resolveArtifactPath(this.root, relativePath)
+    const content = Buffer.from(bytes)
+    await atomicWrite(path, content)
+    const entry: ArtifactManifestEntryV1 = {
+      id,
+      kind,
+      fileName,
+      mediaType,
+      createdAt,
+      accessToken,
+      relativePath,
+      size: content.byteLength,
+      sha256: createHash('sha256').update(content).digest('hex'),
+    }
+    this.staged.set(id, entry)
+    return ArtifactRefV1Schema.parse({
+      id: entry.id,
+      kind: entry.kind,
+      fileName: entry.fileName,
+      mediaType: entry.mediaType,
+      createdAt: entry.createdAt,
+      accessToken: entry.accessToken,
+    })
+  }
+
   async readJsonArtifact(id: string, expectedKind: ArtifactRefV1['kind']): Promise<unknown> {
     if (this.base === undefined) throw new ArtifactManifestError('Artifact 事务尚未加载 manifest。')
     const entry = this.base.artifacts[id]

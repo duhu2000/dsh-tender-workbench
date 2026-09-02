@@ -68,7 +68,7 @@ describe('TenderWorkbench S1a shell', () => {
       'search', 'screening', 'decision', 'delivery',
     ])
     expect(TENDER_WORKBENCH_PHASES.map(phase => phase.implemented)).toEqual([
-      true, true, false, false,
+      true, true, true, true,
     ])
     const configuredNodes = TENDER_WORKBENCH_PHASES.flatMap(phase => [...phase.nodes])
     expect(configuredNodes).toEqual(WORKFLOW_STAGES)
@@ -88,12 +88,12 @@ describe('TenderWorkbench S1a shell', () => {
       zh['workbench.phase.decision'], zh['workbench.phase.delivery'],
     ])
     expect(screen.getByRole('tab', { name: zh['workbench.phase.opportunity'] }).getAttribute('aria-current')).toBe('step')
-    expect(screen.getByRole('tab', { name: zh['workbench.phase.decision'] }).getAttribute('data-phase-status')).toBe('unavailable')
-    expect(screen.getByRole('tab', { name: zh['workbench.phase.delivery'] }).getAttribute('data-phase-status')).toBe('unavailable')
+    expect(screen.getByRole('tab', { name: zh['workbench.phase.decision'] }).getAttribute('data-phase-status')).toBe('not-started')
+    expect(screen.getByRole('tab', { name: zh['workbench.phase.delivery'] }).getAttribute('data-phase-status')).toBe('not-started')
 
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.delivery'] }))
     expect(screen.getByRole('heading', { name: zh['workbench.phase.delivery'] })).toBeTruthy()
-    expect(screen.getByRole('heading', { name: zh['workbench.phase.unavailableTitle'] })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: zh['workbench.phase.emptyTitle'] })).toBeTruthy()
     expect(state.currentStage).toBe('query')
     expect(state.stages.report.status).toBe('not-started')
     expect(tabs.every(tab => !tab.hasAttribute('disabled'))).toBe(true)
@@ -101,7 +101,7 @@ describe('TenderWorkbench S1a shell', () => {
 
   it('renders the S1a visual shell hierarchy without fabricating later-stage content', () => {
     const { container } = renderWorkbench()
-    expect(container.querySelector('[data-visual-shell="s3"]')).toBeTruthy()
+    expect(container.querySelector('[data-visual-shell="s4"]')).toBeTruthy()
     expect(screen.getByText(zh['workbench.subtitle'])).toBeTruthy()
     expect(screen.getByText(zh['workbench.query.eyebrow'])).toBeTruthy()
     expect(screen.getByRole('form', { name: zh['workbench.query.formTitle'] })).toBeTruthy()

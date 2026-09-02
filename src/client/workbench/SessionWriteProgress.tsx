@@ -47,6 +47,41 @@ const PROGRESS_KEYS: Record<SessionWriteAction, Record<ActiveWritePhase, TenderK
     succeeded: 'workbench.write.confirm.succeeded',
     failed: 'workbench.write.confirm.failed',
   },
+  'analysis.request': {
+    sending: 'workbench.write.analysis.sending',
+    'waiting-agent': 'workbench.write.analysis.waiting',
+    running: 'workbench.write.analysis.running',
+    succeeded: 'workbench.write.analysis.succeeded',
+    failed: 'workbench.write.analysis.failed',
+  },
+  'review.apply': {
+    sending: 'workbench.write.review.sending',
+    'waiting-agent': 'workbench.write.review.waiting',
+    running: 'workbench.write.review.running',
+    succeeded: 'workbench.write.review.succeeded',
+    failed: 'workbench.write.review.failed',
+  },
+  'review.revert': {
+    sending: 'workbench.write.revert.sending',
+    'waiting-agent': 'workbench.write.revert.waiting',
+    running: 'workbench.write.revert.running',
+    succeeded: 'workbench.write.revert.succeeded',
+    failed: 'workbench.write.revert.failed',
+  },
+  'report.create': {
+    sending: 'workbench.write.report.sending',
+    'waiting-agent': 'workbench.write.report.waiting',
+    running: 'workbench.write.report.running',
+    succeeded: 'workbench.write.report.succeeded',
+    failed: 'workbench.write.report.failed',
+  },
+  'report.retry': {
+    sending: 'workbench.write.reportRetry.sending',
+    'waiting-agent': 'workbench.write.reportRetry.waiting',
+    running: 'workbench.write.reportRetry.running',
+    succeeded: 'workbench.write.reportRetry.succeeded',
+    failed: 'workbench.write.reportRetry.failed',
+  },
 }
 
 export function sessionWriteProgressText(

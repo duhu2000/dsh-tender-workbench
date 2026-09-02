@@ -12,6 +12,11 @@ import {
   type ClassifiedRowsPageV1,
   type RuleArtifactContentV1,
 } from '../contracts/screening.ts'
+import {
+  ReviewRowsPageV1Schema,
+  type ReviewRowsFilterV1,
+  type ReviewRowsPageV1,
+} from '../contracts/analysis-review.ts'
 
 const ARTIFACT_ROUTE_PREFIX = '/dsh-tender-workbench/api/v1/artifacts'
 
@@ -125,4 +130,71 @@ export async function fetchRuleArtifactContent(
   if (!response.ok) throw new ArtifactApiError(response.status)
   const value: unknown = await response.json()
   return RuleArtifactContentV1Schema.parse(value)
+}
+
+function reviewRowsParameters(filter: ReviewRowsFilterV1): URLSearchParams {
+  const parameters = new URLSearchParams({ page: String(filter.page), pageSize: String(filter.pageSize) })
+  if (filter.query !== undefined) parameters.set('q', filter.query)
+  if (filter.source !== undefined) parameters.set('source', filter.source)
+  if (filter.classification !== undefined) parameters.set('classification', filter.classification)
+  if (filter.recommendation !== undefined) parameters.set('recommendation', filter.recommendation)
+  if (filter.userDecision !== undefined) parameters.set('userDecision', filter.userDecision)
+  if (filter.deadlineStatus !== undefined) parameters.set('deadlineStatus', filter.deadlineStatus)
+  return parameters
+}
+
+export async function fetchReviewArtifactRows(
+  fetcher: ArtifactFetch,
+  sessionId: SessionId,
+  artifact: ArtifactRefV1,
+  filter: ReviewRowsFilterV1,
+  signal?: AbortSignal,
+): Promise<ReviewRowsPageV1> {
+  const response = await fetcher(
+    `${ARTIFACT_ROUTE_PREFIX}/${encodeURIComponent(artifact.id)}/review-rows?${reviewRowsParameters(filter)}`,
+    {
+      method: 'GET',
+      headers: artifactHeaders(sessionId, artifact),
+      credentials: 'same-origin',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      signal,
+    },
+  )
+  if (!response.ok) throw new ArtifactApiError(response.status)
+  const value: unknown = await response.json()
+  return ReviewRowsPageV1Schema.parse(value)
+}
+
+/** Download one opaque Session-private artifact and always release the temporary Blob URL. */
+export async function downloadArtifact(
+  fetcher: ArtifactFetch,
+  sessionId: SessionId,
+  artifact: ArtifactRefV1,
+): Promise<void> {
+  const response = await fetcher(
+    `${ARTIFACT_ROUTE_PREFIX}/${encodeURIComponent(artifact.id)}/download`,
+    {
+      method: 'GET',
+      headers: artifactHeaders(sessionId, artifact),
+      credentials: 'same-origin',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+    },
+  )
+  if (!response.ok) throw new ArtifactApiError(response.status, '文件下载失败。')
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  try {
+    anchor.href = url
+    anchor.download = artifact.fileName
+    anchor.rel = 'noopener'
+    anchor.hidden = true
+    document.body.append(anchor)
+    anchor.click()
+  } finally {
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  }
 }

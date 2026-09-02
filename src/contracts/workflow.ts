@@ -26,7 +26,7 @@ export type RuleAction = 'include' | 'observe' | 'exclude' | 'manual-review'
 /** S3 can execute only against fields retained by NormalizedProjectV1. */
 export type RuleScope = 'title' | 'purchaser' | 'all'
 export type AgentRecommendation = 'priority-review' | 'watch' | 'not-recommended'
-export type UserDecision = 'final' | 'observe' | 'exclude' | 'pending'
+export type UserDecision = 'confirmed-candidate' | 'watch' | 'exclude' | 'pending'
 
 const idText = z.string().min(1).max(128)
 const errorText = z.string().min(1).max(512)
@@ -128,6 +128,8 @@ export const TenderWorkflowProjectionV1Schema = z.object({
   }).strict().optional(),
   analysis: z.object({
     version: idText,
+    activeDatasetId: idText,
+    ruleSetVersion: idText.optional(),
     data: ArtifactRefV1Schema.optional(),
     total: z.number().int().nonnegative(),
     completed: z.number().int().nonnegative(),
@@ -139,13 +141,27 @@ export const TenderWorkflowProjectionV1Schema = z.object({
     revision: z.number().int().nonnegative(),
     data: ArtifactRefV1Schema,
     pending: z.number().int().nonnegative(),
-    final: z.number().int().nonnegative(),
-    observe: z.number().int().nonnegative(),
+    confirmedCandidate: z.number().int().nonnegative(),
+    watch: z.number().int().nonnegative(),
     exclude: z.number().int().nonnegative(),
     canRevert: z.boolean(),
   }).strict().optional(),
   report: z.object({
     finalSnapshot: ArtifactRefV1Schema.optional(),
+    finalSnapshotId: idText.optional(),
+    completeness: z.enum(['partial', 'complete']).optional(),
+    createdAt: timestamp.optional(),
+    rawRecords: z.number().int().nonnegative().optional(),
+    normalizedProjects: z.number().int().nonnegative().optional(),
+    reviewed: z.number().int().nonnegative().optional(),
+    confirmedTender: z.number().int().nonnegative().optional(),
+    priorityProposed: z.number().int().nonnegative().optional(),
+    watch: z.number().int().nonnegative().optional(),
+    pending: z.number().int().nonnegative().optional(),
+    exclude: z.number().int().nonnegative().optional(),
+    analysisCompleted: z.number().int().nonnegative().optional(),
+    analysisTotal: z.number().int().nonnegative().optional(),
+    narrativeIncluded: z.boolean().optional(),
     excel: reportFormatStateSchema,
     pdf: reportFormatStateSchema,
   }).strict().optional(),

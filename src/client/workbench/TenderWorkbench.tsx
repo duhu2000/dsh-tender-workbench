@@ -8,7 +8,9 @@ import type { TenderTranslate } from '../fields/field-props.ts'
 import {
   fetchArtifactRows,
   fetchClassifiedArtifactRows,
+  fetchReviewArtifactRows,
   fetchRuleArtifactContent,
+  downloadArtifact,
 } from '../artifact-api.ts'
 import type { TenderWorkbenchRevealController } from '../better-sidebar-adapter.ts'
 import { useTenderWorkbenchReveal } from '../better-sidebar-adapter.ts'
@@ -31,6 +33,7 @@ import {
 import {
   hasCompletedLightweightQuery,
   tenderWorkbenchDisplayStatus,
+  type PendingTenderIntent,
   type TenderWorkbenchDisplayStatus,
 } from './workbench-status.ts'
 import { useSessionWriteFlight } from './session-write-flight.ts'
@@ -50,6 +53,12 @@ import {
   type ClassifiedRowsLoader,
   type RuleContentLoader,
 } from './TenderScreeningViews.tsx'
+import {
+  TenderAnalysisView,
+  TenderReviewView,
+  type ReviewRowsLoader,
+} from './TenderAnalysisReviewViews.tsx'
+import { TenderReportView, type ReportArtifactDownloader } from './TenderReportView.tsx'
 import css from './tender-workbench.module.css'
 
 export { tenderWorkbenchDisplayStatus }
@@ -68,6 +77,8 @@ export interface TenderWorkbenchViewProps {
   readonly loadRows?: TenderRowsLoader
   readonly loadRuleContent?: RuleContentLoader
   readonly loadClassifiedRows?: ClassifiedRowsLoader
+  readonly loadReviewRows?: ReviewRowsLoader
+  readonly downloadReport?: ReportArtifactDownloader
   readonly t: TenderTranslate
 }
 
@@ -79,6 +90,12 @@ const defaultRuleContentLoader: RuleContentLoader = (sessionId, artifact, signal
 )
 const defaultClassifiedRowsLoader: ClassifiedRowsLoader = (sessionId, artifact, filter, signal) => fetchClassifiedArtifactRows(
   globalThis.fetch.bind(globalThis), sessionId, artifact, filter, signal,
+)
+const defaultReviewRowsLoader: ReviewRowsLoader = (sessionId, artifact, filter, signal) => fetchReviewArtifactRows(
+  globalThis.fetch.bind(globalThis), sessionId, artifact, filter, signal,
+)
+const defaultReportDownloader: ReportArtifactDownloader = (sessionId, artifact) => downloadArtifact(
+  globalThis.fetch.bind(globalThis), sessionId, artifact,
 )
 
 type WorkbenchIconName = WorkbenchPhaseIcon | 'briefcase' | 'check' | 'clock' | 'warning'
@@ -130,7 +147,7 @@ function WorkbenchFeedback({ tone, title, children, role }: WorkbenchFeedbackPro
   )
 }
 
-/** S3 vertical slice: S1a shell + S2 data + explicit screening/classification. */
+/** S4 vertical slice: S1-S3 data/classification plus optional analysis and independent review. */
 export function TenderWorkbenchView({
   sessionId,
   projection,
@@ -140,6 +157,8 @@ export function TenderWorkbenchView({
   loadRows = defaultRowsLoader,
   loadRuleContent = defaultRuleContentLoader,
   loadClassifiedRows = defaultClassifiedRowsLoader,
+  loadReviewRows = defaultReviewRowsLoader,
+  downloadReport = defaultReportDownloader,
   t,
 }: TenderWorkbenchViewProps) {
   const workflow = projectionOf(projection)
@@ -150,9 +169,9 @@ export function TenderWorkbenchView({
   const [validationError, setValidationError] = useState<string>()
   const [validationField, setValidationField] = useState<'target' | 'keywords'>()
   const [opportunityView, setOpportunityView] = useState<'form' | 'overview' | 'details'>('overview')
-  const [screeningView, setScreeningView] = useState<'rules' | 'classification'>('rules')
+  const [screeningView, setScreeningView] = useState<'rules' | 'classification' | 'analysis'>('rules')
   const phaseTabs = useRef<Partial<Record<WorkbenchPhase, HTMLButtonElement | null>>>({})
-  const screeningTabs = useRef<Partial<Record<'rules' | 'classification', HTMLButtonElement | null>>>({})
+  const screeningTabs = useRef<Partial<Record<'rules' | 'classification' | 'analysis', HTMLButtonElement | null>>>({})
   const bodyRef = useRef<HTMLDivElement>(null)
   const navigationId = useId()
   const screeningNavigationId = useId()
@@ -161,11 +180,17 @@ export function TenderWorkbenchView({
   const queryDisabledReasonId = useId()
   useTenderWorkbenchNavigation(navigation, sessionId, setSelectedPhase)
   const write = useSessionWriteFlight({ sessionId, workflow, sendIntent, createCommandId })
-  const writeStage: 'query' | 'rules' | 'classification' = write.state.action === 'query'
+  const writeStage: PendingTenderIntent['stage'] = write.state.action === 'query'
     ? 'query'
     : write.state.action === 'rules.confirm'
       ? 'classification'
-      : 'rules'
+      : write.state.action === 'analysis.request'
+        ? 'analysis'
+        : write.state.action === 'review.apply' || write.state.action === 'review.revert'
+          ? 'review'
+          : write.state.action === 'report.create' || write.state.action === 'report.retry'
+            ? 'report'
+          : 'rules'
   const writePending = write.state.action === undefined || !write.busy
     ? undefined
     : { commandId: write.state.commandId ?? '', revision: workflow?.revision ?? 0, stage: writeStage }
@@ -259,6 +284,14 @@ export function TenderWorkbenchView({
   }, [workflow?.classification?.data.id])
 
   useEffect(() => {
+    if (workflow?.analysis !== undefined) setScreeningView('analysis')
+  }, [workflow?.analysis?.data?.id])
+
+  useEffect(() => {
+    if (workflow?.report?.finalSnapshotId !== undefined) setSelectedPhase('delivery')
+  }, [workflow?.report?.finalSnapshotId])
+
+  useEffect(() => {
     const body = bodyRef.current
     if (body !== null && typeof body.scrollTo === 'function') body.scrollTo({ top: 0, left: 0 })
   }, [opportunityView, screeningView, selectedPhase, sessionId])
@@ -273,9 +306,11 @@ export function TenderWorkbenchView({
 
   const selectScreeningViewFromKeyboard = (
     event: KeyboardEvent<HTMLButtonElement>,
-    view: 'rules' | 'classification',
+    view: 'rules' | 'classification' | 'analysis',
   ): void => {
-    const views = ['rules', 'classification'] as const
+    const views: readonly ('rules' | 'classification' | 'analysis')[] = workflow?.classification === undefined
+      ? ['rules', 'analysis'] as const
+      : ['rules', 'classification', 'analysis'] as const
     const currentIndex = views.indexOf(view)
     let nextIndex: number | undefined
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % views.length
@@ -295,7 +330,7 @@ export function TenderWorkbenchView({
       className={css.shell}
       aria-label={t('workbench.title')}
       data-workbench-status={status}
-      data-visual-shell="s3"
+      data-visual-shell="s4"
     >
       <header className={css.header}>
         <div className={css.brandBlock}>
@@ -542,9 +577,8 @@ export function TenderWorkbenchView({
             aria-labelledby={`${navigationId}-screening-tab`}
             tabIndex={0}
           >
-            {workflow.classification !== undefined && (
-              <div className={css.subNavigation} role="tablist" aria-label={t('workbench.screening.views')}>
-                {(['rules', 'classification'] as const).map(view => (
+            <div className={css.subNavigation} role="tablist" aria-label={t('workbench.screening.views')}>
+                {(workflow.classification === undefined ? ['rules', 'analysis'] as const : ['rules', 'classification', 'analysis'] as const).map(view => (
                   <button
                     key={view}
                     ref={(element) => { screeningTabs.current[view] = element }}
@@ -557,17 +591,26 @@ export function TenderWorkbenchView({
                     onClick={() => { setScreeningView(view) }}
                     onKeyDown={(event) => { selectScreeningViewFromKeyboard(event, view) }}
                   >
-                    {t(view === 'rules' ? 'workbench.rules.title' : 'workbench.classification.title')}
+                    {t(view === 'rules' ? 'workbench.rules.title' : view === 'classification' ? 'workbench.classification.title' : 'workbench.analysis.shortTitle')}
                   </button>
                 ))}
               </div>
-            )}
             <div
               id={`${screeningNavigationId}-${screeningView}-panel`}
-              role={workflow.classification !== undefined ? 'tabpanel' : undefined}
-              aria-labelledby={workflow.classification !== undefined ? `${screeningNavigationId}-${screeningView}-tab` : undefined}
+              role="tabpanel"
+              aria-labelledby={`${screeningNavigationId}-${screeningView}-tab`}
             >
-              {screeningView === 'classification' && workflow.classification !== undefined ? (
+              {screeningView === 'analysis' ? (
+                <TenderAnalysisView
+                  key={`${sessionId}:${workflow.analysis?.data?.id ?? activeDataset.id}`}
+                  sessionId={sessionId}
+                  workflow={workflow}
+                  loadRows={loadReviewRows}
+                  write={write}
+                  onOpenReview={() => { setSelectedPhase('decision') }}
+                  t={t}
+                />
+              ) : screeningView === 'classification' && workflow.classification !== undefined ? (
                 <TenderClassificationView
                   key={`${sessionId}:${workflow.classification.data.id}`}
                   sessionId={sessionId}
@@ -589,6 +632,39 @@ export function TenderWorkbenchView({
               )}
             </div>
           </section>
+        ) : selectedPhase === 'decision' && workflow !== undefined && activeDataset !== undefined ? (
+          <section
+            className={css.stagePanel}
+            id={`${navigationId}-decision-panel`}
+            role="tabpanel"
+            aria-labelledby={`${navigationId}-decision-tab`}
+            tabIndex={0}
+          >
+            <TenderReviewView
+              key={`${sessionId}:${workflow.review?.data.id ?? workflow.analysis?.data?.id ?? workflow.classification?.data.id ?? activeDataset.id}`}
+              sessionId={sessionId}
+              workflow={workflow}
+              loadRows={loadReviewRows}
+              write={write}
+              t={t}
+            />
+          </section>
+        ) : selectedPhase === 'delivery' && workflow !== undefined && activeDataset !== undefined ? (
+          <section
+            className={css.stagePanel}
+            id={`${navigationId}-delivery-panel`}
+            role="tabpanel"
+            aria-labelledby={`${navigationId}-delivery-tab`}
+            tabIndex={0}
+          >
+            <TenderReportView
+              sessionId={sessionId}
+              workflow={workflow}
+              write={write}
+              download={downloadReport}
+              t={t}
+            />
+          </section>
         ) : (
           <section
             className={css.stagePanel}
@@ -601,7 +677,7 @@ export function TenderWorkbenchView({
               <div>
                 <p className={css.eyebrow}>{t('workbench.phase.workspace')}</p>
                 <h2>{t(selectedPhaseConfig?.labelKey ?? 'workbench.phase.opportunity')}</h2>
-                <p>{t(selectedPhaseConfig?.implemented === false ? 'workbench.phase.unavailable' : 'workbench.phase.empty')}</p>
+                <p>{t('workbench.phase.empty')}</p>
               </div>
               <span className={css.stageState} data-phase-status={tenderWorkbenchPhaseProgress(workflow, selectedPhase)}>
                 {t(`workbench.phaseStatus.${tenderWorkbenchPhaseProgress(workflow, selectedPhase)}`)}
@@ -611,8 +687,8 @@ export function TenderWorkbenchView({
               <span className={css.emptyIcon} aria-hidden="true">
                 <WorkbenchIcon name={selectedPhaseConfig?.icon ?? 'search'} />
               </span>
-              <h3>{t(selectedPhaseConfig?.implemented === false ? 'workbench.phase.unavailableTitle' : 'workbench.phase.emptyTitle')}</h3>
-              <p>{t(selectedPhaseConfig?.implemented === false ? 'workbench.phase.unavailableDescription' : 'workbench.stage.empty')}</p>
+              <h3>{t('workbench.phase.emptyTitle')}</h3>
+              <p>{t('workbench.stage.empty')}</p>
             </div>
           </section>
         )}

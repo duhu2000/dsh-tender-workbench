@@ -5,6 +5,12 @@ import {
   PreviewRulesCommandV1Schema,
 } from './screening.ts'
 import { TenderRuleSetV1Schema } from './workflow.ts'
+import {
+  ApplyReviewCommandV1Schema,
+  RequestAnalysisIntentV1Schema,
+  RevertReviewCommandV1Schema,
+} from './analysis-review.ts'
+import { CreateReportIntentV1Schema, RetryReportIntentV1Schema } from './reporting.ts'
 
 const idText = z.string().min(1).max(128)
 const screeningBase = {
@@ -33,6 +39,11 @@ export const TenderWorkbenchIntentV1Schema = z.union([
   AdjustRulesIntentV1Schema,
   PreviewRulesCommandV1Schema,
   ConfirmRulesCommandV1Schema,
+  RequestAnalysisIntentV1Schema,
+  ApplyReviewCommandV1Schema,
+  RevertReviewCommandV1Schema,
+  CreateReportIntentV1Schema,
+  RetryReportIntentV1Schema,
 ])
 
 export type ContinueScreeningIntentV1 = z.infer<typeof ContinueScreeningIntentV1Schema>

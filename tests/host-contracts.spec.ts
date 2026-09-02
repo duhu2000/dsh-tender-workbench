@@ -11,6 +11,7 @@ describe('official Host seam contracts', () => {
     const projectionRegister = vi.fn((_definition: unknown) => () => {})
     const toolRegister = vi.fn((_definition: unknown) => () => {})
     const routeRegister = vi.fn((_route: unknown) => () => {})
+    const skillRegister = vi.fn((_skill: unknown) => () => {})
     const persistence = { locate: vi.fn() }
     const effect = vi.fn((callback: () => unknown) => callback())
     apply({
@@ -18,6 +19,7 @@ describe('official Host seam contracts', () => {
       tools: { register: toolRegister },
       webServer: { host: '127.0.0.1', register: routeRegister },
       sessions: { get: vi.fn() },
+      skills: { register: skillRegister },
       get: (name: string) => name === 'sessionPersistence' ? persistence : undefined,
       effect,
     } as unknown as Context)
@@ -33,9 +35,16 @@ describe('official Host seam contracts', () => {
       expect.objectContaining({ name: 'tender_workbench_get_screening_context' }),
       expect.objectContaining({ name: 'tender_workbench_preview_rules' }),
       expect.objectContaining({ name: 'tender_workbench_confirm_rules' }),
+      expect.objectContaining({ name: 'tender_workbench_analysis_next' }),
+      expect.objectContaining({ name: 'tender_workbench_analysis_commit' }),
+      expect.objectContaining({ name: 'tender_workbench_apply_review' }),
+      expect.objectContaining({ name: 'tender_workbench_revert_review' }),
+      expect.objectContaining({ name: 'tender_workbench_get_report_context' }),
+      expect.objectContaining({ name: 'tender_workbench_generate_report' }),
     ])
+    expect(skillRegister).toHaveBeenCalledWith(TENDER_AGENT_SKILL)
     expect(routeRegister).toHaveBeenCalledWith(expect.objectContaining({ kind: 'prefix', path: ARTIFACT_ROUTE_PREFIX }))
-    expect(effect).toHaveBeenCalledTimes(5)
+    expect(effect).toHaveBeenCalledTimes(12)
   })
 
   it('threads the official parent/root/agent/signal identity into nested calls', () => {
@@ -71,6 +80,10 @@ describe('official Host seam contracts', () => {
     expect(TENDER_AGENT_SKILL.name).toBe('tender-agent-workbench')
     expect(TENDER_AGENT_SKILL.content).toContain('查询 → 概况 → 规则共创与确认')
     expect(TENDER_AGENT_SKILL.content).toContain('订阅、定时任务和商机跟进不属于 MVP')
+    expect(TENDER_AGENT_SKILL.content).toContain('tender_workbench_get_report_context')
+    expect(TENDER_AGENT_SKILL.content).toContain('priorityVerification[]')
+    expect(TENDER_AGENT_SKILL.content).toContain('metricRefs[]')
+    expect(TENDER_AGENT_SKILL.content).toContain('tender_workbench_query` 返回后本轮立即结束')
     const dispose = vi.fn()
     const register = vi.fn(() => dispose)
     expect(registerTenderAgentSkill({ register } as never)).toBe(dispose)

@@ -57,5 +57,6 @@ export function serializeTenderQueryIntent(intent: TenderQueryIntentV1): string 
     '',
     `请调用高层工作流工具 tender_workbench_query，并原样传递 commandId。计划数据源：${sourcePlan(parsed).join('、')}。`,
     '仅使用已安装并获授权的 qcc-tender 能力；能力缺失时明确失败，不使用 Web 搜索替代。',
+    '查询工具返回后本轮立即结束；不得自动进入规则、分类、分析、复核或报告，不得猜测 activeDatasetRef、Artifact 引用或 Projection revision。后续动作只能由用户在工作台显式触发的新 Intent 启动。',
   ].join('\n')
 }

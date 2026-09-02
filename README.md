@@ -1,6 +1,6 @@
 # dsh-tender-workbench
 
-`dsh-tender-workbench` is an open-source DeepSeek Harness tender Agent workbench. The current S3 implementation provides one Session-scoped Better Sidebar workbench, three official entry points, a four-phase progressive shell over seven internal Projection nodes, directly sent user-visible typed Intents, the S2 real query/Artifact/data-detail slice, and an S3 initial-screening/classification vertical slice.
+`dsh-tender-workbench` is an open-source DeepSeek Harness tender Agent workbench. The current S1-S5 MVP provides one Session-scoped Better Sidebar workbench, three official entry points, a four-phase progressive shell over seven internal Projection nodes, and a real query → optional analysis → human review → immutable Excel/PDF delivery chain.
 
 The three entries are `sidebar.footer.action` (“招投标”), `conversation.input.left` (“搜索招投标”), and `conversation.session.header.actions` (reopen). They all focus the same `dsh-better-sidebar 0.17.1` single-instance Tab for the addressed Session. The workbench reads only that Session's Host Projection through a narrow `TenderProjectionPort`; it does not infer business state from chat text or maintain cross-Session state.
 
@@ -16,13 +16,17 @@ The drafting-context tool reads the current query specification and normalized d
 
 Preview and confirmation both read the current `activeDatasetRef` from the Session-private manifest and use the same pure classifier. Preview binds the active Artifact, Projection revision, and Host-validated draft fingerprint without creating a formal version or changing active classification. Confirmation rejects stale inputs, creates an immutable rule-set Artifact, classifies the full active dataset, and projects only summary counts and Artifact references. Classified rows remain paged behind the same loopback/same-origin/header/token boundary and retain source → normalization → raw matches/exceptions → stable decision traceability.
 
+S4 implements stable bounded `tender_workbench_analysis_next` batches, evidence-bound `tender_workbench_analysis_commit`, and independent `tender_workbench_apply_review` / `tender_workbench_revert_review` commands. Agent recommendations are optional and never become user decisions. Users can review analyzed or unanalyzed rows individually or in an explicit batch, restore rows to `pending`, keep notes, and replay the latest-operation undo from Session-private review Artifacts.
+
+S5 implements read-only `tender_workbench_get_report_context` plus `tender_workbench_generate_report`. The Host fixes facts, metric definitions/values, priority-record selection, workbook structure, PDF sections, fonts, pagination, and visual layout. Agent narrative is optional, bounded, reference-validated against one `ReportContextV1` fingerprint, and stored once in the immutable `ReportDatasetV1` snapshot for both Excel and PDF. Without narrative, both deterministic files still generate. Excel/PDF have independent file states; retry reads the same snapshot and its stored narrative, reruns only failed renderers, and never re-queries or asks Agent to rewrite content.
+
 Every successful query replaces the Session's single active dataset snapshot atomically; it never appends or merges earlier batches. Historical Artifacts remain in the Session directory, while old rules, classification, analysis, review, and reports leave the active chain. The same `commandId` and canonical parameters replay the first result; a user-triggered rerun receives a new `commandId` even when its parameters are identical. A failed all-source rerun does not replace a previously active successful dataset.
 
 The confirmed S2 data boundary is deliberately narrow: schema-valid `qcc-tender` MCP fields are treated as source facts without Web or multi-source accuracy verification. Missing or unparseable fields retain their source text and are shown as disclosure/parse status, not as source errors. Each Session has one active query dataset; a successful new query replaces that active snapshot instead of appending or merging batches, while historical artifacts remain available for traceability and prior downstream results leave the active workflow.
 
 Internal data is located only through the public `sessionPersistence.locate(session.header)` seam and is stored beside the default JSONL Session transcript under `dsh-tender-workbench/v1/`; the transcript itself is never read or modified. The read-only rows/download API is loopback-only and requires same-origin browser provenance, the Session header, and an Artifact capability token. Tokens stay in request headers rather than URLs.
 
-S3 deliberately does not implement Agent candidate recommendations, user decisions, human review, Excel/PDF generation, report preview/versioning, subscriptions, CRM follow-up, enterprise profiles, multi-batch merging, or source-accuracy verification. Query completion remains a valid lightweight endpoint; classification completion only identifies S4 as a future next stage and never fabricates its results.
+The MVP deliberately does not implement report preview/version centers, successful-file regeneration, subscriptions, CRM follow-up, enterprise profiles, Bid/No-Bid decisions, source-accuracy verification, or dark theme. Query, classification, analysis, and review may each be a valid stopping point; no later action runs without explicit user input.
 
 ## Documentation
 
@@ -32,7 +36,7 @@ S3 deliberately does not implement Agent candidate recommendations, user decisio
 
 This checkout targets DeepSeek Harness `0.1.1-rc.2` and requires `dsh-better-sidebar 0.17.1`. The Better Sidebar version is exact because S1a relies on its validated `targetedOpen`, `stateSubscription`, public Tab store, and Session scope contracts.
 
-S2/S3 additionally require the standard JSONL Session Persistence service and an installed, authorized `qcc-tender` MCP connection exposing the exact tools `mcp__qcc-tender__search_tenders` and `mcp__qcc-tender__search_proposed_projects`. Missing tools or non-JSONL persistence fail explicitly; there is no Web-search, Workspace-storage, or alternate-persistence fallback.
+S2-S5 additionally require the standard JSONL Session Persistence service and an installed, authorized `qcc-tender` MCP connection exposing the exact tools `mcp__qcc-tender__search_tenders` and `mcp__qcc-tender__search_proposed_projects`. Missing tools or non-JSONL persistence fail explicitly; there is no Web-search, Workspace-storage, or alternate-persistence fallback.
 
 ## Build and test
 
@@ -112,10 +116,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 - Navigation changes only the local view. It never advances `currentStage`, assumes a contiguous completion prefix, or disables later phases by ordinal position.
 - A completed query is a normal lightweight outcome. The UI does not display “2/7 incomplete”; it offers progressive next steps without selecting a lightweight/full mode in advance.
 - Query completion never creates a rule draft or starts classification. “Continue screening” sends a visible `rules.propose` Intent only after the user clicks it.
-- Query, rule proposal, Agent adjustment, impact preview, and confirmation share one Session-scoped write flight. Rapid clicks, Enter repeats, and click/submit races create one command and remain locked through send, Agent wait, and matching tool execution; a transport retry reuses the same `commandId`.
+- Query, rules, analysis, review, report creation, and failed-format retry share one Session-scoped write flight. Rapid clicks, Enter repeats, and click/submit races create one command and remain locked through send, Agent wait, and matching tool execution; a transport retry reuses the same `commandId`.
 - Agent rule changes must be explicitly applied to the local draft. Local editing never changes persisted business state; an unexpired deterministic preview is required before confirmation.
 - The screening view uses a criteria-list/editor workspace, keeps identifiers and revisions in collapsed technical details, emphasizes one primary action for the current state, and presents preview conclusions and conflicts before a bounded sample set.
-- Confirmed classification exposes mutually exclusive totals, source/rule/conflict/disclosure filters, and per-record traceability. Agent recommendations and user decisions are absent until S4.
+- Confirmed classification exposes mutually exclusive totals, source/rule/conflict/disclosure filters, and per-record traceability. Analysis recommendations and user decisions remain separate row fields.
+- Report creation shows the current reviewed/pending scope and requires explicit confirmation for a partial report. Excel and PDF download independently through same-origin Session/token headers; temporary Blob URLs are revoked after use.
 - The input shortcut always selects the “Find opportunities” phase. Sidebar and Header entries reopen the same Session Tab without duplicating the workbench.
 - When no Session is selected, the sidebar entry invokes the native New Session flow.
 - The Better Sidebar registration, Projection subscription, Reveal attachment, and all three Slot entries dispose with the Client Context.

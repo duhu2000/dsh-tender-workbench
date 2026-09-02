@@ -90,4 +90,30 @@ describe('V1 workflow contracts', () => {
     expect(JSON.stringify(projection)).not.toContain('rawMatches":[')
     expect(JSON.stringify(projection)).not.toContain('"rows"')
   })
+
+  it('keeps S5 Projection bounded to delivery summaries and opaque Artifact refs', () => {
+    const empty = createEmptyTenderWorkflowProjection()
+    const ref = (kind: 'final-snapshot' | 'excel' | 'pdf', suffix: string) => ({
+      id: `artifact-${suffix}`, kind, fileName: `${suffix}.${kind === 'excel' ? 'xlsx' : kind === 'pdf' ? 'pdf' : 'json'}`,
+      mediaType: kind === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : kind === 'pdf' ? 'application/pdf' : 'application/json',
+      createdAt: '2026-09-02T00:00:00.000Z', accessToken: `token-${suffix}`,
+    })
+    const projection = parseTenderWorkflowProjectionV1({
+      ...empty,
+      revision: 9,
+      currentStage: 'report',
+      stages: { ...empty.stages, report: { status: 'succeeded', updatedAt: '2026-09-02T00:00:00.000Z' } },
+      report: {
+        finalSnapshot: ref('final-snapshot', 'snapshot'), finalSnapshotId: 'fs-1', completeness: 'partial',
+        createdAt: '2026-09-02T00:00:00.000Z', rawRecords: 20_000, normalizedProjects: 18_000,
+        reviewed: 12_000, confirmedTender: 1_000, priorityProposed: 500, watch: 3_000, pending: 6_000,
+        exclude: 7_500, analysisCompleted: 4_000, analysisTotal: 18_000, narrativeIncluded: true,
+        excel: { status: 'succeeded', artifact: ref('excel', 'excel') },
+        pdf: { status: 'failed', errorMessage: 'renderer failed' },
+      },
+    })
+    expect(projectionSizeBytes(projection)).toBeLessThan(MAX_PROJECTION_BYTES)
+    expect(JSON.stringify(projection)).not.toContain('keyFindings')
+    expect(JSON.stringify(projection)).not.toContain('rows')
+  })
 })

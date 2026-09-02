@@ -18,6 +18,17 @@ import {
   type ClassifiedRowsFilterV1,
 } from '../../contracts/screening.ts'
 import type { ArtifactRefV1 } from '../../contracts/workflow.ts'
+import {
+  AGENT_RECOMMENDATIONS,
+  AnalysisDatasetV1Schema,
+  DEADLINE_STATUSES,
+  ReviewDatasetV1Schema,
+  ReviewRecordV1Schema,
+  ReviewRowsPageV1Schema,
+  USER_DECISIONS,
+  type ReviewRecordV1,
+  type ReviewRowsFilterV1,
+} from '../../contracts/analysis-review.ts'
 import { artifactRequestIdentity } from '../http-trust.ts'
 import { ARTIFACT_ROUTE_PREFIX } from './register-route.ts'
 import {
@@ -186,6 +197,85 @@ function filteredClassifiedRows(
   }).sort((left, right) => left.project.recordId.localeCompare(right.project.recordId))
 }
 
+function reviewRowsFilter(parameters: URLSearchParams): ReviewRowsFilterV1 {
+  const page = positiveInteger(singleParameter(parameters, 'page'), 1)
+  const pageSize = positiveInteger(singleParameter(parameters, 'pageSize'), 50)
+  if (pageSize > 100) throw new RangeError('pageSize exceeds 100')
+  const query = singleParameter(parameters, 'q')?.trim()
+  const source = singleParameter(parameters, 'source')
+  const classification = singleParameter(parameters, 'classification')
+  const recommendation = singleParameter(parameters, 'recommendation')
+  const userDecision = singleParameter(parameters, 'userDecision')
+  const deadlineStatus = singleParameter(parameters, 'deadlineStatus')
+  if (query !== undefined && query.length > 200) throw new RangeError('query exceeds 200 characters')
+  if (source !== undefined && !(TENDER_DATA_SOURCES as readonly string[]).includes(source)) throw new RangeError('unknown source filter')
+  if (classification !== undefined && !(CLASSIFICATION_VALUES as readonly string[]).includes(classification)) throw new RangeError('unknown classification filter')
+  if (recommendation !== undefined && recommendation !== 'unanalyzed' && !(AGENT_RECOMMENDATIONS as readonly string[]).includes(recommendation)) throw new RangeError('unknown recommendation filter')
+  if (userDecision !== undefined && !(USER_DECISIONS as readonly string[]).includes(userDecision)) throw new RangeError('unknown user decision filter')
+  if (deadlineStatus !== undefined && !(DEADLINE_STATUSES as readonly string[]).includes(deadlineStatus)) throw new RangeError('unknown deadline status filter')
+  return {
+    page,
+    pageSize,
+    ...(query === undefined || query === '' ? {} : { query }),
+    ...(source === undefined ? {} : { source: source as ReviewRowsFilterV1['source'] }),
+    ...(classification === undefined ? {} : { classification: classification as ReviewRowsFilterV1['classification'] }),
+    ...(recommendation === undefined ? {} : { recommendation: recommendation as ReviewRowsFilterV1['recommendation'] }),
+    ...(userDecision === undefined ? {} : { userDecision: userDecision as ReviewRowsFilterV1['userDecision'] }),
+    ...(deadlineStatus === undefined ? {} : { deadlineStatus: deadlineStatus as ReviewRowsFilterV1['deadlineStatus'] }),
+  }
+}
+
+function rowsForReview(kind: ArtifactRefV1['kind'], value: unknown): ReviewRecordV1[] {
+  if (kind === 'review-data') return ReviewDatasetV1Schema.parse(value).rows
+  if (kind === 'analysis-data') {
+    return AnalysisDatasetV1Schema.parse(value).rows.map(row => ReviewRecordV1Schema.parse({
+      ...row,
+      review: { decision: 'pending', note: '' },
+    }))
+  }
+  if (kind === 'classified-data') {
+    return ClassifiedDatasetV1Schema.parse(value).rows.map(row => ReviewRecordV1Schema.parse({
+      schemaVersion: 1,
+      project: row.project,
+      classification: row.classification,
+      ...(row.finalRuleId === undefined ? {} : { finalRuleId: row.finalRuleId }),
+      review: { decision: 'pending', note: '' },
+    }))
+  }
+  return NormalizedDatasetV1Schema.parse(value).rows.map(project => ReviewRecordV1Schema.parse({
+    schemaVersion: 1,
+    project,
+    review: { decision: 'pending', note: '' },
+  }))
+}
+
+function deadlineStatus(row: ReviewRecordV1, now: number): 'active' | 'expired' | 'missing' {
+  const value = row.project.deadline?.value
+  if (value === undefined) return 'missing'
+  const parsed = Date.parse(value)
+  if (!Number.isFinite(parsed)) return 'missing'
+  return parsed < now ? 'expired' : 'active'
+}
+
+function filteredReviewRows(rows: readonly ReviewRecordV1[], filter: ReviewRowsFilterV1): ReviewRecordV1[] {
+  const needle = filter.query?.toLocaleLowerCase('zh-CN')
+  const now = Date.now()
+  return rows.filter(row => {
+    if (filter.source !== undefined && row.project.source !== filter.source) return false
+    if (filter.classification !== undefined && row.classification !== filter.classification) return false
+    if (filter.recommendation === 'unanalyzed' && row.recommendation !== undefined) return false
+    if (filter.recommendation !== undefined && filter.recommendation !== 'unanalyzed' && row.recommendation?.recommendation !== filter.recommendation) return false
+    if (filter.userDecision !== undefined && row.review.decision !== filter.userDecision) return false
+    if (filter.deadlineStatus !== undefined && deadlineStatus(row, now) !== filter.deadlineStatus) return false
+    if (needle !== undefined) {
+      const haystack = [row.project.title, row.project.counterparty.original, row.project.sourceId, row.review.note]
+        .join('\n').toLocaleLowerCase('zh-CN')
+      if (!haystack.includes(needle)) return false
+    }
+    return true
+  }).sort((left, right) => left.project.recordId.localeCompare(right.project.recordId))
+}
+
 function contentDisposition(fileName: string): string {
   const fallback = fileName.replaceAll(/[^A-Za-z0-9._-]/gu, '_').slice(0, 128) || 'artifact'
   return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
@@ -224,6 +314,25 @@ async function handleRows(
     }))
     return
   }
+  if (kind === 'analysis-data' || kind === 'review-data') {
+    const filter = reviewRowsFilter(parameters)
+    const rows = filteredReviewRows(rowsForReview(kind, value), filter)
+    const maximumPage = Math.max(1, Math.ceil(rows.length / filter.pageSize))
+    if (filter.page > maximumPage) {
+      error(res, 416, 'page-out-of-range', '请求页超出当前筛选结果范围。')
+      return
+    }
+    const start = (filter.page - 1) * filter.pageSize
+    json(res, 200, ReviewRowsPageV1Schema.parse({
+      schemaVersion: 1,
+      artifactId,
+      page: filter.page,
+      pageSize: filter.pageSize,
+      total: rows.length,
+      rows: rows.slice(start, start + filter.pageSize),
+    }))
+    return
+  }
   const dataset = NormalizedDatasetV1Schema.parse(value)
   const filter = rowsFilter(parameters)
   const rows = filteredRows(dataset.rows, filter)
@@ -234,6 +343,37 @@ async function handleRows(
   }
   const start = (filter.page - 1) * filter.pageSize
   json(res, 200, ArtifactRowsPageV1Schema.parse({
+    schemaVersion: 1,
+    artifactId,
+    page: filter.page,
+    pageSize: filter.pageSize,
+    total: rows.length,
+    rows: rows.slice(start, start + filter.pageSize),
+  }))
+}
+
+async function handleReviewRows(
+  res: ServerResponse,
+  artifactId: string,
+  kind: ArtifactRefV1['kind'],
+  bytes: Buffer,
+  parameters: URLSearchParams,
+): Promise<void> {
+  let value: unknown
+  try {
+    value = JSON.parse(bytes.toString('utf8')) as unknown
+  } catch {
+    throw new ArtifactManifestError('复核数据 Artifact 不是合法 JSON。')
+  }
+  const filter = reviewRowsFilter(parameters)
+  const rows = filteredReviewRows(rowsForReview(kind, value), filter)
+  const maximumPage = Math.max(1, Math.ceil(rows.length / filter.pageSize))
+  if (filter.page > maximumPage) {
+    error(res, 416, 'page-out-of-range', '请求页超出当前筛选结果范围。')
+    return
+  }
+  const start = (filter.page - 1) * filter.pageSize
+  json(res, 200, ReviewRowsPageV1Schema.parse({
     schemaVersion: 1,
     artifactId,
     page: filter.page,
@@ -267,7 +407,7 @@ export function createArtifactRouteHandler(services: ArtifactRouteServices) {
     const parts = suffix.split('/').filter(Boolean)
     const artifactId = parts[0]
     const action = parts[1]
-    if (parts.length !== 2 || artifactId === undefined || !/^a_[a-f0-9]{32}$/u.test(artifactId) || (action !== 'rows' && action !== 'download' && action !== 'content')) {
+    if (parts.length !== 2 || artifactId === undefined || !/^a_[a-f0-9]{32}$/u.test(artifactId) || (action !== 'rows' && action !== 'review-rows' && action !== 'download' && action !== 'content')) {
       error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
       return
     }
@@ -290,7 +430,11 @@ export function createArtifactRouteHandler(services: ArtifactRouteServices) {
         error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
         return
       }
-      if (action === 'rows' && entry.kind !== 'normalized-data' && entry.kind !== 'classified-data') {
+      if (action === 'rows' && entry.kind !== 'normalized-data' && entry.kind !== 'classified-data' && entry.kind !== 'analysis-data' && entry.kind !== 'review-data') {
+        error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
+        return
+      }
+      if (action === 'review-rows' && entry.kind !== 'normalized-data' && entry.kind !== 'classified-data' && entry.kind !== 'analysis-data' && entry.kind !== 'review-data') {
         error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
         return
       }
@@ -301,6 +445,10 @@ export function createArtifactRouteHandler(services: ArtifactRouteServices) {
       const bytes = await readManifestArtifact(root, entry, abort.signal)
       if (action === 'rows') {
         await handleRows(res, artifactId, entry.kind, bytes, requestUrl.searchParams)
+        return
+      }
+      if (action === 'review-rows') {
+        await handleReviewRows(res, artifactId, entry.kind, bytes, requestUrl.searchParams)
         return
       }
       if (action === 'content') {

@@ -13,6 +13,8 @@ import {
   createAdjustRulesIntent,
   createContinueScreeningIntent,
   createPreviewRulesIntent,
+  createGenerateReportIntent,
+  createRetryReportIntent,
   serializeTenderWorkbenchIntent,
 } from '../src/client/intents/screening-intent.ts'
 
@@ -35,6 +37,8 @@ describe('typed Session Intent', () => {
     expect(message).toContain('mcp__qcc-tender__search_tenders')
     expect(message).toContain('mcp__qcc-tender__search_proposed_projects')
     expect(message).toContain('不使用 Web 搜索替代')
+    expect(message).toContain('查询工具返回后本轮立即结束')
+    expect(message).toContain('不得猜测 activeDatasetRef')
   })
 
   it('addresses only the supplied Session and calls its public conversation.send()', async () => {
@@ -98,5 +102,34 @@ describe('typed Session Intent', () => {
     await sendSessionTenderWorkbenchIntent(sessions, 'session-s3' as never, adjustment)
     expect(send).toHaveBeenCalledOnce()
     expect(send.mock.calls[0]?.[0]).toContain('"kind": "rules.adjust"')
+  })
+
+  it('serializes S5 optional narrative and same-snapshot retry without giving Agent layout or calculation control', () => {
+    const withNarrative = createGenerateReportIntent({
+      commandId: 'report-1', activeDatasetRef: 'data-1', reviewArtifactRef: 'review-1',
+      reviewRevision: 3, projectionRevision: 8, confirmPending: true, includeNarrative: true,
+    })
+    const narrativeMessage = serializeTenderWorkbenchIntent(withNarrative)
+    expect(narrativeMessage).toContain('tender_workbench_get_report_context')
+    expect(narrativeMessage).toContain('contextFingerprint')
+    expect(narrativeMessage).toContain('不得生成脚本、HTML/CSS、公式')
+    expect(narrativeMessage).toContain('自由文本不得写数字、比例、金额或日期')
+    expect(narrativeMessage).toContain('priorityVerification')
+    expect(narrativeMessage).toContain('risksAndLimitations')
+    expect(narrativeMessage).toContain('title、statement、metricRefs、recordRefs、limitations')
+    expect(narrativeMessage).toContain('不得使用 item、refs、verificationPriorities')
+
+    const deterministic = createGenerateReportIntent({ ...withNarrative, commandId: 'report-2', includeNarrative: false })
+    const deterministicMessage = serializeTenderWorkbenchIntent(deterministic)
+    expect(deterministicMessage).not.toContain('tender_workbench_get_report_context')
+    expect(deterministicMessage).toContain('省略 contextFingerprint 和 narrative')
+
+    const retry = createRetryReportIntent({
+      commandId: 'report-retry', projectionRevision: 9, finalSnapshotId: 'fs-1', formats: ['excel'],
+    })
+    const retryMessage = serializeTenderWorkbenchIntent(retry)
+    expect(retryMessage).toContain('mode 设为 retry')
+    expect(retryMessage).toContain('不得调用报告上下文工具')
+    expect(retryMessage).toContain('不得请求或改写 Agent 叙述')
   })
 })

@@ -13,6 +13,11 @@ export type SessionWriteAction =
   | 'rules.adjust'
   | 'rules.preview'
   | 'rules.confirm'
+  | 'analysis.request'
+  | 'review.apply'
+  | 'review.revert'
+  | 'report.create'
+  | 'report.retry'
 
 export type SessionWritePhase =
   | 'idle'
@@ -48,6 +53,14 @@ interface ProjectionBaseline {
   readonly draftArtifactId: string | undefined
   readonly previewArtifactId: string | undefined
   readonly classificationArtifactId: string | undefined
+  readonly analysisArtifactId: string | undefined
+  readonly reviewArtifactId: string | undefined
+  readonly reviewRevision: number | undefined
+  readonly finalSnapshotArtifactId: string | undefined
+  readonly excelArtifactId: string | undefined
+  readonly pdfArtifactId: string | undefined
+  readonly excelStatus: string | undefined
+  readonly pdfStatus: string | undefined
 }
 
 interface ActiveFlight {
@@ -79,7 +92,17 @@ function actionContract(action: SessionWriteAction): {
 } {
   if (action === 'query') return { command: 'tender_workbench_query', stage: 'query' }
   if (action === 'rules.confirm') return { command: 'tender_workbench_confirm_rules', stage: 'classification' }
+  if (action === 'analysis.request') return { command: 'tender_workbench_analysis_commit', stage: 'analysis' }
+  if (action === 'review.apply') return { command: 'tender_workbench_apply_review', stage: 'review' }
+  if (action === 'review.revert') return { command: 'tender_workbench_revert_review', stage: 'review' }
+  if (action === 'report.create' || action === 'report.retry') return { command: 'tender_workbench_generate_report', stage: 'report' }
   return { command: 'tender_workbench_preview_rules', stage: 'rules' }
+}
+
+function actionCommands(action: SessionWriteAction): readonly TenderCommandKind[] {
+  return action === 'analysis.request'
+    ? ['tender_workbench_analysis_next', 'tender_workbench_analysis_commit']
+    : [actionContract(action).command]
 }
 
 function actionForProjection(
@@ -90,6 +113,10 @@ function actionForProjection(
     if (operation.command === 'tender_workbench_query') return 'query'
     if (operation.command === 'tender_workbench_confirm_rules') return 'rules.confirm'
     if (operation.command === 'tender_workbench_preview_rules') return 'rules.preview'
+    if (operation.command === 'tender_workbench_analysis_next' || operation.command === 'tender_workbench_analysis_commit') return 'analysis.request'
+    if (operation.command === 'tender_workbench_apply_review') return 'review.apply'
+    if (operation.command === 'tender_workbench_revert_review') return 'review.revert'
+    if (operation.command === 'tender_workbench_generate_report') return 'report.create'
     return undefined
   }
   if (workflow === undefined) return undefined
@@ -99,6 +126,9 @@ function actionForProjection(
   if (workflow.stages.query.status === 'running' || workflow.stages.overview.status === 'running') return 'query'
   if (workflow.stages.rules.status === 'running') return 'rules.preview'
   if (workflow.stages.classification.status === 'running') return 'rules.confirm'
+  if (workflow.stages.analysis.status === 'running') return 'analysis.request'
+  if (workflow.stages.review.status === 'running') return 'review.apply'
+  if (workflow.stages.report.status === 'running') return 'report.create'
   return undefined
 }
 
@@ -124,11 +154,19 @@ function baselineOf(
     draftArtifactId: workflow?.rules?.draft?.id,
     previewArtifactId: workflow?.rules?.preview?.id,
     classificationArtifactId: workflow?.classification?.data.id,
+    analysisArtifactId: workflow?.analysis?.data?.id,
+    reviewArtifactId: workflow?.review?.data.id,
+    reviewRevision: workflow?.review?.revision,
+    finalSnapshotArtifactId: workflow?.report?.finalSnapshot?.id,
+    excelArtifactId: workflow?.report?.excel.artifact?.id,
+    pdfArtifactId: workflow?.report?.pdf.artifact?.id,
+    excelStatus: workflow?.report?.excel.status,
+    pdfStatus: workflow?.report?.pdf.status,
   }
 }
 
 function intentDataset(intent: TenderWorkbenchIntentV1): string | undefined {
-  return intent.kind === 'query.start' ? undefined : intent.activeDatasetRef
+  return intent.kind === 'query.start' || intent.kind === 'report.retry' ? undefined : intent.activeDatasetRef
 }
 
 function hasSucceeded(
@@ -149,6 +187,30 @@ function hasSucceeded(
       && classification?.activeDatasetId === datasetId
       && classification?.data.id !== flight.baseline.classificationArtifactId
   }
+  if (flight.action === 'analysis.request') {
+    return workflow.stages.analysis.status === 'succeeded'
+      && workflow.analysis?.activeDatasetId === datasetId
+      && workflow.analysis?.data?.id !== flight.baseline.analysisArtifactId
+  }
+  if (flight.action === 'review.apply' || flight.action === 'review.revert') {
+    return workflow.stages.review.status === 'succeeded'
+      && workflow.review?.data.id !== flight.baseline.reviewArtifactId
+      && workflow.review?.revision !== flight.baseline.reviewRevision
+  }
+  if (flight.action === 'report.create') {
+    return workflow.report?.finalSnapshot?.id !== undefined
+      && workflow.report.finalSnapshot.id !== flight.baseline.finalSnapshotArtifactId
+  }
+  if (flight.action === 'report.retry') {
+    const report = workflow.report
+    return report !== undefined
+      && report.finalSnapshot?.id === flight.baseline.finalSnapshotArtifactId
+      && (report.excel.artifact?.id !== flight.baseline.excelArtifactId
+        || report.pdf.artifact?.id !== flight.baseline.pdfArtifactId
+        || report.excel.status !== flight.baseline.excelStatus
+        || report.pdf.status !== flight.baseline.pdfStatus
+        || workflow.revision > flight.baseline.revision)
+  }
   const rules = workflow.rules
   return workflow.stages.rules.status === 'succeeded'
     && rules?.activeDatasetId === datasetId
@@ -162,7 +224,8 @@ function hasFailed(
   workflow: TenderWorkflowProjectionV1,
 ): boolean {
   const stage = workflow.stages[flight.stage]
-  if (stage.status !== 'failed' || workflow.lastFailure?.command !== flight.command) return false
+  if (stage.status !== 'failed' || workflow.lastFailure === undefined
+    || !actionCommands(flight.action).includes(workflow.lastFailure.command)) return false
   return flight.seenRunning
     && (flight.baseline.stageStatus !== 'failed'
       || stage.updatedAt !== flight.baseline.stageUpdatedAt)
@@ -303,7 +366,7 @@ export function useSessionWriteFlight(input: {
     const flight = lifecycle.flight
     if (flight === undefined || workflow === undefined || flight.sessionId !== sessionId) return
     const active = workflow.activeOperation
-    if (active?.commandId === flight.commandId && active.command === flight.command) {
+    if (active?.commandId === flight.commandId && actionCommands(flight.action).includes(active.command)) {
       flight.seenRunning = true
       flight.phase = 'running'
       flight.failure = undefined

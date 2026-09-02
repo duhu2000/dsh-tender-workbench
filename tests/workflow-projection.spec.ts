@@ -59,6 +59,53 @@ function fold(events: readonly SessionEvent[]): TenderWorkflowProjectionV1 | nul
 }
 
 describe('tenderWorkflowProjectionDefinition', () => {
+  it('keeps the read-only report-context tool outside the mutating Projection state machine', () => {
+    const current: TenderWorkflowProjectionV1 = {
+      ...createEmptyTenderWorkflowProjection(), revision: 8, currentStage: 'review',
+    }
+    expect(tenderWorkflowProjectionDefinition.apply(
+      current,
+      call(1, 'report-context', 'tender_workbench_get_report_context', 'report-command'),
+    )).toBe(current)
+  })
+
+  it('settles a read-only analysis batch before adopting the same user command commit', () => {
+    const current: TenderWorkflowProjectionV1 = {
+      ...createEmptyTenderWorkflowProjection(),
+      revision: 4,
+      currentStage: 'classification',
+    }
+    const reading = tenderWorkflowProjectionDefinition.apply(
+      current,
+      call(1, 'analysis-next', 'tender_workbench_analysis_next', 'analysis-command'),
+    )
+    expect(reading?.stages.analysis.status).toBe('running')
+    const readSettled = tenderWorkflowProjectionDefinition.apply(
+      reading,
+      result(2, 'analysis-next', meta('analysis-command', 'tender_workbench_analysis_next', current)),
+    )
+    expect(readSettled).toEqual(current)
+
+    const committing = tenderWorkflowProjectionDefinition.apply(
+      readSettled,
+      call(3, 'analysis-commit', 'tender_workbench_analysis_commit', 'analysis-command'),
+    )
+    const completed: TenderWorkflowProjectionV1 = {
+      ...current,
+      revision: 5,
+      currentStage: 'analysis',
+      stages: { ...current.stages, analysis: { status: 'succeeded' } },
+      analysis: {
+        version: 'analysis-v1', activeDatasetId: 'data-v1',
+        total: 2, completed: 1, priorityReview: 1, watch: 0, notRecommended: 0,
+      },
+    }
+    expect(tenderWorkflowProjectionDefinition.apply(
+      committing,
+      result(4, 'analysis-commit', meta('analysis-command', 'tender_workbench_analysis_commit', completed)),
+    )).toEqual(completed)
+  })
+
   it('tracks an exact call and adopts only a validated newer whole state', () => {
     const pending = fold([call(1, 'call-1', 'tender_workbench_query')])
     expect(pending).toMatchObject({

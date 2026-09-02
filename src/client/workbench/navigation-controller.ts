@@ -30,16 +30,16 @@ export const TENDER_WORKBENCH_PHASES = [
     labelKey: 'workbench.phase.decision',
     icon: 'decision',
     nodes: ['review'],
-    implemented: false,
-    completionNode: undefined,
+    implemented: true,
+    completionNode: 'review',
   },
   {
     id: 'delivery',
     labelKey: 'workbench.phase.delivery',
     icon: 'delivery',
     nodes: ['report'],
-    implemented: false,
-    completionNode: undefined,
+    implemented: true,
+    completionNode: 'report',
   },
 ] as const satisfies readonly {
   readonly id: string
