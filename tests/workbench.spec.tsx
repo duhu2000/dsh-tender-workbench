@@ -1,21 +1,23 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   WORKFLOW_STAGES,
   createEmptyTenderWorkflowProjection,
 } from '../src/contracts/workflow.ts'
 import { en, zh, type TenderKey } from '../src/client/locales.ts'
-import { TenderWorkbenchView } from '../src/client/workbench/TenderWorkbench.tsx'
-import type { TenderRowsLoader } from '../src/client/workbench/TenderDataViews.tsx'
+import { TenderWorkbenchTab, TenderWorkbenchView } from '../src/client/workbench/TenderWorkbench.tsx'
+import { createTenderWorkbenchRevealController } from '../src/client/better-sidebar-adapter.ts'
+import type { TenderProjectionPort, TenderProjectionRead } from '../src/client/tender-projection-port.ts'
+import { TenderDataDetails, type TenderRowsLoader } from '../src/client/workbench/TenderDataViews.tsx'
 import {
   TENDER_WORKBENCH_PHASES,
   createTenderWorkbenchNavigationController,
   tenderWorkbenchPhaseProgress,
 } from '../src/client/workbench/navigation-controller.ts'
 import { tenderWorkbenchDisplayStatus } from '../src/client/workbench/workbench-status.ts'
-import type { TenderProjectionRead } from '../src/client/tender-projection-port.ts'
 
 const t = ((key: TenderKey, params?: Record<string, unknown>) => {
   let value: string = zh[key]
@@ -25,12 +27,13 @@ const t = ((key: TenderKey, params?: Record<string, unknown>) => {
   return value
 }) as TranslateNS<'tenderFilter'>
 
-afterEach(() => { cleanup() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 function renderWorkbench(
   projection: TenderProjectionRead = { status: 'empty' },
   sendIntent = vi.fn(async (_intent: unknown) => {}),
   loadRows?: TenderRowsLoader,
+  createCommandId = () => 'command-1',
 ) {
   const navigation = createTenderWorkbenchNavigationController()
   const result = render(
@@ -39,12 +42,21 @@ function renderWorkbench(
       projection={projection}
       navigation={navigation}
       sendIntent={sendIntent}
-      createCommandId={() => 'command-1'}
+      createCommandId={createCommandId}
       {...(loadRows === undefined ? {} : { loadRows })}
       t={t}
     />,
   )
   return { ...result, navigation, sendIntent }
+}
+
+function expectWriteProgress(action: string, phase: string, label: string): HTMLElement {
+  const progress = document.querySelector<HTMLElement>(
+    `[data-write-action="${action}"][data-write-phase="${phase}"]`,
+  )
+  expect(progress).toBeTruthy()
+  expect(progress?.textContent).toContain(label)
+  return progress!
 }
 
 describe('TenderWorkbench S1a shell', () => {
@@ -54,6 +66,9 @@ describe('TenderWorkbench S1a shell', () => {
     ])
     expect(TENDER_WORKBENCH_PHASES.map(phase => phase.icon)).toEqual([
       'search', 'screening', 'decision', 'delivery',
+    ])
+    expect(TENDER_WORKBENCH_PHASES.map(phase => phase.implemented)).toEqual([
+      true, true, false, false,
     ])
     const configuredNodes = TENDER_WORKBENCH_PHASES.flatMap(phase => [...phase.nodes])
     expect(configuredNodes).toEqual(WORKFLOW_STAGES)
@@ -72,9 +87,13 @@ describe('TenderWorkbench S1a shell', () => {
       zh['workbench.phase.opportunity'], zh['workbench.phase.screening'],
       zh['workbench.phase.decision'], zh['workbench.phase.delivery'],
     ])
+    expect(screen.getByRole('tab', { name: zh['workbench.phase.opportunity'] }).getAttribute('aria-current')).toBe('step')
+    expect(screen.getByRole('tab', { name: zh['workbench.phase.decision'] }).getAttribute('data-phase-status')).toBe('unavailable')
+    expect(screen.getByRole('tab', { name: zh['workbench.phase.delivery'] }).getAttribute('data-phase-status')).toBe('unavailable')
 
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.delivery'] }))
     expect(screen.getByRole('heading', { name: zh['workbench.phase.delivery'] })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: zh['workbench.phase.unavailableTitle'] })).toBeTruthy()
     expect(state.currentStage).toBe('query')
     expect(state.stages.report.status).toBe('not-started')
     expect(tabs.every(tab => !tab.hasAttribute('disabled'))).toBe(true)
@@ -88,6 +107,7 @@ describe('TenderWorkbench S1a shell', () => {
     expect(screen.getByRole('form', { name: zh['workbench.query.formTitle'] })).toBeTruthy()
     expect(screen.getByText(zh['workbench.query.editHint'])).toBeTruthy()
     expect(screen.getByText('query.start')).toBeTruthy()
+    expect(screen.getByText(zh['workbench.query.planTitle'])).toBeTruthy()
 
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
     expect(screen.getByRole('heading', { name: zh['workbench.phase.emptyTitle'] })).toBeTruthy()
@@ -98,6 +118,7 @@ describe('TenderWorkbench S1a shell', () => {
   it('uses tab semantics and keyboard navigation without step or ordinal gating', () => {
     renderWorkbench()
     const opportunity = screen.getByRole('tab', { name: zh['workbench.phase.opportunity'] })
+    expect(opportunity.getAttribute('aria-current')).toBe('step')
     opportunity.focus()
     fireEvent.keyDown(opportunity, { key: 'ArrowRight' })
     const screening = screen.getByRole('tab', { name: zh['workbench.phase.screening'] })
@@ -111,9 +132,16 @@ describe('TenderWorkbench S1a shell', () => {
     expect(delivery.hasAttribute('aria-current')).toBe(false)
   })
 
-  it('sends one typed Intent only after explicit submit and shows waiting for Agent', async () => {
-    const sendIntent = vi.fn(async (_intent: unknown) => {})
-    renderWorkbench({ status: 'empty' }, sendIntent)
+  it('single-flights rapid query click and form-submit races before React rerenders', async () => {
+    let releaseSend: (() => void) | undefined
+    let commandCount = 0
+    const sendIntent = vi.fn((_intent: unknown) => new Promise<void>((resolve) => { releaseSend = resolve }))
+    const { container } = renderWorkbench(
+      { status: 'empty' },
+      sendIntent,
+      undefined,
+      () => `command-${++commandCount}`,
+    )
     expect(sendIntent).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.opportunity'] }))
@@ -125,8 +153,14 @@ describe('TenderWorkbench S1a shell', () => {
       target: { value: '云平台 数据治理' },
     })
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.scope.combined'] }))
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.submit'] }))
+    const submit = screen.getByRole('button', { name: zh['workbench.query.submit'] })
+    const form = screen.getByRole('form', { name: zh['workbench.query.formTitle'] })
+    fireEvent.click(submit)
+    fireEvent.click(submit)
+    fireEvent.submit(form)
+    fireEvent.submit(form)
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
+    expect(commandCount).toBe(1)
     expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({
       schemaVersion: 1,
       commandId: 'command-1',
@@ -135,14 +169,99 @@ describe('TenderWorkbench S1a shell', () => {
       tender: { keywords: ['云平台', '数据治理'] },
       proposed: { keywords: ['云平台', '数据治理'] },
     })
-    expect(await screen.findByText(zh['workbench.waitingAgent'])).toBeTruthy()
-    expect(document.querySelector('[data-workbench-feedback="notice"]')).toBeTruthy()
+    const currentButton = container.querySelector('[data-write-button="query"]')
+    expect(currentButton?.hasAttribute('disabled')).toBe(true)
+    expect(currentButton?.getAttribute('aria-busy')).toBe('true')
+    expect(container.querySelector('[data-write-action="query"][data-write-phase="sending"]')).toBeTruthy()
+    expect(container.querySelector('[data-write-button="query"] span[aria-hidden="true"]')).toBeTruthy()
+    expect((screen.getByLabelText(zh['workbench.query.target']) as HTMLTextAreaElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
+    expect(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.opportunity'] }))
+    releaseSend?.()
+    await waitFor(() => {
+      expectWriteProgress('query', 'waiting-agent', zh['workbench.write.query.waiting'])
+    })
+    fireEvent.submit(screen.getByRole('form', { name: zh['workbench.query.formTitle'] }))
+    expect(sendIntent).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a transport failure with the original command id', async () => {
+    let commandCount = 0
+    let attempt = 0
+    const sendIntent = vi.fn(async (_intent: unknown) => {
+      attempt += 1
+      if (attempt === 1) throw new Error('transport unavailable')
+    })
+    renderWorkbench({ status: 'empty' }, sendIntent, undefined, () => `command-${++commandCount}`)
+    fireEvent.change(screen.getByLabelText(zh['workbench.query.target']), { target: { value: '查找数据项目' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.submit'] }))
+    expect(await screen.findByText(zh['workbench.write.query.failed'])).toBeTruthy()
+    expect(screen.getByText(zh['workbench.write.transportFailed'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.write.retry'] }))
+    await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(2) })
+    expect(commandCount).toBe(1)
+    expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({ commandId: 'command-1' })
+    expect(sendIntent.mock.calls[1]?.[0]).toMatchObject({ commandId: 'command-1' })
+    await waitFor(() => {
+      expectWriteProgress('query', 'waiting-agent', zh['workbench.write.query.waiting'])
+    })
+  })
+
+  it('isolates transient locks by Session and disposes them on unmount', async () => {
+    const releases: Array<() => void> = []
+    let commandCount = 0
+    const sendIntent = vi.fn((_intent: unknown) => new Promise<void>((resolve) => { releases.push(resolve) }))
+    const navigation = createTenderWorkbenchNavigationController()
+    const props = {
+      projection: { status: 'empty' } as TenderProjectionRead,
+      navigation,
+      sendIntent,
+      createCommandId: () => `command-${++commandCount}`,
+      t,
+    }
+    const view = render(<TenderWorkbenchView {...props} sessionId={'session-1' as never} />)
+    fireEvent.change(screen.getByLabelText(zh['workbench.query.target']), { target: { value: '查找数据项目' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.submit'] }))
+    expect(sendIntent).toHaveBeenCalledTimes(1)
+
+    view.rerender(<TenderWorkbenchView {...props} sessionId={'session-2' as never} />)
+    const secondSessionButton = screen.getByRole('button', { name: zh['workbench.query.submit'] })
+    expect(secondSessionButton.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(secondSessionButton)
+    expect(sendIntent).toHaveBeenCalledTimes(2)
+    expect(sendIntent.mock.calls.map(call => (call[0] as { commandId: string }).commandId)).toEqual(['command-1', 'command-2'])
+    releases[0]?.()
+    await waitFor(() => {
+      expect((document.querySelector('[data-write-button="query"]') as HTMLButtonElement).disabled).toBe(true)
+    })
+
+    view.unmount()
+    render(<TenderWorkbenchView {...props} sessionId={'session-2' as never} />)
+    expect(screen.getByRole('button', { name: zh['workbench.query.submit'] }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('associates query validation feedback with the field that needs recovery', () => {
+    const { sendIntent } = renderWorkbench()
+    const target = screen.getByLabelText(zh['workbench.query.target'])
+    const keywords = screen.getByLabelText(zh['field.keywords'])
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.submit'] }))
+    expect(target.getAttribute('aria-invalid')).toBe('true')
+    expect(target.getAttribute('aria-describedby')).toBe(screen.getByRole('alert').id)
+
+    fireEvent.change(target, { target: { value: '查找数据项目' } })
+    fireEvent.change(keywords, { target: { value: '一 二 三 四 五 六 七 八 九 十 十一' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.submit'] }))
+    expect(keywords.getAttribute('aria-invalid')).toBe('true')
+    expect(keywords.getAttribute('aria-describedby')).toBe(screen.getByRole('alert').id)
+    expect(sendIntent).not.toHaveBeenCalled()
   })
 
   it('shows capability missing and blocks submit when the Host Projection is absent', () => {
     renderWorkbench({ status: 'unavailable' })
     expect(screen.getByRole('alert').textContent).toContain(zh['workbench.capability.missing'])
     expect(screen.getByRole('button', { name: zh['workbench.query.submit'] }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(zh['workbench.query.disabled.capability'])).toBeTruthy()
   })
 
   it('renders running and failed Projection states without inventing result data', () => {
@@ -155,8 +274,7 @@ describe('TenderWorkbench S1a shell', () => {
       stages: { ...base.stages, query: { status: 'running' as const } },
     }
     const { rerender, navigation, sendIntent } = renderWorkbench({ status: 'ready', projection: running })
-    expect(screen.getByText(zh['workbench.running'])).toBeTruthy()
-    expect(document.querySelector('[data-workbench-feedback="progress"]')).toBeTruthy()
+    expectWriteProgress('query', 'running', zh['workbench.write.query.running'])
     expect(tenderWorkbenchDisplayStatus({ status: 'ready', projection: running })).toBe('running')
 
     const failed = {
@@ -188,7 +306,7 @@ describe('TenderWorkbench S1a shell', () => {
       stages: { ...base.stages, query: { status: 'waiting-agent' as const } },
     }
     renderWorkbench({ status: 'ready', projection: waiting })
-    expect(screen.getByText(zh['workbench.waitingAgent'])).toBeTruthy()
+    expectWriteProgress('query', 'waiting-agent', zh['workbench.write.query.waiting'])
     expect(tenderWorkbenchDisplayStatus({ status: 'ready', projection: waiting })).toBe('waiting-agent')
   })
 
@@ -316,6 +434,7 @@ describe('TenderWorkbench S1a shell', () => {
         publishedAt: { original: '2026-08-29', value: '2026-08-29', precision: 'date' as const, timeZone: 'Asia/Shanghai' as const, parseStatus: 'normalized' as const },
         deadline: { original: '', precision: 'unknown' as const, timeZone: 'Asia/Shanghai' as const, parseStatus: 'missing' as const },
         parties: [{ id: 'e-1', name: '某银行' }],
+        sourceLink: 'https://example.test/tender/t-1',
       }],
       disclosure: { missingFields: ['投标截止时间'], unparseableFields: [] },
     }
@@ -336,6 +455,9 @@ describe('TenderWorkbench S1a shell', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.openDetails'] }))
     expect(await screen.findByRole('heading', { name: zh['workbench.data.details'] })).toBeTruthy()
     expect(await screen.findByText('数据治理平台项目')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.openRowDetail'] }))
+    expect(screen.getByRole('link', { name: /打开来源记录/u }).getAttribute('href')).toBe('https://example.test/tender/t-1')
+    expect(screen.getByText(zh['workbench.data.detail.sourceRegion'])).toBeTruthy()
     expect(loadRows).toHaveBeenCalledWith('session-1', normalizedData, expect.objectContaining({ page: 1, pageSize: 50 }), expect.any(AbortSignal))
     fireEvent.change(screen.getByLabelText(zh['workbench.data.filterSource']), { target: { value: 'tender' } })
     await waitFor(() => { expect(loadRows).toHaveBeenLastCalledWith('session-1', normalizedData, expect.objectContaining({ source: 'tender' }), expect.any(AbortSignal)) })
@@ -362,10 +484,72 @@ describe('TenderWorkbench S1a shell', () => {
     expect(screen.queryByText(zh['workbench.query.replacementWarning'])).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.requery'] }))
     expect(screen.getByText(zh['workbench.query.replacementWarning'])).toBeTruthy()
-    expect(zh['workbench.query.replacementWarning']).toContain('替换活动快照、不合并旧结果、旧下游结果失效、历史产物保留')
+    expect(zh['workbench.query.replacementWarning']).toBe('新查询成功后替换当前活动数据，不追加或合并旧结果；旧下游结果退出活动链路，历史产物仍保留追溯。')
 
     cleanup()
     renderWorkbench({ status: 'empty' })
     expect(screen.queryByText(zh['workbench.query.replacementWarning'])).toBeNull()
+  })
+
+  it('keeps data-detail failures local and offers an explicit retry into an empty result', async () => {
+    let attempt = 0
+    const createdAt = '2026-09-01T00:00:00.000Z'
+    const artifact = { id: 'data', kind: 'normalized-data' as const, fileName: 'data.json', mediaType: 'application/json', rowCount: 0, createdAt, accessToken: 'token' }
+    const loadRows = vi.fn<TenderRowsLoader>(async (_sessionId, ref, filter) => {
+      attempt += 1
+      if (attempt === 1) throw new Error('temporary')
+      return { schemaVersion: 1, artifactId: ref.id, page: filter.page, pageSize: filter.pageSize, total: 0, rows: [] }
+    })
+    render(<TenderDataDetails sessionId={'session-1' as never} artifact={artifact} loadRows={loadRows} onBack={() => {}} t={t} />)
+    expect(await screen.findByText(zh['workbench.data.loadFailedTitle'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.retry'] }))
+    expect(await screen.findByText(zh['workbench.data.emptyTitle'])).toBeTruthy()
+    expect(loadRows).toHaveBeenCalledTimes(2)
+  })
+
+  it('remounts all transient view state when the Better Sidebar Session scope changes', async () => {
+    const createdAt = '2026-09-01T00:00:00.000Z'
+    const snapshotFor = (sessionId: string): TenderProjectionRead => {
+      const base = createEmptyTenderWorkflowProjection()
+      return {
+        status: 'ready',
+        projection: {
+          ...base,
+          revision: 1,
+          currentStage: 'overview',
+          stages: { ...base.stages, query: { status: 'succeeded' }, overview: { status: 'succeeded' } },
+          query: {
+            scope: 'tender', targetSummary: sessionId,
+            querySpec: { id: `query-${sessionId}`, kind: 'query-spec', fileName: 'query.json', mediaType: 'application/json', createdAt, accessToken: 'query-token' },
+            sources: { tender: { status: 'succeeded', loaded: 1 } },
+            normalizedData: { id: `data-${sessionId}`, kind: 'normalized-data', fileName: 'data.json', mediaType: 'application/json', rowCount: 1, createdAt, accessToken: 'data-token' },
+            total: 1, duplicateCount: 0, invalidCount: 0,
+          },
+        },
+      }
+    }
+    const projectionPort: TenderProjectionPort = {
+      source(sessionId) {
+        const snapshot = snapshotFor(String(sessionId))
+        return { getSnapshot: () => snapshot, subscribe: () => () => {} }
+      },
+    }
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+    const navigation = createTenderWorkbenchNavigationController()
+    const reveal = createTenderWorkbenchRevealController()
+    const store = {} as unknown as TabComponentProps['store']
+    const tab = { id: 'tender', type: 'dsh-tender-workbench:agent', title: '招投标' }
+    const props = {
+      ctx: {} as TabComponentProps['ctx'], store, tab, visible: true,
+      projectionPort, reveal, navigation,
+      sendIntent: vi.fn(async () => {}), t,
+    }
+    const view = render(<TenderWorkbenchTab {...props} scope={{ sessionId: 'session-one' }} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.openDetails'] }))
+    expect(screen.getByRole('heading', { name: zh['workbench.data.details'] })).toBeTruthy()
+
+    view.rerender(<TenderWorkbenchTab {...props} scope={{ sessionId: 'session-two' }} />)
+    expect(await screen.findByRole('heading', { name: zh['workbench.data.completeTitle'] })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: zh['workbench.data.details'] })).toBeNull()
   })
 })

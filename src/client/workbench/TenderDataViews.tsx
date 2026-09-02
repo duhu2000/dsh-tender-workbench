@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useId, useMemo, useState } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ArtifactRowsFilterV1,
@@ -10,6 +10,12 @@ import type {
   TenderWorkflowProjectionV1,
 } from '../../contracts/workflow.ts'
 import type { TenderTranslate } from '../fields/field-props.ts'
+import type { SessionWriteFlight } from './session-write-flight.ts'
+import {
+  SessionWriteButtonLabel,
+  SessionWriteProgress,
+  sessionWriteProgressText,
+} from './SessionWriteProgress.tsx'
 import css from './tender-workbench.module.css'
 
 export type TenderRowsLoader = (
@@ -24,6 +30,7 @@ interface TenderDataOverviewProps {
   readonly onOpenDetails: () => void
   readonly onRequery: () => void
   readonly onContinue: () => void
+  readonly write: SessionWriteFlight
   readonly t: TenderTranslate
 }
 
@@ -36,8 +43,10 @@ export function TenderDataOverview({
   onOpenDetails,
   onRequery,
   onContinue,
+  write,
   t,
 }: TenderDataOverviewProps) {
+  const writeReasonId = useId()
   const query = workflow.query
   if (query?.normalizedData === undefined) return null
   const sources = Object.values(query.sources)
@@ -54,7 +63,7 @@ export function TenderDataOverview({
         </div>
         <div className={css.contextChips}>
           <span>{t('workbench.data.snapshot')}</span>
-          <span>{query.scope}</span>
+          <span>{t(`workbench.query.scope.${query.scope}`)}</span>
         </div>
       </header>
 
@@ -86,7 +95,7 @@ export function TenderDataOverview({
           <div><h3>{t('workbench.data.sources')}</h3><p>{t('workbench.data.sourcesDescription')}</p></div>
           <div className={css.dataActions}>
             <button type="button" className={css.secondary} onClick={onRequery}>{t('workbench.data.requery')}</button>
-            <button type="button" className={css.primary} onClick={onOpenDetails}>{t('workbench.data.openDetails')}</button>
+            <button type="button" className={css.secondary} onClick={onOpenDetails}>{t('workbench.data.openDetails')}</button>
           </div>
         </header>
         <div className={css.sourceGrid}>
@@ -105,10 +114,24 @@ export function TenderDataOverview({
         <div className={css.scopeNotice}>{t('workbench.data.factBoundary')}</div>
       </section>
 
-      <section className={css.nextSuggestion}>
+      <form className={css.nextSuggestion} onSubmit={(event) => { event.preventDefault(); onContinue() }}>
         <div><strong>{t('workbench.data.nextTitle')}</strong><p>{t('workbench.data.nextDescription')}</p></div>
-        <button type="button" className={css.secondary} onClick={onContinue}>{t('workbench.data.continue')}</button>
-      </section>
+        <button
+          type="submit"
+          className={css.primary}
+          data-write-button="rules.propose"
+          disabled={write.busy}
+          aria-busy={write.state.action === 'rules.propose' && write.busy}
+          aria-describedby={write.busy ? writeReasonId : undefined}
+          title={write.busy ? t('workbench.write.busyReason', {
+            action: sessionWriteProgressText(t, write.state) ?? t('workbench.rules.waitingAgent'),
+          }) : undefined}
+          onClick={onContinue}
+        >
+          <SessionWriteButtonLabel action="rules.propose" idle={t('workbench.data.continue')} t={t} write={write} />
+        </button>
+      </form>
+      <SessionWriteProgress id={writeReasonId} t={t} write={write} />
     </section>
   )
 }
@@ -121,10 +144,10 @@ interface TenderDataDetailsProps {
   readonly t: TenderTranslate
 }
 
-function fieldBadge(row: NormalizedProjectV1, t: TenderTranslate): string {
-  if (row.disclosure.unparseableFields.length > 0) return t('workbench.data.status.unparseable')
-  if (row.disclosure.missingFields.length > 0) return t('workbench.data.status.missing')
-  return t('workbench.data.status.normalized')
+function fieldBadgeStatus(row: NormalizedProjectV1): 'normalized' | 'missing' | 'unparseable' {
+  if (row.disclosure.unparseableFields.length > 0) return 'unparseable'
+  if (row.disclosure.missingFields.length > 0) return 'missing'
+  return 'normalized'
 }
 
 function dateDisplay(row: NormalizedProjectV1, field: 'publishedAt' | 'deadline', t: TenderTranslate): string {
@@ -133,7 +156,24 @@ function dateDisplay(row: NormalizedProjectV1, field: 'publishedAt' | 'deadline'
   return value.value ?? value.original
 }
 
+function amountDisplay(row: NormalizedProjectV1, t: TenderTranslate): string {
+  if (row.amount.parseStatus === 'missing') return t('workbench.data.value.missing')
+  return row.amount.display || row.amount.original || t('workbench.data.value.missing')
+}
+
+function sourceLink(row: NormalizedProjectV1): string | undefined {
+  const candidate = row.announcements.find(announcement => announcement.sourceLink !== undefined)?.sourceLink
+  if (candidate === undefined) return undefined
+  try {
+    const url = new URL(candidate)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: TenderDataDetailsProps) {
+  const recordDetailId = useId()
   const [page, setPage] = useState(1)
   const [query, setQuery] = useState('')
   const [source, setSource] = useState<ArtifactRowsFilterV1['source']>()
@@ -141,6 +181,9 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
   const [sort, setSort] = useState<NonNullable<ArtifactRowsFilterV1['sort']>>('published-desc')
   const [data, setData] = useState<ArtifactRowsPageV1>()
   const [failed, setFailed] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [requestVersion, setRequestVersion] = useState(0)
+  const [selectedRecordId, setSelectedRecordId] = useState<string>()
   const filter = useMemo<ArtifactRowsFilterV1>(() => ({
     page,
     pageSize: 50,
@@ -153,22 +196,37 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
   useEffect(() => {
     const abort = new AbortController()
     setFailed(false)
-    void loadRows(sessionId, artifact, filter, abort.signal).then(setData, () => {
-      if (!abort.signal.aborted) setFailed(true)
+    setLoading(true)
+    void loadRows(sessionId, artifact, filter, abort.signal).then((result) => {
+      if (!abort.signal.aborted) {
+        setData(result)
+        setLoading(false)
+      }
+    }, () => {
+      if (!abort.signal.aborted) {
+        setFailed(true)
+        setLoading(false)
+      }
     })
     return () => { abort.abort() }
-  }, [artifact, filter, loadRows, sessionId])
+  }, [artifact, filter, loadRows, requestVersion, sessionId])
+
+  useEffect(() => {
+    setSelectedRecordId(undefined)
+  }, [filter, sessionId])
 
   const maximumPage = Math.max(1, Math.ceil((data?.total ?? 0) / 50))
+  const selectedRow = data?.rows.find(row => row.recordId === selectedRecordId)
+  const selectedSourceLink = selectedRow === undefined ? undefined : sourceLink(selectedRow)
   const resetPage = () => { setPage(1) }
   return (
     <section className={css.dataView} aria-label={t('workbench.data.details')}>
       <button type="button" className={css.backButton} onClick={onBack}>← {t('workbench.data.back')}</button>
       <header className={css.pageHeading}>
-        <div><p className={css.eyebrow}>Data details</p><h2>{t('workbench.data.details')}</h2><p>{t('workbench.data.detailsDescription')}</p></div>
+        <div><p className={css.eyebrow}>{t('workbench.data.detailsEyebrow')}</p><h2>{t('workbench.data.details')}</h2><p>{t('workbench.data.detailsDescription')}</p></div>
         <div className={css.contextChips}><span>{t('workbench.data.rows', { count: data?.total ?? artifact.rowCount ?? 0 })}</span></div>
       </header>
-      <section className={css.dataCard}>
+      <section className={css.dataCard} aria-busy={loading}>
         <div className={css.detailToolbar}>
           <input
             type="search"
@@ -187,23 +245,71 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
             <option value="published-desc">{t('workbench.data.sort.published')}</option><option value="amount-desc">{t('workbench.data.sort.amount')}</option><option value="deadline-asc">{t('workbench.data.sort.deadline')}</option>
           </select>
         </div>
-        {failed ? <div className={css.dataError} role="alert">{t('workbench.data.loadFailed')}</div> : data === undefined ? <div className={css.dataLoading} role="status">{t('workbench.data.loading')}</div> : (
+        {failed ? (
+          <div className={css.dataError} role="alert">
+            <strong>{t('workbench.data.loadFailedTitle')}</strong>
+            <span>{t('workbench.data.loadFailed')}</span>
+            <button type="button" className={css.secondary} onClick={() => { setRequestVersion(value => value + 1) }}>{t('workbench.data.retry')}</button>
+          </div>
+        ) : data === undefined ? <div className={css.dataLoading} role="status">{t('workbench.data.loading')}</div> : data.rows.length === 0 ? (
+          <div className={css.dataEmpty} role="status">
+            <strong>{t('workbench.data.emptyTitle')}</strong>
+            <span>{t('workbench.data.emptyDescription')}</span>
+          </div>
+        ) : (
           <>
+            {loading && <div className={css.inlineLoading} role="status">{t('workbench.data.loading')}</div>}
             <div className={css.dataTableWrap}>
               <table className={css.dataTable}>
-                <thead><tr><th>{t('workbench.data.column.source')}</th><th>{t('workbench.data.column.project')}</th><th>{t('workbench.data.column.stage')}</th><th>{t('workbench.data.column.region')}</th><th>{t('workbench.data.column.party')}</th><th>{t('workbench.data.column.amount')}</th><th>{t('workbench.data.column.published')}</th><th>{t('workbench.data.column.deadline')}</th><th>{t('workbench.data.column.status')}</th></tr></thead>
+                <thead><tr><th>{t('workbench.data.column.source')}</th><th>{t('workbench.data.column.project')}</th><th>{t('workbench.data.column.stage')}</th><th>{t('workbench.data.column.region')}</th><th>{t('workbench.data.column.party')}</th><th>{t('workbench.data.column.amount')}</th><th>{t('workbench.data.column.published')}</th><th>{t('workbench.data.column.deadline')}</th><th>{t('workbench.data.column.status')}</th><th>{t('workbench.data.column.action')}</th></tr></thead>
                 <tbody>{data.rows.map(row => (
-                  <tr key={row.recordId}>
-                    <td><span className={css.sourceTag} data-source={row.source}>{t(`workbench.data.source.${row.source}`)}</span></td>
-                    <td><strong>{row.title}</strong><small>{row.projectNumber.value ?? row.sourceId}</small></td>
-                    <td>{(row.stage.value ?? row.stage.original) || t('workbench.data.value.missing')}</td>
-                    <td>{(row.region.value ?? row.region.original) || t('workbench.data.value.missing')}</td>
-                    <td>{row.counterparty.value ?? t('workbench.data.value.missing')}</td>
-                    <td>{row.amount.display}</td>
-                    <td>{dateDisplay(row, 'publishedAt', t)}</td>
-                    <td>{dateDisplay(row, 'deadline', t)}</td>
-                    <td><span className={css.fieldStatus} data-field-status={fieldBadge(row, t)}>{fieldBadge(row, t)}</span></td>
-                  </tr>
+                  <Fragment key={row.recordId}>
+                    <tr>
+                      <td><span className={css.sourceTag} data-source={row.source}>{t(`workbench.data.source.${row.source}`)}</span></td>
+                      <td><strong>{row.title}</strong><small>{row.projectNumber.value ?? row.sourceId}</small></td>
+                      <td>{(row.stage.value ?? row.stage.original) || t('workbench.data.value.missing')}</td>
+                      <td>{(row.region.value ?? row.region.original) || t('workbench.data.value.missing')}</td>
+                      <td>{row.counterparty.value ?? t('workbench.data.value.missing')}</td>
+                      <td>{amountDisplay(row, t)}</td>
+                      <td>{dateDisplay(row, 'publishedAt', t)}</td>
+                      <td>{dateDisplay(row, 'deadline', t)}</td>
+                      <td><span className={css.fieldStatus} data-field-status={fieldBadgeStatus(row)}>{t(`workbench.data.status.${fieldBadgeStatus(row)}`)}</span></td>
+                      <td>
+                        <button
+                          type="button"
+                          className={css.rowAction}
+                          aria-expanded={selectedRecordId === row.recordId}
+                          aria-controls={recordDetailId}
+                          onClick={() => { setSelectedRecordId(current => current === row.recordId ? undefined : row.recordId) }}
+                        >
+                          {selectedRecordId === row.recordId ? t('workbench.data.closeDetail') : t('workbench.data.openRowDetail')}
+                        </button>
+                      </td>
+                    </tr>
+                    {selectedRecordId === row.recordId && (
+                      <tr className={css.recordDetailRow}>
+                        <td colSpan={10}>
+                          <aside id={recordDetailId} className={css.recordDetail} aria-label={t('workbench.data.recordDetail')}>
+                            <header>
+                              <div><span>{t(`workbench.data.source.${row.source}`)}</span><h3>{row.title}</h3></div>
+                              <button type="button" className={css.secondary} onClick={() => { setSelectedRecordId(undefined) }}>{t('workbench.data.closeDetail')}</button>
+                            </header>
+                            <dl>
+                              <div><dt>{t('workbench.data.detail.projectNumber')}</dt><dd>{(row.projectNumber.value ?? row.projectNumber.original) || t('workbench.data.value.missing')}</dd></div>
+                              <div><dt>{t('workbench.data.detail.fieldStatus')}</dt><dd>{t(`workbench.data.status.${fieldBadgeStatus(row)}`)}</dd></div>
+                              <div><dt>{t('workbench.data.detail.normalizedStage')}</dt><dd>{row.stage.value ?? t('workbench.data.value.missing')}</dd></div>
+                              <div><dt>{t('workbench.data.detail.sourceStage')}</dt><dd>{row.stage.original || t('workbench.data.value.missing')}</dd></div>
+                              <div><dt>{t('workbench.data.detail.normalizedRegion')}</dt><dd>{row.region.value ?? t('workbench.data.value.missing')}</dd></div>
+                              <div><dt>{t('workbench.data.detail.sourceRegion')}</dt><dd>{row.region.original || t('workbench.data.value.missing')}</dd></div>
+                            </dl>
+                            {selectedSourceLink !== undefined && (
+                              <a className={css.sourceLink} href={selectedSourceLink} target="_blank" rel="noreferrer">{t('workbench.data.openSource')} ↗</a>
+                            )}
+                          </aside>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}</tbody>
               </table>
             </div>

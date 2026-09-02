@@ -112,8 +112,9 @@ dsh plugin --profile web remove dsh-tender-workbench
 - Navigation changes only the local view. It never advances `currentStage`, assumes a contiguous completion prefix, or disables later phases by ordinal position.
 - A completed query is a normal lightweight outcome. The UI does not display “2/7 incomplete”; it offers progressive next steps without selecting a lightweight/full mode in advance.
 - Query completion never creates a rule draft or starts classification. “Continue screening” sends a visible `rules.propose` Intent only after the user clicks it.
-- Repeated “Continue screening” clicks for the same Session, active dataset, and Projection revision are latched to one visible Intent; a failed send or a changed dataset/revision opens a new attempt boundary.
+- Query, rule proposal, Agent adjustment, impact preview, and confirmation share one Session-scoped write flight. Rapid clicks, Enter repeats, and click/submit races create one command and remain locked through send, Agent wait, and matching tool execution; a transport retry reuses the same `commandId`.
 - Agent rule changes must be explicitly applied to the local draft. Local editing never changes persisted business state; an unexpired deterministic preview is required before confirmation.
+- The screening view uses a criteria-list/editor workspace, keeps identifiers and revisions in collapsed technical details, emphasizes one primary action for the current state, and presents preview conclusions and conflicts before a bounded sample set.
 - Confirmed classification exposes mutually exclusive totals, source/rule/conflict/disclosure filters, and per-record traceability. Agent recommendations and user decisions are absent until S4.
 - The input shortcut always selects the “Find opportunities” phase. Sidebar and Header entries reopen the same Session Tab without duplicating the workbench.
 - When no Session is selected, the sidebar entry invokes the native New Session flow.

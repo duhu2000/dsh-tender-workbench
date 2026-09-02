@@ -21,6 +21,7 @@ import {
 } from '../tender-projection-port.ts'
 import {
   TENDER_WORKBENCH_PHASES,
+  tenderWorkbenchPhaseForStage,
   tenderWorkbenchPhaseProgress,
   useTenderWorkbenchNavigation,
   type WorkbenchPhaseIcon,
@@ -30,9 +31,14 @@ import {
 import {
   hasCompletedLightweightQuery,
   tenderWorkbenchDisplayStatus,
-  type PendingTenderIntent,
   type TenderWorkbenchDisplayStatus,
 } from './workbench-status.ts'
+import { useSessionWriteFlight } from './session-write-flight.ts'
+import {
+  SessionWriteButtonLabel,
+  SessionWriteProgress,
+  sessionWriteProgressText,
+} from './SessionWriteProgress.tsx'
 import {
   TenderDataDetails,
   TenderDataOverview,
@@ -141,34 +147,43 @@ export function TenderWorkbenchView({
   const [scope, setScope] = useState<TenderQueryIntentV1['scope']>('tender')
   const [target, setTarget] = useState('')
   const [keywords, setKeywords] = useState('')
-  const [pending, setPending] = useState<PendingTenderIntent>()
-  const [submitting, setSubmitting] = useState(false)
   const [validationError, setValidationError] = useState<string>()
-  const [sendFailed, setSendFailed] = useState(false)
+  const [validationField, setValidationField] = useState<'target' | 'keywords'>()
   const [opportunityView, setOpportunityView] = useState<'form' | 'overview' | 'details'>('overview')
   const [screeningView, setScreeningView] = useState<'rules' | 'classification'>('rules')
   const phaseTabs = useRef<Partial<Record<WorkbenchPhase, HTMLButtonElement | null>>>({})
-  const proposalRequestKey = useRef<string>()
+  const screeningTabs = useRef<Partial<Record<'rules' | 'classification', HTMLButtonElement | null>>>({})
+  const bodyRef = useRef<HTMLDivElement>(null)
   const navigationId = useId()
+  const screeningNavigationId = useId()
   const queryFormId = useId()
+  const queryErrorId = useId()
+  const queryDisabledReasonId = useId()
   useTenderWorkbenchNavigation(navigation, sessionId, setSelectedPhase)
-
-  useEffect(() => {
-    if (pending === undefined || workflow === undefined) return
-    const pendingStage = pending.stage ?? 'query'
-    const operationFailed = workflow.stages[pendingStage].status === 'failed'
-    const completed = workflow.revision > pending.revision
-    if (operationFailed || completed) setPending(undefined)
-    if (pendingStage === 'query' && completed && !operationFailed && workflow.query?.normalizedData !== undefined) setOpportunityView('overview')
-  }, [pending, workflow])
-
-  const status = tenderWorkbenchDisplayStatus(projection, pending, sendFailed)
+  const write = useSessionWriteFlight({ sessionId, workflow, sendIntent, createCommandId })
+  const writeStage: 'query' | 'rules' | 'classification' = write.state.action === 'query'
+    ? 'query'
+    : write.state.action === 'rules.confirm'
+      ? 'classification'
+      : 'rules'
+  const writePending = write.state.action === undefined || !write.busy
+    ? undefined
+    : { commandId: write.state.commandId ?? '', revision: workflow?.revision ?? 0, stage: writeStage }
+  const status = tenderWorkbenchDisplayStatus(
+    projection,
+    writePending,
+    write.state.phase === 'failed',
+  )
   const capabilityAvailable = projection.status === 'empty' || projection.status === 'ready'
   const queryCompleted = hasCompletedLightweightQuery(workflow)
   const activeDataset = workflow?.query?.normalizedData
   useEffect(() => {
-    proposalRequestKey.current = undefined
-  }, [activeDataset?.id, sessionId, workflow?.revision])
+    if (
+      write.state.action === 'query'
+      && write.state.phase === 'succeeded'
+      && workflow?.query?.normalizedData !== undefined
+    ) setOpportunityView('overview')
+  }, [workflow?.query?.normalizedData?.id, write.state.action, write.state.phase])
   const replacementRequired = activeDataset !== undefined
     || workflow?.rules !== undefined
     || workflow?.classification !== undefined
@@ -178,6 +193,7 @@ export function TenderWorkbenchView({
   const lightweightFailure = workflow?.stages.query.errorMessage
     ?? workflow?.stages.overview.errorMessage
   const selectedPhaseConfig = TENDER_WORKBENCH_PHASES.find(phase => phase.id === selectedPhase)
+  const recommendedPhase = tenderWorkbenchPhaseForStage(workflow?.currentStage)
   const selectPhaseFromKeyboard = (
     event: KeyboardEvent<HTMLButtonElement>,
     phase: WorkbenchPhase,
@@ -202,54 +218,77 @@ export function TenderWorkbenchView({
   }
   const submit = async (): Promise<void> => {
     setValidationError(undefined)
-    setSendFailed(false)
+    setValidationField(undefined)
     const trimmedTarget = target.trim()
     const keywordCount = keywords.split(/[\s,，、]+/u).filter(Boolean).length
     if (trimmedTarget === '') {
       setValidationError(t('workbench.query.targetRequired'))
+      setValidationField('target')
       return
     }
     if (keywordCount > 10) {
       setValidationError(t('error.keywordLimit'))
+      setValidationField('keywords')
       return
     }
-    setSubmitting(true)
     try {
-      const intent = createTenderQueryIntent({ scope, target: trimmedTarget, keywords }, createCommandId())
-      await sendIntent(intent)
-      setPending({ commandId: intent.commandId, revision: workflow?.revision ?? 0, stage: 'query' })
+      write.start('query', commandId => createTenderQueryIntent({
+        scope,
+        target: trimmedTarget,
+        keywords,
+      }, commandId))
     } catch {
-      setSendFailed(true)
-    } finally {
-      setSubmitting(false)
+      setValidationError(t('workbench.sendFailed'))
     }
   }
-  const requestRules = async (): Promise<void> => {
+  const requestRules = (): void => {
     if (activeDataset === undefined || workflow === undefined) return
-    const requestKey = `${String(sessionId)}:${activeDataset.id}:${workflow.revision}`
-    if (proposalRequestKey.current === requestKey) return
-    proposalRequestKey.current = requestKey
-    setSelectedPhase('screening')
-    setScreeningView('rules')
-    setSendFailed(false)
-    const intent = createContinueScreeningIntent({
-      commandId: createCommandId(),
+    const started = write.start('rules.propose', commandId => createContinueScreeningIntent({
+      commandId,
       activeDatasetRef: activeDataset.id,
       projectionRevision: workflow.revision,
-    })
-    setPending({ commandId: intent.commandId, revision: workflow.revision, stage: 'rules' })
-    try {
-      await sendIntent(intent)
-    } catch {
-      proposalRequestKey.current = undefined
-      setPending(undefined)
-      setSendFailed(true)
+    }))
+    if (started) {
+      setSelectedPhase('screening')
+      setScreeningView('rules')
     }
   }
 
   useEffect(() => {
     if (workflow?.classification !== undefined) setScreeningView('classification')
   }, [workflow?.classification?.data.id])
+
+  useEffect(() => {
+    const body = bodyRef.current
+    if (body !== null && typeof body.scrollTo === 'function') body.scrollTo({ top: 0, left: 0 })
+  }, [opportunityView, screeningView, selectedPhase, sessionId])
+
+  const queryDisabledReason = !capabilityAvailable
+    ? t('workbench.query.disabled.capability')
+    : write.busy
+      ? t('workbench.write.busyReason', {
+        action: sessionWriteProgressText(t, write.state) ?? t('workbench.query.disabled.running'),
+      })
+      : undefined
+
+  const selectScreeningViewFromKeyboard = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    view: 'rules' | 'classification',
+  ): void => {
+    const views = ['rules', 'classification'] as const
+    const currentIndex = views.indexOf(view)
+    let nextIndex: number | undefined
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % views.length
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + views.length) % views.length
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = views.length - 1
+    if (nextIndex === undefined) return
+    event.preventDefault()
+    const nextView = views[nextIndex]
+    if (nextView === undefined) return
+    setScreeningView(nextView)
+    screeningTabs.current[nextView]?.focus()
+  }
 
   return (
     <section
@@ -284,6 +323,7 @@ export function TenderWorkbenchView({
         {TENDER_WORKBENCH_PHASES.map(phase => {
           const progress = tenderWorkbenchPhaseProgress(workflow, phase.id)
           const selected = phase.id === selectedPhase
+          const recommended = phase.id === recommendedPhase && phase.implemented
           return (
             <button
               key={phase.id}
@@ -293,24 +333,34 @@ export function TenderWorkbenchView({
               role="tab"
               className={selected ? `${css.stage} ${css.stageSelected}` : css.stage}
               aria-label={t(phase.labelKey)}
+              aria-describedby={`${navigationId}-${phase.id}-status`}
               aria-selected={selected}
+              aria-current={recommended ? 'step' : undefined}
               aria-controls={`${navigationId}-${phase.id}-panel`}
               tabIndex={selected ? 0 : -1}
               data-phase-status={progress}
+              data-phase-selected={selected ? 'true' : 'false'}
+              data-phase-recommended={recommended ? 'true' : 'false'}
               onClick={() => { setSelectedPhase(phase.id) }}
               onKeyDown={(event) => { selectPhaseFromKeyboard(event, phase.id) }}
             >
               <span className={css.stageIcon} aria-hidden="true"><WorkbenchIcon name={phase.icon} /></span>
               <span className={css.stageCopy}>
                 <strong>{t(phase.labelKey)}</strong>
-                <small aria-hidden="true">{t(`workbench.phaseStatus.${progress}`)}</small>
+                <small id={`${navigationId}-${phase.id}-status`}>
+                  {selected
+                    ? t('workbench.phaseView.selected', { status: t(`workbench.phaseStatus.${progress}`) })
+                    : recommended
+                      ? t('workbench.phaseView.recommended', { status: t(`workbench.phaseStatus.${progress}`) })
+                      : t(`workbench.phaseStatus.${progress}`)}
+                </small>
               </span>
             </button>
           )
         })}
       </nav>
 
-      <div className={css.body}>
+      <div ref={bodyRef} className={css.body}>
         {(projection.status === 'unavailable' || projection.status === 'invalid') && (
           <WorkbenchFeedback tone="error" title={t('workbench.capability.title')} role="alert">
             {t(projection.status === 'invalid'
@@ -347,7 +397,8 @@ export function TenderWorkbenchView({
               workflow={workflow}
               onOpenDetails={() => { setOpportunityView('details') }}
               onRequery={() => { setOpportunityView('form') }}
-              onContinue={() => { void requestRules() }}
+              onContinue={requestRules}
+              write={write}
               t={t}
             />
           </section>
@@ -375,7 +426,7 @@ export function TenderWorkbenchView({
               id={queryFormId}
               className={css.queryCard}
               aria-label={t('workbench.query.formTitle')}
-              aria-busy={submitting || status === 'running'}
+              aria-busy={write.busy}
               onSubmit={(event) => { event.preventDefault(); void submit() }}
             >
               <div className={css.scopeSurface}>
@@ -391,11 +442,36 @@ export function TenderWorkbenchView({
                       type="button"
                       aria-pressed={scope === value}
                       className={scope === value ? `${css.scopeButton} ${css.scopeSelected}` : css.scopeButton}
+                      disabled={write.busy}
                       onClick={() => { setScope(value) }}
                     >{t(`workbench.query.scope.${value}`)}</button>
                   ))}
                 </fieldset>
               </div>
+
+              <details className={css.executionPlan}>
+                <summary>
+                  <span>
+                    <strong>{t('workbench.query.planTitle')}</strong>
+                    <small>{t('workbench.query.planDescription')}</small>
+                  </span>
+                  <span>{t(`workbench.query.scope.${scope}`)}</span>
+                </summary>
+                <dl>
+                  <div>
+                    <dt>{t('workbench.query.planSource')}</dt>
+                    <dd>{t(`workbench.query.scope.${scope}`)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('workbench.query.planExecution')}</dt>
+                    <dd>{t('workbench.query.planExecutionValue')}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('workbench.query.planBoundary')}</dt>
+                    <dd>{t('workbench.query.planBoundaryValue')}</dd>
+                  </div>
+                </dl>
+              </details>
 
               <div className={css.formSection}>
                 <div className={css.formSectionHeading}>
@@ -410,11 +486,14 @@ export function TenderWorkbenchView({
                   <span>{t('workbench.query.target')}</span>
                   <textarea
                     aria-label={t('workbench.query.target')}
+                    aria-invalid={validationField === 'target'}
+                    aria-describedby={validationField === 'target' ? queryErrorId : undefined}
                     rows={3}
                     maxLength={2_048}
                     value={target}
+                    disabled={write.busy}
                     placeholder={t('workbench.query.targetPlaceholder')}
-                    onChange={(event) => { setTarget(event.target.value); setValidationError(undefined) }}
+                    onChange={(event) => { setTarget(event.target.value); setValidationError(undefined); setValidationField(undefined) }}
                   />
                 </label>
 
@@ -422,14 +501,17 @@ export function TenderWorkbenchView({
                   <span>{t('field.keywords')}</span>
                   <input
                     aria-label={t('field.keywords')}
+                    aria-invalid={validationField === 'keywords'}
+                    aria-describedby={validationField === 'keywords' ? queryErrorId : undefined}
                     value={keywords}
+                    disabled={write.busy}
                     placeholder={t('field.keywords.placeholder')}
-                    onChange={(event) => { setKeywords(event.target.value); setValidationError(undefined) }}
+                    onChange={(event) => { setKeywords(event.target.value); setValidationError(undefined); setValidationField(undefined) }}
                   />
                   <small>{t('workbench.query.keywordsHint')}</small>
                 </label>
 
-                {validationError !== undefined && <p className={css.fieldError} role="alert">{validationError}</p>}
+                {validationError !== undefined && <p id={queryErrorId} className={css.fieldError} role="alert">{validationError}</p>}
               </div>
 
               <div className={css.feedbackStack}>
@@ -438,21 +520,7 @@ export function TenderWorkbenchView({
                     {t('workbench.query.replacementWarning')}
                   </WorkbenchFeedback>
                 )}
-                {sendFailed && (
-                  <WorkbenchFeedback tone="error" title={t('workbench.status.failed')} role="alert">
-                    {t('workbench.sendFailed')}
-                  </WorkbenchFeedback>
-                )}
-                {status === 'waiting-agent' && (
-                  <WorkbenchFeedback tone="notice" title={t('workbench.status.waiting-agent')} role="status">
-                    {t('workbench.waitingAgent')}
-                  </WorkbenchFeedback>
-                )}
-                {status === 'running' && (
-                  <WorkbenchFeedback tone="progress" title={t('workbench.status.running')} role="status">
-                    {t('workbench.running')}
-                  </WorkbenchFeedback>
-                )}
+                <SessionWriteProgress t={t} write={write} />
                 {status === 'failed' && lightweightFailure !== undefined && (
                   <WorkbenchFeedback tone="error" title={t('workbench.status.failed')} role="alert">
                     {lightweightFailure}
@@ -476,33 +544,50 @@ export function TenderWorkbenchView({
           >
             {workflow.classification !== undefined && (
               <div className={css.subNavigation} role="tablist" aria-label={t('workbench.screening.views')}>
-                <button type="button" role="tab" aria-selected={screeningView === 'rules'} onClick={() => { setScreeningView('rules') }}>{t('workbench.rules.title')}</button>
-                <button type="button" role="tab" aria-selected={screeningView === 'classification'} onClick={() => { setScreeningView('classification') }}>{t('workbench.classification.title')}</button>
+                {(['rules', 'classification'] as const).map(view => (
+                  <button
+                    key={view}
+                    ref={(element) => { screeningTabs.current[view] = element }}
+                    id={`${screeningNavigationId}-${view}-tab`}
+                    type="button"
+                    role="tab"
+                    aria-selected={screeningView === view}
+                    aria-controls={`${screeningNavigationId}-${view}-panel`}
+                    tabIndex={screeningView === view ? 0 : -1}
+                    onClick={() => { setScreeningView(view) }}
+                    onKeyDown={(event) => { selectScreeningViewFromKeyboard(event, view) }}
+                  >
+                    {t(view === 'rules' ? 'workbench.rules.title' : 'workbench.classification.title')}
+                  </button>
+                ))}
               </div>
             )}
-            {screeningView === 'classification' && workflow.classification !== undefined ? (
-              <TenderClassificationView
-                key={`${sessionId}:${workflow.classification.data.id}`}
-                sessionId={sessionId}
-                workflow={workflow}
-                loadRows={loadClassifiedRows}
-                loadContent={loadRuleContent}
-                t={t}
-              />
-            ) : (
-              <TenderRulesView
-                key={`${sessionId}:${activeDataset.id}`}
-                sessionId={sessionId}
-                workflow={workflow}
-                loadContent={loadRuleContent}
-                sendIntent={sendIntent}
-                createCommandId={createCommandId}
-                proposalPending={pending?.stage === 'rules'}
-                proposalFailed={sendFailed}
-                onRequestProposal={() => { void requestRules() }}
-                t={t}
-              />
-            )}
+            <div
+              id={`${screeningNavigationId}-${screeningView}-panel`}
+              role={workflow.classification !== undefined ? 'tabpanel' : undefined}
+              aria-labelledby={workflow.classification !== undefined ? `${screeningNavigationId}-${screeningView}-tab` : undefined}
+            >
+              {screeningView === 'classification' && workflow.classification !== undefined ? (
+                <TenderClassificationView
+                  key={`${sessionId}:${workflow.classification.data.id}`}
+                  sessionId={sessionId}
+                  workflow={workflow}
+                  loadRows={loadClassifiedRows}
+                  loadContent={loadRuleContent}
+                  t={t}
+                />
+              ) : (
+                <TenderRulesView
+                  key={`${sessionId}:${activeDataset.id}`}
+                  sessionId={sessionId}
+                  workflow={workflow}
+                  loadContent={loadRuleContent}
+                  write={write}
+                  onRequestProposal={requestRules}
+                  t={t}
+                />
+              )}
+            </div>
           </section>
         ) : (
           <section
@@ -516,7 +601,7 @@ export function TenderWorkbenchView({
               <div>
                 <p className={css.eyebrow}>{t('workbench.phase.workspace')}</p>
                 <h2>{t(selectedPhaseConfig?.labelKey ?? 'workbench.phase.opportunity')}</h2>
-                <p>{t('workbench.phase.empty')}</p>
+                <p>{t(selectedPhaseConfig?.implemented === false ? 'workbench.phase.unavailable' : 'workbench.phase.empty')}</p>
               </div>
               <span className={css.stageState} data-phase-status={tenderWorkbenchPhaseProgress(workflow, selectedPhase)}>
                 {t(`workbench.phaseStatus.${tenderWorkbenchPhaseProgress(workflow, selectedPhase)}`)}
@@ -526,24 +611,32 @@ export function TenderWorkbenchView({
               <span className={css.emptyIcon} aria-hidden="true">
                 <WorkbenchIcon name={selectedPhaseConfig?.icon ?? 'search'} />
               </span>
-              <h3>{t('workbench.phase.emptyTitle')}</h3>
-              <p>{t('workbench.stage.empty')}</p>
+              <h3>{t(selectedPhaseConfig?.implemented === false ? 'workbench.phase.unavailableTitle' : 'workbench.phase.emptyTitle')}</h3>
+              <p>{t(selectedPhaseConfig?.implemented === false ? 'workbench.phase.unavailableDescription' : 'workbench.stage.empty')}</p>
             </div>
           </section>
         )}
       </div>
 
       <footer className={css.footer}>
-        <span className={css.footerHint}>{t('workbench.footerHint')}</span>
+        <div className={css.footerCopy}>
+          <span className={css.footerHint}>{t('workbench.footerHint')}</span>
+          {selectedPhase === 'opportunity' && queryDisabledReason !== undefined && (
+            <span id={queryDisabledReasonId} className={css.disabledReason}>{queryDisabledReason}</span>
+          )}
+        </div>
         {selectedPhase === 'opportunity' && (activeDataset === undefined || opportunityView === 'form') && (
           <button
             type="submit"
             form={queryFormId}
             className={css.primary}
-            disabled={!capabilityAvailable || submitting || status === 'running'}
+            data-write-button="query"
+            disabled={!capabilityAvailable || write.busy}
+            aria-describedby={queryDisabledReason === undefined ? undefined : queryDisabledReasonId}
+            aria-busy={write.state.action === 'query' && write.busy}
+            title={queryDisabledReason}
           >
-            <span>{submitting ? t('workbench.sending') : t('workbench.query.submit')}</span>
-            <span aria-hidden="true">→</span>
+            <SessionWriteButtonLabel action="query" idle={t('workbench.query.submit')} t={t} write={write} />
           </button>
         )}
       </footer>
@@ -565,6 +658,7 @@ export function TenderWorkbenchTab(props: TenderWorkbenchTabProps) {
   const projection = useTenderProjection(props.projectionPort, sessionId, props.visible)
   return (
     <TenderWorkbenchView
+      key={String(sessionId)}
       sessionId={sessionId}
       projection={projection}
       navigation={props.navigation}
