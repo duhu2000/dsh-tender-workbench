@@ -69,6 +69,7 @@ export function tenderWorkbenchPhaseProgress(
   if (statuses.includes('blocked')) return 'blocked'
   if (config.completionNode !== undefined && projection.stages[config.completionNode].status === 'succeeded') return 'completed'
   if (statuses.includes('succeeded')) return 'progress'
+  if (phase === 'decision' && projection.stages.classification.status === 'succeeded') return 'progress'
   return 'not-started'
 }
 

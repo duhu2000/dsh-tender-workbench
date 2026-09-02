@@ -101,12 +101,13 @@ describe('TenderWorkbench S1a shell', () => {
 
   it('renders the S1a visual shell hierarchy without fabricating later-stage content', () => {
     const { container } = renderWorkbench()
-    expect(container.querySelector('[data-visual-shell="s4"]')).toBeTruthy()
+    expect(container.querySelector('[data-visual-shell="s5-refined"]')).toBeTruthy()
     expect(screen.getByText(zh['workbench.subtitle'])).toBeTruthy()
     expect(screen.getByText(zh['workbench.query.eyebrow'])).toBeTruthy()
     expect(screen.getByRole('form', { name: zh['workbench.query.formTitle'] })).toBeTruthy()
     expect(screen.getByText(zh['workbench.query.editHint'])).toBeTruthy()
-    expect(screen.getByText('query.start')).toBeTruthy()
+    expect(screen.queryByText('query.start')).toBeNull()
+    expect(screen.getByText(zh['workbench.query.planIndependent'])).toBeTruthy()
     expect(screen.getByText(zh['workbench.query.planTitle'])).toBeTruthy()
 
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
@@ -336,6 +337,22 @@ describe('TenderWorkbench S1a shell', () => {
     expect(nonPrefix.stages.rules.status).toBe('not-started')
   })
 
+  it('marks human review as available when classified records are ready', () => {
+    const base = createEmptyTenderWorkflowProjection()
+    const classified = {
+      ...base,
+      currentStage: 'review' as const,
+      stages: {
+        ...base.stages,
+        classification: { status: 'succeeded' as const },
+      },
+    }
+    expect(tenderWorkbenchPhaseProgress(classified, 'decision')).toBe('progress')
+    renderWorkbench({ status: 'ready', projection: classified })
+    expect(screen.getByRole('tab', { name: zh['workbench.phase.decision'] })
+      .getAttribute('data-phase-status')).toBe('progress')
+  })
+
   it('treats query and overview completion as a normal lightweight outcome', () => {
     const base = createEmptyTenderWorkflowProjection()
     const queryComplete = {
@@ -456,10 +473,11 @@ describe('TenderWorkbench S1a shell', () => {
     expect(await screen.findByRole('heading', { name: zh['workbench.data.details'] })).toBeTruthy()
     expect(await screen.findByText('数据治理平台项目')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.openRowDetail'] }))
+    expect(document.activeElement).toBe(screen.getByLabelText(zh['workbench.data.recordDetail']))
     expect(screen.getByRole('link', { name: /打开来源记录/u }).getAttribute('href')).toBe('https://example.test/tender/t-1')
     expect(screen.getByText(zh['workbench.data.detail.sourceRegion'])).toBeTruthy()
     expect(loadRows).toHaveBeenCalledWith('session-1', normalizedData, expect.objectContaining({ page: 1, pageSize: 50 }), expect.any(AbortSignal))
-    fireEvent.change(screen.getByLabelText(zh['workbench.data.filterSource']), { target: { value: 'tender' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.source.tender'], pressed: false }))
     await waitFor(() => { expect(loadRows).toHaveBeenLastCalledWith('session-1', normalizedData, expect.objectContaining({ source: 'tender' }), expect.any(AbortSignal)) })
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.next'] }))
     await waitFor(() => { expect(loadRows).toHaveBeenLastCalledWith('session-1', normalizedData, expect.objectContaining({ page: 2 }), expect.any(AbortSignal)) })

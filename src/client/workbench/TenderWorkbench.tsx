@@ -59,6 +59,7 @@ import {
   type ReviewRowsLoader,
 } from './TenderAnalysisReviewViews.tsx'
 import { TenderReportView, type ReportArtifactDownloader } from './TenderReportView.tsx'
+import { PageHeader, StatePanel, StatusPill } from './WorkbenchPrimitives.tsx'
 import css from './tender-workbench.module.css'
 
 export { tenderWorkbenchDisplayStatus }
@@ -147,7 +148,7 @@ function WorkbenchFeedback({ tone, title, children, role }: WorkbenchFeedbackPro
   )
 }
 
-/** S4 vertical slice: S1-S3 data/classification plus optional analysis and independent review. */
+/** S1-S5 workbench: persistent business facts with local, disposable view state. */
 export function TenderWorkbenchView({
   sessionId,
   projection,
@@ -330,7 +331,7 @@ export function TenderWorkbenchView({
       className={css.shell}
       aria-label={t('workbench.title')}
       data-workbench-status={status}
-      data-visual-shell="s4"
+      data-visual-shell="s5-refined"
     >
       <header className={css.header}>
         <div className={css.brandBlock}>
@@ -347,9 +348,6 @@ export function TenderWorkbenchView({
           <span className={css.status} data-status={status}>
             <span aria-hidden="true" />
             {t(`workbench.status.${status}`)}
-          </span>
-          <span className={css.session} title={t('workbench.session', { sessionId })}>
-            {t('workbench.session', { sessionId })}
           </span>
         </div>
       </header>
@@ -382,13 +380,7 @@ export function TenderWorkbenchView({
               <span className={css.stageIcon} aria-hidden="true"><WorkbenchIcon name={phase.icon} /></span>
               <span className={css.stageCopy}>
                 <strong>{t(phase.labelKey)}</strong>
-                <small id={`${navigationId}-${phase.id}-status`}>
-                  {selected
-                    ? t('workbench.phaseView.selected', { status: t(`workbench.phaseStatus.${progress}`) })
-                    : recommended
-                      ? t('workbench.phaseView.recommended', { status: t(`workbench.phaseStatus.${progress}`) })
-                      : t(`workbench.phaseStatus.${progress}`)}
-                </small>
+                <small id={`${navigationId}-${phase.id}-status`}>{t(`workbench.phaseStatus.${progress}`)}</small>
               </span>
             </button>
           )
@@ -445,17 +437,12 @@ export function TenderWorkbenchView({
             aria-labelledby={`${navigationId}-opportunity-tab`}
             tabIndex={0}
           >
-            <header className={css.pageHeading}>
-              <div>
-                <p className={css.eyebrow}>{t('workbench.query.eyebrow')}</p>
-                <h2>{t('workbench.query.title')}</h2>
-                <p>{t('workbench.query.description')}</p>
-              </div>
-              <div className={css.contextChips} aria-hidden="true">
-                <span>{t('workbench.sessionChip')}</span>
-                <span className={css.intentChip}>query.start</span>
-              </div>
-            </header>
+            <PageHeader
+              eyebrow={t('workbench.query.eyebrow')}
+              title={t('workbench.query.title')}
+              description={t('workbench.query.description')}
+              aside={<StatusPill tone="brand">{t('workbench.query.editHint')}</StatusPill>}
+            />
 
             <form
               id={queryFormId}
@@ -464,96 +451,92 @@ export function TenderWorkbenchView({
               aria-busy={write.busy}
               onSubmit={(event) => { event.preventDefault(); void submit() }}
             >
-              <div className={css.scopeSurface}>
-                <div className={css.scopeCopy}>
-                  <strong>{t('workbench.query.scope')}</strong>
-                  <span>{t('workbench.query.scopeDescription')}</span>
+              <div className={css.queryLayout}>
+                <div className={css.queryMain}>
+                  <div className={css.scopeSurface}>
+                    <div className={css.scopeCopy}>
+                      <strong>{t('workbench.query.scope')}</strong>
+                      <span>{t('workbench.query.scopeDescription')}</span>
+                    </div>
+                    <fieldset className={css.scopeGroup}>
+                      <legend>{t('workbench.query.scope')}</legend>
+                      {(['tender', 'proposed', 'combined'] as const).map(value => (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={scope === value}
+                          className={scope === value ? `${css.scopeButton} ${css.scopeSelected}` : css.scopeButton}
+                          disabled={write.busy}
+                          onClick={() => { setScope(value) }}
+                        >{t(`workbench.query.scope.${value}`)}</button>
+                      ))}
+                    </fieldset>
+                  </div>
+
+                  <div className={css.formSection}>
+                    <div className={css.formSectionHeading}>
+                      <div><h3>{t('workbench.query.formTitle')}</h3><p>{t('workbench.query.formDescription')}</p></div>
+                    </div>
+                    <label className={css.field}>
+                      <span>{t('workbench.query.target')}</span>
+                      <textarea
+                        aria-label={t('workbench.query.target')}
+                        aria-invalid={validationField === 'target'}
+                        aria-describedby={validationField === 'target' ? queryErrorId : undefined}
+                        rows={4}
+                        maxLength={2_048}
+                        value={target}
+                        disabled={write.busy}
+                        placeholder={t('workbench.query.targetPlaceholder')}
+                        onChange={(event) => { setTarget(event.target.value); setValidationError(undefined); setValidationField(undefined) }}
+                      />
+                    </label>
+                    <label className={css.field}>
+                      <span>{t('field.keywords')}</span>
+                      <input
+                        aria-label={t('field.keywords')}
+                        aria-invalid={validationField === 'keywords'}
+                        aria-describedby={validationField === 'keywords' ? queryErrorId : undefined}
+                        value={keywords}
+                        disabled={write.busy}
+                        placeholder={t('field.keywords.placeholder')}
+                        onChange={(event) => { setKeywords(event.target.value); setValidationError(undefined); setValidationField(undefined) }}
+                      />
+                      <small>{t('workbench.query.keywordsHint')}</small>
+                    </label>
+                    {validationError !== undefined && <p id={queryErrorId} className={css.fieldError} role="alert">{validationError}</p>}
+                  </div>
                 </div>
-                <fieldset className={css.scopeGroup}>
-                  <legend>{t('workbench.query.scope')}</legend>
-                  {(['tender', 'proposed', 'combined'] as const).map(value => (
-                    <button
-                      key={value}
-                      type="button"
-                      aria-pressed={scope === value}
-                      className={scope === value ? `${css.scopeButton} ${css.scopeSelected}` : css.scopeButton}
-                      disabled={write.busy}
-                      onClick={() => { setScope(value) }}
-                    >{t(`workbench.query.scope.${value}`)}</button>
-                  ))}
-                </fieldset>
-              </div>
 
-              <details className={css.executionPlan}>
-                <summary>
-                  <span>
-                    <strong>{t('workbench.query.planTitle')}</strong>
-                    <small>{t('workbench.query.planDescription')}</small>
-                  </span>
-                  <span>{t(`workbench.query.scope.${scope}`)}</span>
-                </summary>
-                <dl>
-                  <div>
-                    <dt>{t('workbench.query.planSource')}</dt>
-                    <dd>{t(`workbench.query.scope.${scope}`)}</dd>
+                <aside className={css.queryPlan} aria-label={t('workbench.query.planTitle')}>
+                  <div className={css.queryPlanHeading}>
+                    <div><span>{t('workbench.query.planEyebrow')}</span><h3>{t('workbench.query.planTitle')}</h3></div>
+                    <StatusPill tone="brand">{scope === 'combined' ? '2' : '1'} {t('workbench.query.planCalls')}</StatusPill>
                   </div>
-                  <div>
-                    <dt>{t('workbench.query.planExecution')}</dt>
-                    <dd>{t('workbench.query.planExecutionValue')}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('workbench.query.planBoundary')}</dt>
-                    <dd>{t('workbench.query.planBoundaryValue')}</dd>
-                  </div>
-                </dl>
-              </details>
-
-              <div className={css.formSection}>
-                <div className={css.formSectionHeading}>
-                  <div>
-                    <h3>{t('workbench.query.formTitle')}</h3>
-                    <p>{t('workbench.query.formDescription')}</p>
-                  </div>
-                  <span>{t('workbench.query.editHint')}</span>
-                </div>
-
-                <label className={css.field}>
-                  <span>{t('workbench.query.target')}</span>
-                  <textarea
-                    aria-label={t('workbench.query.target')}
-                    aria-invalid={validationField === 'target'}
-                    aria-describedby={validationField === 'target' ? queryErrorId : undefined}
-                    rows={3}
-                    maxLength={2_048}
-                    value={target}
-                    disabled={write.busy}
-                    placeholder={t('workbench.query.targetPlaceholder')}
-                    onChange={(event) => { setTarget(event.target.value); setValidationError(undefined); setValidationField(undefined) }}
-                  />
-                </label>
-
-                <label className={css.field}>
-                  <span>{t('field.keywords')}</span>
-                  <input
-                    aria-label={t('field.keywords')}
-                    aria-invalid={validationField === 'keywords'}
-                    aria-describedby={validationField === 'keywords' ? queryErrorId : undefined}
-                    value={keywords}
-                    disabled={write.busy}
-                    placeholder={t('field.keywords.placeholder')}
-                    onChange={(event) => { setKeywords(event.target.value); setValidationError(undefined); setValidationField(undefined) }}
-                  />
-                  <small>{t('workbench.query.keywordsHint')}</small>
-                </label>
-
-                {validationError !== undefined && <p id={queryErrorId} className={css.fieldError} role="alert">{validationError}</p>}
+                  <p>{t('workbench.query.planDescription')}</p>
+                    <ol className={css.queryCalls}>
+                    {(scope === 'tender' || scope === 'combined') && (
+                      <li><span>1</span><div><strong>{t('workbench.data.source.tender')}</strong><small>{t('workbench.query.planIndependent')}</small></div></li>
+                    )}
+                    {(scope === 'proposed' || scope === 'combined') && (
+                      <li><span>{scope === 'combined' ? '2' : '1'}</span><div><strong>{t('workbench.data.source.proposed')}</strong><small>{t('workbench.query.planIndependent')}</small></div></li>
+                    )}
+                  </ol>
+                  <dl className={css.queryPlanFacts}>
+                    <div><dt>{t('workbench.query.planTarget')}</dt><dd>{target.trim() || t('workbench.query.planPending')}</dd></div>
+                    <div><dt>{t('workbench.query.planKeywords')}</dt><dd>{keywords.split(/[\s,，、]+/u).filter(Boolean).length || t('workbench.query.planNone')}</dd></div>
+                    <div><dt>{t('workbench.query.planFailure')}</dt><dd>{t('workbench.query.planFailureValue')}</dd></div>
+                  </dl>
+                  <details className={css.executionPlan}>
+                    <summary>{t('workbench.query.planBoundary')}</summary>
+                    <p>{t('workbench.query.planBoundaryValue')}</p>
+                  </details>
+                </aside>
               </div>
 
               <div className={css.feedbackStack}>
                 {replacementRequired && (
-                  <WorkbenchFeedback tone="notice" title={t('workbench.query.replacementTitle')} role="status">
-                    {t('workbench.query.replacementWarning')}
-                  </WorkbenchFeedback>
+                  <StatePanel tone="warning" title={t('workbench.query.replacementTitle')} description={t('workbench.query.replacementWarning')} />
                 )}
                 <SessionWriteProgress t={t} write={write} />
                 {status === 'failed' && lightweightFailure !== undefined && (
@@ -617,6 +600,8 @@ export function TenderWorkbenchView({
                   workflow={workflow}
                   loadRows={loadClassifiedRows}
                   loadContent={loadRuleContent}
+                  onOpenAnalysis={() => { setScreeningView('analysis') }}
+                  onOpenReview={() => { setSelectedPhase('decision') }}
                   t={t}
                 />
               ) : (

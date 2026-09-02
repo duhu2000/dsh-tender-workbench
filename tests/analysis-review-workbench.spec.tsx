@@ -145,12 +145,15 @@ describe('S4 analysis and review workbench', () => {
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.analysis.shortTitle'] }))
     expect(await screen.findByRole('heading', { name: zh['workbench.analysis.title'] })).toBeTruthy()
-    const tenderRow = screen.getAllByText('数据治理平台项目')[0]?.closest('tr') ?? null
+    const tenderSelect = screen.getByRole('checkbox', { name: t('workbench.review.selectRecord', { title: '数据治理平台项目' }) })
+    const tenderRow = tenderSelect.closest('article')
     if (tenderRow === null) throw new Error('missing tender row')
     expect(within(tenderRow).getByText(zh['workbench.analysis.recommendation.priority-review'])).toBeTruthy()
     expect(within(tenderRow).getByText(zh['workbench.review.decision.pending'])).toBeTruthy()
-    expect(within(tenderRow).getByText('1 项引用证据')).toBeTruthy()
-    fireEvent.click(within(tenderRow).getByRole('checkbox'))
+    expect(screen.getByText('项目名称')).toBeTruthy()
+    expect(screen.getByText(zh['workbench.review.layerClassification'])).toBeTruthy()
+    expect(screen.getByText(zh['workbench.review.layerDecision'])).toBeTruthy()
+    fireEvent.click(tenderSelect)
     const analyze = screen.getByRole('button', { name: '分析选中 1 条' })
     fireEvent.click(analyze)
     fireEvent.click(analyze)
@@ -174,10 +177,15 @@ describe('S4 analysis and review workbench', () => {
     if (proposedRow === null) throw new Error('missing proposed row')
     expect(within(proposedRow).getByText(zh['workbench.analysis.unanalyzed'])).toBeTruthy()
     expect(within(proposedRow).getByText(zh['workbench.review.decision.pending'])).toBeTruthy()
+    const batchConfirmed = screen.getByRole('button', { name: zh['workbench.review.batchSetConfirmed'] }) as HTMLButtonElement
+    expect(batchConfirmed.disabled).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox', { name: zh['workbench.review.selectPage'] }))
+    expect(screen.getByText('2 条已选')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.review.clearSelection'] }))
+    expect(screen.getByText('0 条已选')).toBeTruthy()
     fireEvent.click(within(proposedRow).getByRole('checkbox'))
-    fireEvent.change(screen.getByLabelText(zh['workbench.review.batchDecision']), { target: { value: 'confirmed-candidate' } })
-    fireEvent.change(screen.getByLabelText(zh['workbench.review.note']), { target: { value: '作为重点前期线索，等待采购计划。' } })
-    fireEvent.click(screen.getByRole('button', { name: '应用到选中 1 条' }))
+    fireEvent.change(screen.getByLabelText(zh['workbench.review.batchNote']), { target: { value: '作为重点前期线索，等待采购计划。' } })
+    fireEvent.click(batchConfirmed)
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
     expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({
       kind: 'review.apply',
@@ -185,6 +193,33 @@ describe('S4 analysis and review workbench', () => {
       decision: 'confirmed-candidate',
       note: '作为重点前期线索，等待采购计划。',
       analysisVersion: 'analysis-v1',
+    })
+  })
+
+  it('keeps batch inputs separate from the focused record editor', async () => {
+    const { sendIntent } = renderS4()
+    fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.decision'] }))
+    expect(await screen.findByRole('heading', { name: zh['workbench.review.title'] })).toBeTruthy()
+    const proposedRow = screen.getByText('智算中心拟建项目').closest('tr')
+    if (proposedRow === null) throw new Error('missing proposed row')
+    fireEvent.click(within(proposedRow).getByRole('checkbox'))
+    const detail = screen.getByLabelText(zh['workbench.review.detailTitle'])
+    expect(within(detail).getByRole('heading', { name: '智算中心拟建项目' })).toBeTruthy()
+
+    const currentDecision = screen.getByRole('group', { name: zh['workbench.review.currentDecision'] })
+    const currentNote = screen.getByLabelText(zh['workbench.review.currentNote'])
+    const batchNote = screen.getByLabelText(zh['workbench.review.batchNote'])
+    fireEvent.click(within(currentDecision).getByRole('button', { name: zh['workbench.review.confirmedProposed'] }))
+    fireEvent.change(currentNote, { target: { value: '逐条决定，不应污染批量输入。' } })
+    expect((batchNote as HTMLInputElement).value).toBe('')
+
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.review.saveCurrent'] }))
+    await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
+    expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({
+      kind: 'review.apply',
+      recordRefs: ['row-proposed'],
+      decision: 'confirmed-candidate',
+      note: '逐条决定，不应污染批量输入。',
     })
   })
 })

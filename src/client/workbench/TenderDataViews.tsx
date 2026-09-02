@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ArtifactRowsFilterV1,
@@ -16,6 +16,14 @@ import {
   SessionWriteProgress,
   sessionWriteProgressText,
 } from './SessionWriteProgress.tsx'
+import {
+  MetricCard,
+  PageHeader,
+  ProgressMeter,
+  StatePanel,
+  StatusPill,
+  SurfaceHeader,
+} from './WorkbenchPrimitives.tsx'
 import css from './tender-workbench.module.css'
 
 export type TenderRowsLoader = (
@@ -53,83 +61,91 @@ export function TenderDataOverview({
   const hasFailure = sources.some(source => source?.status === 'failed')
   const hasSuccess = sources.some(source => source?.status === 'succeeded')
   const raw = query.sourceRecordCount ?? sources.reduce((sum, source) => sum + (source?.loaded ?? 0), 0)
+  const missing = query.missingFieldCount ?? 0
+  const unparseable = query.unparseableFieldCount ?? 0
   return (
     <section className={css.dataView} aria-label={t('workbench.data.overview')}>
-      <header className={css.pageHeading}>
-        <div>
-          <p className={css.eyebrow}>{t('workbench.data.eyebrow')}</p>
-          <h2>{t('workbench.data.completeTitle')}</h2>
-          <p>{t('workbench.data.completeDescription')}</p>
-        </div>
-        <div className={css.contextChips}>
-          <span>{t('workbench.data.snapshot')}</span>
-          <span>{t(`workbench.query.scope.${query.scope}`)}</span>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow={t('workbench.data.eyebrow')}
+        title={t('workbench.data.completeTitle')}
+        description={t('workbench.data.completeDescription')}
+        aside={<StatusPill tone={hasFailure ? 'warning' : 'success'}>{hasFailure ? t('workbench.status.partial') : t('workbench.status.success')}</StatusPill>}
+      />
+
+      <section className={css.taskSummary} aria-label={t('workbench.data.currentTask')}>
+        <span>{t('workbench.data.currentTask')}</span>
+        <strong>{query.targetSummary}</strong>
+        <small>{t(`workbench.query.scope.${query.scope}`)}</small>
+      </section>
 
       {hasFailure && hasSuccess && (
-        <div className={css.feedback} data-tone="notice" role="status">
-          <div><strong>{t('workbench.data.partialTitle')}</strong><p>{t('workbench.data.partialDescription')}</p></div>
-        </div>
+        <StatePanel tone="warning" title={t('workbench.data.partialTitle')} description={t('workbench.data.partialDescription')} />
       )}
       {workflow.stages.query.status === 'failed' && (
-        <div className={css.feedback} data-tone="error" role="alert">
-          <div><strong>{t('workbench.data.requeryFailedTitle')}</strong><p>{workflow.stages.query.errorMessage ?? t('workbench.data.requeryFailed')}</p></div>
-        </div>
+        <StatePanel tone="danger" role="alert" title={t('workbench.data.requeryFailedTitle')} description={workflow.stages.query.errorMessage ?? t('workbench.data.requeryFailed')} />
       )}
       {query.invalidCount > 0 && (
-        <div className={css.feedback} data-tone="error" role="alert">
-          <div><strong>{t('workbench.data.technicalTitle')}</strong><p>{t('workbench.data.technicalDescription', { count: query.invalidCount })}</p></div>
-        </div>
+        <StatePanel tone="danger" role="alert" title={t('workbench.data.technicalTitle')} description={t('workbench.data.technicalDescription', { count: query.invalidCount })} />
       )}
 
       <div className={css.metricGrid}>
-        <article className={css.metricCard}><span>{t('workbench.data.raw')}</span><strong>{raw}</strong><small>{t('workbench.data.sourceSplit', { tender: sourceLoaded(workflow, 'tender'), proposed: sourceLoaded(workflow, 'proposed') })}</small></article>
-        <article className={css.metricCard}><span>{t('workbench.data.normalized')}</span><strong>{query.total}</strong><small>{t('workbench.data.linked', { count: query.duplicateCount })}</small></article>
-        <article className={css.metricCard}><span>{t('workbench.data.missing')}</span><strong>{query.missingFieldCount ?? 0}</strong><small>{t('workbench.data.missingDescription')}</small></article>
-        <article className={css.metricCard}><span>{t('workbench.data.unparseable')}</span><strong>{query.unparseableFieldCount ?? 0}</strong><small>{t('workbench.data.unparseableDescription')}</small></article>
+        <MetricCard label={t('workbench.data.raw')} value={raw} detail={t('workbench.data.sourceSplit', { tender: sourceLoaded(workflow, 'tender'), proposed: sourceLoaded(workflow, 'proposed') })} />
+        <MetricCard label={t('workbench.data.normalized')} value={query.total} detail={t('workbench.data.linked', { count: query.duplicateCount })} tone="brand" />
+        <MetricCard label={t('workbench.data.missing')} value={missing} detail={t('workbench.data.missingDescription')} tone={missing > 0 ? 'warning' : 'neutral'} />
+        <MetricCard label={t('workbench.data.unparseable')} value={unparseable} detail={t('workbench.data.unparseableDescription')} tone={unparseable > 0 ? 'warning' : 'neutral'} />
       </div>
 
-      <section className={css.dataCard}>
-        <header className={css.dataCardHeader}>
-          <div><h3>{t('workbench.data.sources')}</h3><p>{t('workbench.data.sourcesDescription')}</p></div>
-          <div className={css.dataActions}>
-            <button type="button" className={css.secondary} onClick={onRequery}>{t('workbench.data.requery')}</button>
-            <button type="button" className={css.secondary} onClick={onOpenDetails}>{t('workbench.data.openDetails')}</button>
+      <div className={css.overviewLayout}>
+        <section className={css.dataCard}>
+          <SurfaceHeader
+            title={t('workbench.data.sources')}
+            description={t('workbench.data.sourcesDescription')}
+            action={<button type="button" className={css.secondary} onClick={onOpenDetails}>{t('workbench.data.openDetails')}</button>}
+          />
+          <div className={css.sourceProgressList}>
+            {(['tender', 'proposed'] as const).map(source => {
+              const state = query.sources[source]
+              if (state === undefined) return null
+              return (
+                <article key={source} className={css.sourceProgress} data-source-status={state.status}>
+                  <div><strong>{t(`workbench.data.source.${source}`)}</strong><StatusPill tone={state.status === 'succeeded' ? 'success' : 'danger'}>{state.status === 'succeeded' ? t('workbench.data.sourceSucceeded') : t('workbench.status.failed')}</StatusPill></div>
+                  <ProgressMeter value={state.loaded} max={Math.max(1, raw)} label={t('workbench.data.loadedRecords')} />
+                  {state.errorMessage === undefined ? null : <p>{state.errorMessage}</p>}
+                </article>
+              )
+            })}
           </div>
-        </header>
-        <div className={css.sourceGrid}>
-          {(['tender', 'proposed'] as const).map(source => {
-            const state = query.sources[source]
-            if (state === undefined) return null
-            return (
-              <article key={source} className={css.sourceCard} data-source-status={state.status}>
-                <span>{t(`workbench.data.source.${source}`)}</span>
-                <strong>{state.loaded}</strong>
-                <small>{state.status === 'succeeded' ? t('workbench.data.sourceSucceeded') : state.errorMessage}</small>
-              </article>
-            )
-          })}
-        </div>
-        <div className={css.scopeNotice}>{t('workbench.data.factBoundary')}</div>
-      </section>
+        </section>
+        <aside className={css.dataCard}>
+          <SurfaceHeader title={t('workbench.data.qualityTitle')} description={t('workbench.data.qualityDescription')} />
+          <dl className={css.qualityList}>
+            <div><dt>{t('workbench.data.qualityNormalized')}</dt><dd>{query.total}</dd></div>
+            <div><dt>{t('workbench.data.qualityLinked')}</dt><dd>{query.duplicateCount}</dd></div>
+            <div data-tone={missing > 0 ? 'warning' : 'neutral'}><dt>{t('workbench.data.missing')}</dt><dd>{missing}</dd></div>
+            <div data-tone={unparseable > 0 ? 'warning' : 'neutral'}><dt>{t('workbench.data.unparseable')}</dt><dd>{unparseable}</dd></div>
+          </dl>
+          <p className={css.scopeNotice}>{t('workbench.data.factBoundary')}</p>
+        </aside>
+      </div>
 
       <form className={css.nextSuggestion} onSubmit={(event) => { event.preventDefault(); onContinue() }}>
         <div><strong>{t('workbench.data.nextTitle')}</strong><p>{t('workbench.data.nextDescription')}</p></div>
-        <button
-          type="submit"
-          className={css.primary}
-          data-write-button="rules.propose"
-          disabled={write.busy}
-          aria-busy={write.state.action === 'rules.propose' && write.busy}
-          aria-describedby={write.busy ? writeReasonId : undefined}
-          title={write.busy ? t('workbench.write.busyReason', {
-            action: sessionWriteProgressText(t, write.state) ?? t('workbench.rules.waitingAgent'),
-          }) : undefined}
-          onClick={onContinue}
-        >
-          <SessionWriteButtonLabel action="rules.propose" idle={t('workbench.data.continue')} t={t} write={write} />
-        </button>
+        <div className={css.nextActions}>
+          <button type="button" className={css.secondary} onClick={onRequery}>{t('workbench.data.requery')}</button>
+          <button
+            type="submit"
+            className={css.primary}
+            data-write-button="rules.propose"
+            disabled={write.busy}
+            aria-busy={write.state.action === 'rules.propose' && write.busy}
+            aria-describedby={write.busy ? writeReasonId : undefined}
+            title={write.busy ? t('workbench.write.busyReason', {
+              action: sessionWriteProgressText(t, write.state) ?? t('workbench.rules.waitingAgent'),
+            }) : undefined}
+          >
+            <SessionWriteButtonLabel action="rules.propose" idle={t('workbench.data.continue')} t={t} write={write} />
+          </button>
+        </div>
       </form>
       <SessionWriteProgress id={writeReasonId} t={t} write={write} />
     </section>
@@ -174,6 +190,7 @@ function sourceLink(row: NormalizedProjectV1): string | undefined {
 
 export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: TenderDataDetailsProps) {
   const recordDetailId = useId()
+  const recordDetailRef = useRef<HTMLElement>(null)
   const [page, setPage] = useState(1)
   const [query, setQuery] = useState('')
   const [source, setSource] = useState<ArtifactRowsFilterV1['source']>()
@@ -219,13 +236,32 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
   const selectedRow = data?.rows.find(row => row.recordId === selectedRecordId)
   const selectedSourceLink = selectedRow === undefined ? undefined : sourceLink(selectedRow)
   const resetPage = () => { setPage(1) }
+
+  useEffect(() => {
+    if (selectedRow !== undefined) recordDetailRef.current?.focus()
+  }, [selectedRow])
+
   return (
     <section className={css.dataView} aria-label={t('workbench.data.details')}>
       <button type="button" className={css.backButton} onClick={onBack}>← {t('workbench.data.back')}</button>
-      <header className={css.pageHeading}>
-        <div><p className={css.eyebrow}>{t('workbench.data.detailsEyebrow')}</p><h2>{t('workbench.data.details')}</h2><p>{t('workbench.data.detailsDescription')}</p></div>
-        <div className={css.contextChips}><span>{t('workbench.data.rows', { count: data?.total ?? artifact.rowCount ?? 0 })}</span></div>
-      </header>
+      <PageHeader
+        eyebrow={t('workbench.data.detailsEyebrow')}
+        title={t('workbench.data.details')}
+        description={t('workbench.data.detailsDescription')}
+        aside={<StatusPill tone="neutral">{t('workbench.data.rows', { count: data?.total ?? artifact.rowCount ?? 0 })}</StatusPill>}
+      />
+      <div className={css.detailTabs} role="group" aria-label={t('workbench.data.filterSource')}>
+        {([undefined, 'tender', 'proposed'] as const).map(value => (
+          <button
+            key={value ?? 'all'}
+            type="button"
+            aria-pressed={source === value}
+            onClick={() => { setSource(value); resetPage() }}
+          >
+            {value === undefined ? t('workbench.data.filterSourceAll') : t(`workbench.data.source.${value}`)}
+          </button>
+        ))}
+      </div>
       <section className={css.dataCard} aria-busy={loading}>
         <div className={css.detailToolbar}>
           <input
@@ -235,9 +271,6 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
             placeholder={t('workbench.data.searchPlaceholder')}
             onChange={(event) => { setQuery(event.target.value); resetPage() }}
           />
-          <select aria-label={t('workbench.data.filterSource')} value={source ?? ''} onChange={(event) => { setSource(event.target.value === '' ? undefined : event.target.value as NonNullable<typeof source>); resetPage() }}>
-            <option value="">{t('workbench.data.filterSourceAll')}</option><option value="tender">{t('workbench.data.source.tender')}</option><option value="proposed">{t('workbench.data.source.proposed')}</option>
-          </select>
           <select aria-label={t('workbench.data.filterStatus')} value={fieldStatus ?? ''} onChange={(event) => { setFieldStatus(event.target.value === '' ? undefined : event.target.value as NonNullable<typeof fieldStatus>); resetPage() }}>
             <option value="">{t('workbench.data.filterStatusAll')}</option><option value="missing">{t('workbench.data.status.missing')}</option><option value="unparseable">{t('workbench.data.status.unparseable')}</option>
           </select>
@@ -259,22 +292,22 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
         ) : (
           <>
             {loading && <div className={css.inlineLoading} role="status">{t('workbench.data.loading')}</div>}
-            <div className={css.dataTableWrap}>
-              <table className={css.dataTable}>
-                <thead><tr><th>{t('workbench.data.column.source')}</th><th>{t('workbench.data.column.project')}</th><th>{t('workbench.data.column.stage')}</th><th>{t('workbench.data.column.region')}</th><th>{t('workbench.data.column.party')}</th><th>{t('workbench.data.column.amount')}</th><th>{t('workbench.data.column.published')}</th><th>{t('workbench.data.column.deadline')}</th><th>{t('workbench.data.column.status')}</th><th>{t('workbench.data.column.action')}</th></tr></thead>
-                <tbody>{data.rows.map(row => (
-                  <Fragment key={row.recordId}>
-                    <tr>
-                      <td><span className={css.sourceTag} data-source={row.source}>{t(`workbench.data.source.${row.source}`)}</span></td>
-                      <td><strong>{row.title}</strong><small>{row.projectNumber.value ?? row.sourceId}</small></td>
-                      <td>{(row.stage.value ?? row.stage.original) || t('workbench.data.value.missing')}</td>
-                      <td>{(row.region.value ?? row.region.original) || t('workbench.data.value.missing')}</td>
-                      <td>{row.counterparty.value ?? t('workbench.data.value.missing')}</td>
-                      <td>{amountDisplay(row, t)}</td>
-                      <td>{dateDisplay(row, 'publishedAt', t)}</td>
-                      <td>{dateDisplay(row, 'deadline', t)}</td>
-                      <td><span className={css.fieldStatus} data-field-status={fieldBadgeStatus(row)}>{t(`workbench.data.status.${fieldBadgeStatus(row)}`)}</span></td>
-                      <td>
+            <div className={selectedRow === undefined ? css.detailWorkspace : `${css.detailWorkspace} ${css.detailWorkspaceOpen}`}>
+              <div className={css.dataTableWrap}>
+                <table className={css.dataTable}>
+                  <thead><tr><th>{t('workbench.data.column.source')}</th><th>{t('workbench.data.column.project')}</th><th>{t('workbench.data.column.stage')}</th><th>{t('workbench.data.column.region')}</th><th>{t('workbench.data.column.party')}</th><th>{t('workbench.data.column.amount')}</th><th>{t('workbench.data.column.published')}</th><th>{t('workbench.data.column.deadline')}</th><th>{t('workbench.data.column.status')}</th><th>{t('workbench.data.column.action')}</th></tr></thead>
+                  <tbody>{data.rows.map(row => (
+                    <tr key={row.recordId} data-row-selected={selectedRecordId === row.recordId ? 'true' : 'false'}>
+                      <td data-label={t('workbench.data.column.source')}><span className={css.sourceTag} data-source={row.source}>{t(`workbench.data.source.${row.source}`)}</span></td>
+                      <td data-label={t('workbench.data.column.project')}><strong>{row.title}</strong><small>{row.projectNumber.value ?? row.sourceId}</small></td>
+                      <td data-label={t('workbench.data.column.stage')}>{(row.stage.value ?? row.stage.original) || t('workbench.data.value.missing')}</td>
+                      <td data-label={t('workbench.data.column.region')}>{(row.region.value ?? row.region.original) || t('workbench.data.value.missing')}</td>
+                      <td data-label={t('workbench.data.column.party')}>{row.counterparty.value ?? t('workbench.data.value.missing')}</td>
+                      <td data-label={t('workbench.data.column.amount')}>{amountDisplay(row, t)}</td>
+                      <td data-label={t('workbench.data.column.published')}>{dateDisplay(row, 'publishedAt', t)}</td>
+                      <td data-label={t('workbench.data.column.deadline')}>{dateDisplay(row, 'deadline', t)}</td>
+                      <td data-label={t('workbench.data.column.status')}><span className={css.fieldStatus} data-field-status={fieldBadgeStatus(row)}>{t(`workbench.data.status.${fieldBadgeStatus(row)}`)}</span></td>
+                      <td data-label={t('workbench.data.column.action')}>
                         <button
                           type="button"
                           className={css.rowAction}
@@ -286,32 +319,31 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
                         </button>
                       </td>
                     </tr>
-                    {selectedRecordId === row.recordId && (
-                      <tr className={css.recordDetailRow}>
-                        <td colSpan={10}>
-                          <aside id={recordDetailId} className={css.recordDetail} aria-label={t('workbench.data.recordDetail')}>
-                            <header>
-                              <div><span>{t(`workbench.data.source.${row.source}`)}</span><h3>{row.title}</h3></div>
-                              <button type="button" className={css.secondary} onClick={() => { setSelectedRecordId(undefined) }}>{t('workbench.data.closeDetail')}</button>
-                            </header>
-                            <dl>
-                              <div><dt>{t('workbench.data.detail.projectNumber')}</dt><dd>{(row.projectNumber.value ?? row.projectNumber.original) || t('workbench.data.value.missing')}</dd></div>
-                              <div><dt>{t('workbench.data.detail.fieldStatus')}</dt><dd>{t(`workbench.data.status.${fieldBadgeStatus(row)}`)}</dd></div>
-                              <div><dt>{t('workbench.data.detail.normalizedStage')}</dt><dd>{row.stage.value ?? t('workbench.data.value.missing')}</dd></div>
-                              <div><dt>{t('workbench.data.detail.sourceStage')}</dt><dd>{row.stage.original || t('workbench.data.value.missing')}</dd></div>
-                              <div><dt>{t('workbench.data.detail.normalizedRegion')}</dt><dd>{row.region.value ?? t('workbench.data.value.missing')}</dd></div>
-                              <div><dt>{t('workbench.data.detail.sourceRegion')}</dt><dd>{row.region.original || t('workbench.data.value.missing')}</dd></div>
-                            </dl>
-                            {selectedSourceLink !== undefined && (
-                              <a className={css.sourceLink} href={selectedSourceLink} target="_blank" rel="noreferrer">{t('workbench.data.openSource')} ↗</a>
-                            )}
-                          </aside>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}</tbody>
-              </table>
+                  ))}</tbody>
+                </table>
+              </div>
+              {selectedRow !== undefined && (
+                <aside ref={recordDetailRef} id={recordDetailId} className={css.recordDetail} tabIndex={-1} aria-label={t('workbench.data.recordDetail')}>
+                  <header>
+                    <div><StatusPill tone={selectedRow.source === 'tender' ? 'brand' : 'warning'}>{t(`workbench.data.source.${selectedRow.source}`)}</StatusPill><h3>{selectedRow.title}</h3></div>
+                    <button type="button" className={css.iconButton} aria-label={t('workbench.data.closeDetail')} onClick={() => { setSelectedRecordId(undefined) }}>×</button>
+                  </header>
+                  <p className={css.detailLead}>{selectedRow.counterparty.value ?? t('workbench.data.value.missing')} · {amountDisplay(selectedRow, t)}</p>
+                  <dl>
+                    <div><dt>{t('workbench.data.detail.projectNumber')}</dt><dd>{(selectedRow.projectNumber.value ?? selectedRow.projectNumber.original) || t('workbench.data.value.missing')}</dd></div>
+                    <div><dt>{t('workbench.data.detail.fieldStatus')}</dt><dd><StatusPill tone={fieldBadgeStatus(selectedRow) === 'normalized' ? 'success' : 'warning'}>{t(`workbench.data.status.${fieldBadgeStatus(selectedRow)}`)}</StatusPill></dd></div>
+                    <div><dt>{t('workbench.data.detail.normalizedStage')}</dt><dd>{selectedRow.stage.value ?? t('workbench.data.value.missing')}</dd></div>
+                    <div><dt>{t('workbench.data.detail.sourceStage')}</dt><dd>{selectedRow.stage.original || t('workbench.data.value.missing')}</dd></div>
+                    <div><dt>{t('workbench.data.detail.normalizedRegion')}</dt><dd>{selectedRow.region.value ?? t('workbench.data.value.missing')}</dd></div>
+                    <div><dt>{t('workbench.data.detail.sourceRegion')}</dt><dd>{selectedRow.region.original || t('workbench.data.value.missing')}</dd></div>
+                    <div><dt>{t('workbench.data.column.published')}</dt><dd>{dateDisplay(selectedRow, 'publishedAt', t)}</dd></div>
+                    <div><dt>{t('workbench.data.column.deadline')}</dt><dd>{dateDisplay(selectedRow, 'deadline', t)}</dd></div>
+                  </dl>
+                  {selectedSourceLink !== undefined && (
+                    <a className={css.sourceLink} href={selectedSourceLink} target="_blank" rel="noreferrer">{t('workbench.data.openSource')} ↗</a>
+                  )}
+                </aside>
+              )}
             </div>
             <footer className={css.tableFooter}>
               <span>{t('workbench.data.pageSummary', { page: data.page, pages: maximumPage, total: data.total })}</span>
@@ -319,7 +351,7 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
             </footer>
           </>
         )}
-        <div className={css.scopeNotice}>{t('workbench.data.detailBoundary')}</div>
+        <p className={css.scopeNotice}>{t('workbench.data.detailBoundary')}</p>
       </section>
     </section>
   )
