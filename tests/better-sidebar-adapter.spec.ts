@@ -87,7 +87,9 @@ describe('Better Sidebar workbench adapter', () => {
     expect(openTenderWorkbench(sidebar, scope, reveal)).toBe(true)
     expect(sidebar.openTab).toHaveBeenCalledWith({ type: TENDER_WORKBENCH_TAB_ID }, scope)
 
-    expect(() => assertBetterSidebarContract(service({ version: '0.18.0' }))).toThrow('requires dsh-better-sidebar 0.17.x')
+    expect(() => assertBetterSidebarContract(service({ version: '0.16.1' }))).not.toThrow()
+    expect(() => assertBetterSidebarContract(service({ version: '0.18.0-alpha.0' }))).not.toThrow()
+    expect(() => assertBetterSidebarContract(service({ openTab: undefined as never }))).toThrow('openTab()')
     expect(() => assertBetterSidebarContract(service({ features: [] }))).toThrow('targetedOpen')
     expect(() => assertBetterSidebarContract(service({ features: ['targetedOpen'] }))).toThrow('stateSubscription')
   })

@@ -8,7 +8,6 @@ import type {
 } from 'dsh-better-sidebar/client/service'
 
 export const TENDER_WORKBENCH_TAB_ID = 'dsh-tender-workbench:agent' as const
-const SUPPORTED_SIDEBAR_VERSION = /^0\.17\./u
 
 interface RevealTarget {
   readonly store: SidebarStore
@@ -80,15 +79,19 @@ export function useTenderWorkbenchReveal(
   useEffect(() => controller.attach(sessionId, { store, tabId }), [controller, sessionId, store, tabId])
 }
 
-/** Fail loudly when the mandatory provider does not expose the validated contract. */
+/** Fail loudly only when the mandatory provider lacks an exercised capability. */
 export function assertBetterSidebarContract(service: BetterSidebarService): void {
-  if (!SUPPORTED_SIDEBAR_VERSION.test(service.version)) {
-    throw new Error(`dsh-tender-workbench requires dsh-better-sidebar 0.17.x, got ${service.version}`)
+  const methods = ['registerTab', 'isTabEnabled', 'openTab', 'getSnapshot'] as const
+  for (const method of methods) {
+    if (typeof service[method] !== 'function') {
+      throw new Error(`dsh-tender-workbench requires the Better Sidebar ${method}() capability`)
+    }
   }
-  if (!service.features.includes('targetedOpen')) {
+  const features: readonly string[] = Array.isArray(service.features) ? service.features : []
+  if (!features.includes('targetedOpen')) {
     throw new Error('dsh-tender-workbench requires the Better Sidebar targetedOpen capability')
   }
-  if (!service.features.includes('stateSubscription')) {
+  if (!features.includes('stateSubscription')) {
     throw new Error('dsh-tender-workbench requires the Better Sidebar stateSubscription capability')
   }
 }

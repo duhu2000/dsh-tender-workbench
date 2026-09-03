@@ -161,4 +161,59 @@ describe('qcc source adapters and deterministic normalization', () => {
     expect(normalizeDate('2026-08').precision).toBe('month')
     expect(normalizeAmount('300万元以上', 'budget')).toMatchObject({ minCny: 3_000_000, parseStatus: 'range' })
   })
+
+  it('treats missing, null, and empty optional source fields as undisclosed facts', () => {
+    const tender = adaptQccTenderPayload({
+      查询摘要: null,
+      标讯列表: [{
+        标讯ID: 'nullable-tender',
+        标题: '可选字段不完整的标讯',
+        信息类型: null,
+        省市区: null,
+        招采单位: [{ 企业名称: '采购单位' }],
+        代理单位: null,
+        相关产品: null,
+      }],
+    })
+    const proposed = adaptQccProposedPayload({
+      拟建项目列表: [{
+        拟建项目ID: 'nullable-proposed',
+        项目名称: '可选字段不完整的拟建项目',
+        项目阶段: null,
+        '项目总投资（元）': null,
+        建设单位: [{ 企业ID: 'builder-without-name' }],
+        审批单位: null,
+      }],
+    })
+    const dataset = normalizeQccSources({
+      tender,
+      proposed,
+      sources: {
+        tender: { status: 'succeeded', loaded: 1 },
+        proposed: { status: 'succeeded', loaded: 1 },
+      },
+      createdAt: '2026-09-01T00:00:00.000Z',
+    })
+
+    expect(tender.summary).toBeUndefined()
+    expect(proposed.summary).toBeUndefined()
+    expect(dataset.rows).toHaveLength(2)
+    expect(dataset.summary.invalidRecordCount).toBe(0)
+    expect(dataset.rows.find(row => row.sourceId === 'nullable-tender')).toMatchObject({
+      region: { status: 'missing' },
+      tenderDetails: { infoType: { status: 'missing' }, agents: [], products: [] },
+    })
+    expect(dataset.rows.find(row => row.sourceId === 'nullable-tender')?.announcements[0]?.parties)
+      .toEqual([{ id: '', name: '采购单位' }])
+    expect(dataset.rows.find(row => row.sourceId === 'nullable-proposed')?.amount.parseStatus).toBe('missing')
+  })
+
+  it('accepts an omitted or null source list as an empty source result', () => {
+    expect(adaptQccTenderPayload({ 查询摘要: {} })).toMatchObject({ items: [], rawRecordCount: 0 })
+    expect(adaptQccProposedPayload({ 查询摘要: {}, 拟建项目列表: null })).toMatchObject({
+      items: [],
+      rawRecordCount: 0,
+    })
+    expect(() => adaptQccTenderPayload({})).toThrow(QccSourceContractError)
+  })
 })

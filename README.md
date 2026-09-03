@@ -2,7 +2,7 @@
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness tender Agent workbench. The current S1-S5.3 MVP provides one Session-scoped Better Sidebar workbench, three official entry points, a four-phase progressive shell over seven internal Projection nodes, and a real query → optional analysis → human review → immutable Excel/PDF delivery chain.
 
-The three entries are `sidebar.footer.action` (“招投标”), `conversation.input.left` (“搜索招投标”), and `conversation.session.header.actions` (reopen). They all focus the same `dsh-better-sidebar 0.17.1` single-instance Tab for the addressed Session. The workbench reads only that Session's Host Projection through a narrow `TenderProjectionPort`; it does not infer business state from chat text or maintain cross-Session state.
+The three entries are `sidebar.footer.action` (“招投标”), `conversation.input.left` (“搜索招投标”), and `conversation.session.header.actions` (reopen). They all focus the same Better Sidebar single-instance Tab for the addressed Session. The workbench reads only that Session's Host Projection through a narrow `TenderProjectionPort`; it does not infer business state from chat text or maintain cross-Session state.
 
 The single query workspace now captures the complete approved condition set: source scope, up to ten keywords, publication presets/prior year/custom dates, up to twenty province/city/district regions, the analysis goal, tender information type and conditional stages/amounts, procurement method/industry/type, and proposed-project stage/approval/investment. The visible execution plan, user message, Host validation, and exact qcc calls all come from the same `TenderQueryIntentV1`; hidden or inactive branches cannot leak stale values, and `smartSort` is not exposed as a user filter.
 
@@ -40,9 +40,11 @@ The MVP deliberately does not implement report preview/version centers, successf
 
 ## Compatibility
 
-This checkout targets DeepSeek Harness `0.1.1-rc.2` and requires `dsh-mcp-connector 0.2.31` plus `dsh-better-sidebar 0.17.1`. The MCP Connector hosts and authorizes the `qcc-tender` connection used by the Agent execution boundary; the Client never calls it directly or reads its credentials. The Better Sidebar version is exact because S1a relies on its validated `targetedOpen`, `stateSubscription`, public Tab store, and Session scope contracts.
+The published plugin does not pin DeepSeek Harness, MCP Connector, or Better Sidebar to exact deployment versions. Its peer metadata declares minimums with no stable-version upper bound: DSH public packages from `0.1.1-rc.2`, MCP Connector from `0.2.31`, and Better Sidebar from `0.17.1`. The active Profile still supplies one coherent runtime. Runtime compatibility remains capability-based: Better Sidebar must expose the public `targetedOpen` and `stateSubscription` features, while the Host must provide the public Session Projection, JSONL Session Persistence, Tools, Skill, Sessions, and WebServer services used by the workflow. Development and release verification currently use DSH `0.1.1-rc.2` with Better Sidebar `0.17.1` as a reproducible reference combination, not as an exact installation restriction.
 
-S2-S5 additionally require the standard JSONL Session Persistence service and an installed, authorized `qcc-tender` MCP connection exposing the exact tools `mcp__qcc-tender__search_tenders` and `mcp__qcc-tender__search_proposed_projects`. Missing tools or non-JSONL persistence fail explicitly; there is no Web-search, Workspace-storage, or alternate-persistence fallback.
+S2-S5 additionally require the standard JSONL Session Persistence service and an installed, authorized `qcc-tender` MCP connection exposing the exact tools `mcp__qcc-tender__search_tenders` and `mcp__qcc-tender__search_proposed_projects`. Missing capabilities, missing tools, or non-JSONL persistence fail explicitly; there is no Web-search, Workspace-storage, or alternate-persistence fallback.
+
+`peerDependencies` let package managers diagnose versions below those minimums, but the current `dsh plugin` command delegates to pnpm, whose Profile defaults report peer conflicts as warnings instead of guaranteed installation failures. DSH currently has no Bundle-manifest prerequisite field. Consequently this package cannot promise a hard pre-install rejection on every DSH version; missing Host services still keep the Host plugin from activating, and missing Better Sidebar features fail Client activation before a business command is sent.
 
 ## Build and test
 
@@ -64,8 +66,8 @@ The build emits the Host loader entry at `lib/index.js`, the DSH Client factory 
 The current release is an internal preview published under the `beta` dist-tag. Install it explicitly through `@beta` so the preview channel remains clear even when npm also resolves the first published version through `latest`:
 
 ```sh
-dsh plugin --profile web add dsh-mcp-connector@0.2.31
-dsh plugin --profile web add dsh-better-sidebar@0.17.1
+dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
+dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
 dsh plugin --profile web add dsh-tender-workbench@beta
 dsh web --no-open
 ```
@@ -73,16 +75,16 @@ dsh web --no-open
 To install an exact version:
 
 ```sh
-dsh plugin --profile web add dsh-mcp-connector@0.2.31
-dsh plugin --profile web add dsh-better-sidebar@0.17.1
-dsh plugin --profile web add dsh-tender-workbench@0.2.1-beta.1
+dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
+dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
+dsh plugin --profile web add dsh-tender-workbench@0.2.1-beta.3
 ```
 
 After a stable version is published to `latest`, users will be able to install it without an explicit tag:
 
 ```sh
-dsh plugin --profile web add dsh-mcp-connector@0.2.31
-dsh plugin --profile web add dsh-better-sidebar@0.17.1
+dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
+dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
 dsh plugin --profile web add dsh-tender-workbench
 ```
 
@@ -91,8 +93,8 @@ dsh plugin --profile web add dsh-tender-workbench
 Install and mount MCP Connector and Better Sidebar first. Then build this repository and run the following command from the plugin root when the public `dsh` CLI is available:
 
 ```sh
-dsh plugin --profile web add dsh-mcp-connector@0.2.31
-dsh plugin --profile web add dsh-better-sidebar@0.17.1
+dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
+dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
 dsh plugin --profile web add .
 dsh web --no-open
 ```
@@ -101,8 +103,8 @@ If `dsh` is only available through a separate DeepSeek Harness source checkout, 
 
 ```sh
 cd /path/to/deepseek-harness
-pnpm dsh plugin --profile web add dsh-mcp-connector@0.2.31
-pnpm dsh plugin --profile web add dsh-better-sidebar@0.17.1
+pnpm dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
+pnpm dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
 pnpm dsh plugin --profile web add /absolute/path/to/dsh-tender-workbench
 pnpm dsh web --no-open
 ```
@@ -110,9 +112,9 @@ pnpm dsh web --no-open
 ### Install from a tarball
 
 ```sh
-dsh plugin --profile web add dsh-mcp-connector@0.2.31
-dsh plugin --profile web add dsh-better-sidebar@0.17.1
-dsh plugin --profile web add ./dsh-tender-workbench-0.2.1-beta.1.tgz
+dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
+dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
+dsh plugin --profile web add ./dsh-tender-workbench-0.2.1-beta.3.tgz
 dsh web --no-open
 ```
 

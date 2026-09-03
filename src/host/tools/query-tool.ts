@@ -98,22 +98,46 @@ function jsonValue(value: unknown): JsonValue {
   return JSON.parse(serialized) as JsonValue
 }
 
-/** Extract the documented MCP canonical value: structuredContent first, otherwise text JSON. */
-export function extractMcpCanonicalPayload(value: unknown): JsonValue {
+function hasSourceList(value: JsonValue, source: SourceKey): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const key = source === 'tender' ? '标讯列表' : '拟建项目列表'
+  return Object.hasOwn(value, key)
+}
+
+/** Extract every documented MCP payload candidate in precedence order. */
+export function extractMcpCanonicalPayloadCandidates(value: unknown): readonly JsonValue[] {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError('MCP canonical value must be an object')
   }
   const record = value as Record<string, unknown>
-  if (record['structuredContent'] !== undefined) return jsonValue(record['structuredContent'])
+  const candidates: JsonValue[] = []
+  if (record['structuredContent'] !== undefined) candidates.push(jsonValue(record['structuredContent']))
   const content = record['content']
-  if (!Array.isArray(content)) throw new TypeError('MCP canonical value has no content array')
+  if (!Array.isArray(content)) {
+    if (candidates.length > 0) return candidates
+    throw new TypeError('MCP canonical value has no content array')
+  }
   const text = content.flatMap((block): string[] => {
     if (typeof block !== 'object' || block === null || Array.isArray(block)) return []
     const candidate = block as Record<string, unknown>
     return candidate['type'] === 'text' && typeof candidate['text'] === 'string' ? [candidate['text']] : []
   }).join('\n').trim()
-  if (text === '') throw new TypeError('MCP canonical value has no structuredContent or text JSON')
-  return jsonValue(JSON.parse(text) as unknown)
+  if (text !== '') {
+    try {
+      candidates.push(jsonValue(JSON.parse(text) as unknown))
+    } catch (error) {
+      if (candidates.length === 0) throw error
+    }
+  }
+  if (candidates.length === 0) throw new TypeError('MCP canonical value has no structuredContent or text JSON')
+  return candidates
+}
+
+/** Extract the preferred MCP payload without applying a source-specific contract. */
+export function extractMcpCanonicalPayload(value: unknown): JsonValue {
+  const [preferred] = extractMcpCanonicalPayloadCandidates(value)
+  if (preferred === undefined) throw new TypeError('MCP canonical value has no payload candidate')
+  return preferred
 }
 
 async function executeSource(
@@ -130,11 +154,20 @@ async function executeSource(
     return { source, status: 'failed', message: sanitizeMessage(result.error.message || contentText(result)) }
   }
   try {
-    const payload = extractMcpCanonicalPayload(result.value)
-    const adapted = source === 'tender'
-      ? adaptQccTenderPayload(payload)
-      : adaptQccProposedPayload(payload)
-    return { source, status: 'succeeded', payload, adapted }
+    const candidates = [...extractMcpCanonicalPayloadCandidates(result.value)]
+      .sort((left, right) => Number(hasSourceList(right, source)) - Number(hasSourceList(left, source)))
+    let contractError: unknown
+    for (const payload of candidates) {
+      try {
+        const adapted = source === 'tender'
+          ? adaptQccTenderPayload(payload)
+          : adaptQccProposedPayload(payload)
+        return { source, status: 'succeeded', payload, adapted }
+      } catch (error) {
+        contractError = error
+      }
+    }
+    throw contractError ?? new TypeError('MCP canonical value has no payload candidate')
   } catch (error) {
     return {
       source,

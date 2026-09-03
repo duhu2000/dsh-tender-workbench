@@ -16,6 +16,7 @@ import {
 import {
   createTenderWorkbenchQueryTool,
   extractMcpCanonicalPayload,
+  extractMcpCanonicalPayloadCandidates,
   type QueryToolResultV1,
 } from '../src/host/tools/query-tool.ts'
 
@@ -232,5 +233,36 @@ describe('tender_workbench_query', () => {
     expect(extractMcpCanonicalPayload({ content: [], structuredContent: { ok: true } })).toEqual({ ok: true })
     expect(extractMcpCanonicalPayload({ content: [{ type: 'text', text: '{"ok":true}' }] })).toEqual({ ok: true })
     expect(() => extractMcpCanonicalPayload({ content: [{ type: 'text', text: 'not-json' }] })).toThrow()
+  })
+
+  it('falls back to source-valid text JSON when structuredContent is not the qcc payload', async () => {
+    const tender = tenderPayload(['text-tender']) as JsonValue
+    const proposed = proposedPayload(['text-proposed']) as JsonValue
+    const test = await harness(async name => {
+      const payload = name.endsWith('search_tenders') ? tender : proposed
+      return {
+        isError: false,
+        value: {
+          content: [{ type: 'text', text: JSON.stringify(payload) }],
+          structuredContent: { result: null },
+        },
+        content: [{ type: 'text', text: 'ok' }],
+      }
+    })
+
+    expect(extractMcpCanonicalPayloadCandidates({
+      content: [{ type: 'text', text: JSON.stringify(tender) }],
+      structuredContent: {},
+    })).toEqual([{}, tender])
+
+    const result = await test.run(combinedIntent('text-json-fallback'))
+    expect(result.outcome).toBe('succeeded')
+    expect(result.state.query).toMatchObject({
+      total: 2,
+      sources: {
+        tender: { status: 'succeeded', loaded: 1 },
+        proposed: { status: 'succeeded', loaded: 1 },
+      },
+    })
   })
 })

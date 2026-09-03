@@ -101,7 +101,7 @@ S5.1 必须在唯一查询页补齐下列真实条件。每个可见值都必须
 
 ### 8.1 安装与运行基线
 
-- 组合版本：`@deepseek-ai/dsh 0.1.1-rc.2`、`dsh-better-sidebar 0.17.1`、`pnpm 10.33.2`，固定地址 `http://127.0.0.1:3080/`。
+- 本次历史验收所用参考组合：`@deepseek-ai/dsh 0.1.1-rc.2`、`dsh-better-sidebar 0.17.1`、`pnpm 10.33.2`，固定地址 `http://127.0.0.1:3080/`；该记录不构成发布包的部署版本限制。
 - 内容寻址包：`dsh-tender-workbench-0.2.1-beta.0-9e599893c981.tgz`，SHA-256 `9e599893c981b121503b462bb612b4e1be75e4c7e8eb523e7e9e5535710ccda9`。
 - 安装命令：`corepack pnpm@10.33.2 dlx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add <absolute-tarball>`。Profile 依赖由旧的 `104395e0adfb` 内容包更新到本轮 `9e599893c981` 内容包；Bundle 中 Better Sidebar 仍位于本插件之前，二者各出现一次。
 - `dsh web --dump-config` 只有一条 `id: tender-workbench` Loader；安装目录的 Host `lib/index.js` 与 Client `lib/client.js` 分别与本轮构建 SHA-256 `f4a0d1655adc0087b7fc4a6a6702a4a08cf1dc5d81858483b0a957430fc793f7`、`4d1b68d00b84c7e81d24a5348646651f44728ba5942031c7a49ee6314b51c220` 一致。
