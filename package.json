@@ -50,8 +50,8 @@
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json && tsdown --config tsdown.config.ts",
-    "prepare": "pnpm run build",
-    "prepublishOnly": "pnpm run typecheck && pnpm run test",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm run test",
     "test": "vitest run",
     "typecheck": "tsc --project tsconfig.json"
   },
