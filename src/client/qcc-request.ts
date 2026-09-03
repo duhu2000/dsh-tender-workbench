@@ -1,5 +1,6 @@
 import { getAreaRecord, isMcpSupportedAreaValue } from './area-utils.ts'
 import type { PublishPreset, TenderFilters } from './types.ts'
+import type { TenderQueryIntentV1 } from '../contracts/query-schema.ts'
 import {
   QCC_PROPOSED_SEARCH_TOOL,
   QCC_TENDER_SEARCH_TOOL,
@@ -110,7 +111,7 @@ function dateParts(value: string): [number, number, number] {
 }
 
 export function splitKeywords(value: string): string[] {
-  return value.trim() === '' ? [] : value.trim().split(/\s+/u).filter(Boolean)
+  return value.trim() === '' ? [] : [...new Set(value.trim().split(/[\s,，、]+/u).filter(Boolean))]
 }
 
 function regions(filters: TenderFilters): string[] {
@@ -206,4 +207,27 @@ export function toQccSearchRequest(filters: TenderFilters, now: Date): QccSearch
   }
   nonEmpty(args)
   return { tool: QCC_TENDER_SEARCH_TOOL, args }
+}
+
+export interface QccQueryBranches {
+  readonly tender?: QccTenderSearchArgs
+  readonly proposed?: QccProposedSearchArgs
+}
+
+/** Build the exact source branches used by the visible plan and TenderQueryIntentV1. */
+export function toQccQueryBranches(
+  filters: TenderFilters,
+  scope: TenderQueryIntentV1['scope'],
+  now: Date,
+): QccQueryBranches {
+  const tender = scope === 'tender' || scope === 'combined'
+    ? toQccSearchRequest({ ...filters, searchMode: 'tender' }, now)
+    : undefined
+  const proposed = scope === 'proposed' || scope === 'combined'
+    ? toQccSearchRequest({ ...filters, searchMode: 'proposed' }, now)
+    : undefined
+  return {
+    ...(tender?.tool === QCC_TENDER_SEARCH_TOOL ? { tender: tender.args } : {}),
+    ...(proposed?.tool === QCC_PROPOSED_SEARCH_TOOL ? { proposed: proposed.args } : {}),
+  }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { QccRequestValidationError, toQccSearchRequest } from '../src/client/qcc-request.ts'
+import { QccRequestValidationError, toQccQueryBranches, toQccSearchRequest } from '../src/client/qcc-request.ts'
 import { createInitialTenderFilters } from '../src/client/types.ts'
 
 const NOW = new Date('2026-08-30T12:00:00+08:00')
@@ -56,5 +56,26 @@ describe('toQccSearchRequest', () => {
     expectCode(() => toQccSearchRequest({ ...createInitialTenderFilters(), regionCodes: Array.from({ length: 21 }, () => 'BJ') }, NOW), 'regions-limit')
     expectCode(() => toQccSearchRequest({ ...createInitialTenderFilters(), regionCodes: ['HK'] }, NOW), 'unsupported-region')
     expectCode(() => toQccSearchRequest({ ...createInitialTenderFilters(), publishPreset: 'all' }, NOW), 'no-supported-filter')
+  })
+
+  it('builds isolated combined branches and never leaks hidden tender fields', () => {
+    const filters = {
+      ...createInitialTenderFilters(), noticeType: 'wtb' as const, keywords: '数据治理 信创',
+      tenderStages: ['招标'], awardStages: ['中标成交'],
+      tenderAmountMin: '300', awardAmountMin: '500',
+      proposedStages: ['项目备案'], approvalProgress: ['审批通过'], proposedInvestmentMin: '1000',
+    }
+    expect(toQccQueryBranches(filters, 'combined', NOW)).toEqual({
+      tender: {
+        keywords: ['数据治理', '信创'], beginDate: '2026-05-30', infoTypes: ['中标公告'],
+        bidStatuses: ['中标成交'], winningAmountMin: 5_000_000,
+      },
+      proposed: {
+        keywords: ['数据治理', '信创'], beginDate: '2026-05-30', projectStages: ['项目备案'],
+        approvalStatuses: ['审批通过'], investmentMin: 10_000_000,
+      },
+    })
+    expect(toQccQueryBranches(filters, 'tender', NOW)).not.toHaveProperty('proposed')
+    expect(toQccQueryBranches(filters, 'proposed', NOW)).not.toHaveProperty('tender')
   })
 })

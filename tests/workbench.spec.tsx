@@ -81,7 +81,7 @@ describe('TenderWorkbench S1a shell', () => {
   it('renders only four navigable business phases over the internal workflow graph', () => {
     const state = createEmptyTenderWorkflowProjection()
     renderWorkbench({ status: 'ready', projection: state })
-    const tabs = screen.getAllByRole('tab')
+    const tabs = [...screen.getByRole('tablist', { name: zh['workbench.phases'] }).querySelectorAll<HTMLElement>('[role="tab"]')]
     expect(tabs).toHaveLength(4)
     expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual([
       zh['workbench.phase.opportunity'], zh['workbench.phase.screening'],
@@ -105,15 +105,46 @@ describe('TenderWorkbench S1a shell', () => {
     expect(screen.getByText(zh['workbench.subtitle'])).toBeTruthy()
     expect(screen.getByText(zh['workbench.query.eyebrow'])).toBeTruthy()
     expect(screen.getByRole('form', { name: zh['workbench.query.formTitle'] })).toBeTruthy()
-    expect(screen.getByText(zh['workbench.query.editHint'])).toBeTruthy()
+    expect(screen.getAllByText(zh['workbench.query.editHint'])).toHaveLength(1)
     expect(screen.queryByText('query.start')).toBeNull()
-    expect(screen.getByText(zh['workbench.query.planIndependent'])).toBeTruthy()
+    expect(screen.getByText(zh['workbench.query.combinedPlan'])).toBeTruthy()
     expect(screen.getByText(zh['workbench.query.planTitle'])).toBeTruthy()
 
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
     expect(screen.getByRole('heading', { name: zh['workbench.phase.emptyTitle'] })).toBeTruthy()
     expect(screen.queryByRole('table')).toBeNull()
     expect(screen.queryByText(/示例数据|假数据/u)).toBeNull()
+  })
+
+  it('uses prototype disclosures and contextual public-query controls', () => {
+    const { container } = renderWorkbench()
+    const procurement = container.querySelector<HTMLDetailsElement>('[data-query-disclosure="procurement-method"]')
+    const industry = container.querySelector<HTMLDetailsElement>('[data-query-disclosure="industry"]')
+    const procurementType = container.querySelector<HTMLDetailsElement>('[data-query-disclosure="procurement-type"]')
+    expect(procurement?.open).toBe(true)
+    expect(industry?.open).toBe(false)
+    fireEvent.click(industry!.querySelector('summary')!)
+    fireEvent.click(procurementType!.querySelector('summary')!)
+    expect(industry?.open).toBe(true)
+    expect(procurementType?.open).toBe(true)
+    expect(procurement?.open).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: zh['publish.priorYears'] }))
+    expect(container.querySelector('[data-publish-extra="year"]')).toBeTruthy()
+    expect(container.querySelector('[data-publish-extra="custom"]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['publish.custom'] }))
+    expect(container.querySelector('[data-publish-extra="year"]')).toBeNull()
+    expect(container.querySelector('[data-publish-extra="custom"]')).toBeTruthy()
+
+    const regionTrigger = screen.getByRole('button', { name: zh['region.triggerHint'] })
+    fireEvent.click(regionTrigger)
+    const search = screen.getByRole('searchbox', { name: zh['region.search.placeholder'] })
+    expect(document.activeElement).toBe(search)
+    fireEvent.change(search, { target: { value: '南京' } })
+    fireEvent.click(screen.getAllByRole('button', { name: /南京/u })[0]!)
+    expect(container.querySelector('[data-region-token]')).toBeTruthy()
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(document.activeElement).toBe(regionTrigger)
   })
 
   it('uses tab semantics and keyboard navigation without step or ordinal gating', () => {
@@ -150,9 +181,11 @@ describe('TenderWorkbench S1a shell', () => {
     fireEvent.change(screen.getByLabelText(zh['workbench.query.target']), {
       target: { value: '查找云平台项目' },
     })
-    fireEvent.change(screen.getByLabelText(zh['field.keywords']), {
+    const keywordInput = screen.getByLabelText(zh['field.keywords'])
+    fireEvent.change(keywordInput, {
       target: { value: '云平台 数据治理' },
     })
+    fireEvent.keyDown(keywordInput, { key: 'Enter' })
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.scope.combined'] }))
     const submit = screen.getByRole('button', { name: zh['workbench.query.submit'] })
     const form = screen.getByRole('form', { name: zh['workbench.query.formTitle'] })
@@ -185,6 +218,42 @@ describe('TenderWorkbench S1a shell', () => {
     })
     fireEvent.submit(screen.getByRole('form', { name: zh['workbench.query.formTitle'] }))
     expect(sendIntent).toHaveBeenCalledTimes(1)
+  })
+
+  it('maps the complete visible branch controls into one combined Intent and omits hidden stale values', async () => {
+    const sendIntent = vi.fn(async (_intent: unknown) => {})
+    renderWorkbench({ status: 'empty' }, sendIntent)
+    fireEvent.change(screen.getByLabelText(zh['workbench.query.target']), { target: { value: '识别华东数字化项目并核验公开证据' } })
+    const keywordInput = screen.getByLabelText(zh['field.keywords'])
+    fireEvent.change(keywordInput, { target: { value: '数据治理 信创' } })
+    fireEvent.keyDown(keywordInput, { key: 'Enter' })
+
+    fireEvent.click(screen.getByRole('button', { name: zh['notice.ifb'] }))
+    fireEvent.click(screen.getByRole('button', { name: '变更' }))
+    fireEvent.click(screen.getByRole('button', { name: zh['notice.wtb'] }))
+    fireEvent.click(screen.getByRole('button', { name: '中标成交' }))
+
+    const proposedTab = screen.getByRole('tab', { name: zh['workbench.query.proposedConditions'] })
+    proposedTab.focus()
+    fireEvent.keyDown(proposedTab, { key: 'Home' })
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: zh['workbench.query.tenderConditions'] }))
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(proposedTab)
+    fireEvent.click(screen.getByRole('button', { name: '项目备案' }))
+    fireEvent.click(screen.getByRole('button', { name: '审批通过' }))
+
+    expect(document.querySelector('[data-plan-source="tender"]')?.textContent).toContain('中标成交')
+    expect(document.querySelector('[data-plan-source="tender"]')?.textContent).not.toContain('招标变更')
+    expect(document.querySelector('[data-plan-source="proposed"]')?.textContent).toContain('项目备案')
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.submit'] }))
+    await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
+    expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({
+      kind: 'query.start', scope: 'combined', target: '识别华东数字化项目并核验公开证据',
+      tender: { keywords: ['数据治理', '信创'], infoTypes: ['中标公告'], bidStatuses: ['中标成交'] },
+      proposed: { keywords: ['数据治理', '信创'], projectStages: ['项目备案'], approvalStatuses: ['审批通过'] },
+    })
+    expect(sendIntent.mock.calls[0]?.[0]).not.toHaveProperty('smartSort')
+    expect((sendIntent.mock.calls[0]?.[0] as { tender: object }).tender).not.toHaveProperty('budgetMin')
   })
 
   it('retries a transport failure with the original command id', async () => {
@@ -252,6 +321,7 @@ describe('TenderWorkbench S1a shell', () => {
 
     fireEvent.change(target, { target: { value: '查找数据项目' } })
     fireEvent.change(keywords, { target: { value: '一 二 三 四 五 六 七 八 九 十 十一' } })
+    fireEvent.keyDown(keywords, { key: 'Enter' })
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.submit'] }))
     expect(keywords.getAttribute('aria-invalid')).toBe('true')
     expect(keywords.getAttribute('aria-describedby')).toBe(screen.getByRole('alert').id)
@@ -477,6 +547,9 @@ describe('TenderWorkbench S1a shell', () => {
     expect(screen.getByRole('link', { name: /打开来源记录/u }).getAttribute('href')).toBe('https://example.test/tender/t-1')
     expect(screen.getByText(zh['workbench.data.detail.sourceRegion'])).toBeTruthy()
     expect(loadRows).toHaveBeenCalledWith('session-1', normalizedData, expect.objectContaining({ page: 1, pageSize: 50 }), expect.any(AbortSignal))
+    fireEvent.change(screen.getByLabelText(zh['workbench.data.filterRegion']), { target: { value: '江苏省' } })
+    fireEvent.change(screen.getByLabelText(zh['workbench.data.filterStage']), { target: { value: 'active-procurement' } })
+    await waitFor(() => { expect(loadRows).toHaveBeenLastCalledWith('session-1', normalizedData, expect.objectContaining({ region: '江苏省', lifecycle: 'active-procurement' }), expect.any(AbortSignal)) })
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.source.tender'], pressed: false }))
     await waitFor(() => { expect(loadRows).toHaveBeenLastCalledWith('session-1', normalizedData, expect.objectContaining({ source: 'tender' }), expect.any(AbortSignal)) })
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.next'] }))

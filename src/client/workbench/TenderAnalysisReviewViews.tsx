@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   ReviewRowsFilterV1,
@@ -111,18 +112,21 @@ interface AnalysisViewProps {
   readonly loadRows: ReviewRowsLoader
   readonly write: SessionWriteFlight
   readonly onOpenReview: () => void
+  readonly footerTarget: HTMLElement | null
   readonly t: TenderTranslate
 }
 
-export function TenderAnalysisView({ sessionId, workflow, loadRows, write, onOpenReview, t }: AnalysisViewProps) {
+export function TenderAnalysisView({ sessionId, workflow, loadRows, write, onOpenReview, footerTarget, t }: AnalysisViewProps) {
   const artifact = currentRowsArtifact(workflow)
   const [page, setPage] = useState(1)
   const [query, setQuery] = useState('')
   const [source, setSource] = useState<ReviewRowsFilterV1['source']>()
   const [classification, setClassification] = useState<ReviewRowsFilterV1['classification']>()
   const [recommendation, setRecommendation] = useState<ReviewRowsFilterV1['recommendation']>()
+  const [sort, setSort] = useState<'source-order' | 'recommendation' | 'published'>('source-order')
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [focusedId, setFocusedId] = useState<string>()
+  const analysisDetailRef = useRef<HTMLElement>(null)
   const filter = useMemo<ReviewRowsFilterV1>(() => ({
     page, pageSize: 20,
     ...(query.trim() === '' ? {} : { query: query.trim() }),
@@ -158,10 +162,21 @@ export function TenderAnalysisView({ sessionId, workflow, loadRows, write, onOpe
   const completed = workflow.analysis?.completed ?? 0
   const total = workflow.analysis?.total ?? workflow.query?.total ?? 0
   const maximumPage = Math.max(1, Math.ceil((rows.data?.total ?? 0) / 20))
-  const focused = rows.data?.rows.find(row => row.project.recordId === focusedId) ?? rows.data?.rows[0]
+  const displayedRows = useMemo(() => {
+    const result = [...(rows.data?.rows ?? [])]
+    if (sort === 'recommendation') {
+      const rank = { 'priority-review': 0, watch: 1, 'not-recommended': 2 } as const
+      result.sort((left, right) => (left.recommendation === undefined ? 3 : rank[left.recommendation.recommendation]) - (right.recommendation === undefined ? 3 : rank[right.recommendation.recommendation]))
+    } else if (sort === 'published') {
+      result.sort((left, right) => (right.project.publishedAt.value ?? '').localeCompare(left.project.publishedAt.value ?? ''))
+    }
+    return result
+  }, [rows.data?.rows, sort])
+  const focused = displayedRows.find(row => row.project.recordId === focusedId) ?? displayedRows[0]
+  useEffect(() => { if (focusedId !== undefined) analysisDetailRef.current?.focus() }, [focusedId])
   return (
     <section className={css.s4View} aria-label={t('workbench.analysis.title')}>
-      <PageHeader eyebrow={t('workbench.analysis.eyebrow')} title={t('workbench.analysis.title')} description={t('workbench.analysis.description')} aside={<ProgressMeter value={completed} max={total} label={t('workbench.analysis.progressLabel')} />} />
+      <PageHeader eyebrow={t('workbench.analysis.eyebrow')} title={t('workbench.analysis.title')} description={t('workbench.analysis.description')} aside={<div className={css.analysisHeaderMeta}><StatusPill>{workflow.analysis?.version ?? t('workbench.analysis.unanalyzed')}</StatusPill><ProgressMeter value={completed} max={total} label={t('workbench.analysis.progressLabel')} /></div>} />
       <AnalysisBoundary t={t} />
       <div className={css.s4Summary}>
         <MetricCard label={t('workbench.analysis.priority')} value={workflow.analysis?.priorityReview ?? 0} tone="success" />
@@ -178,13 +193,12 @@ export function TenderAnalysisView({ sessionId, workflow, loadRows, write, onOpe
             {t('workbench.analysis.analyzeClassification')}
           </button>
         )}
-        <button type="button" className={css.secondary} disabled={write.busy} onClick={onOpenReview}>{t('workbench.analysis.skip')}</button>
       </div>
       <SessionWriteProgress t={t} write={write} />
       {rows.failed ? <div className={css.dataError} role="alert"><span>{t('workbench.analysis.loadFailed')}</span><button type="button" onClick={rows.retry}>{t('workbench.data.retry')}</button></div> : rows.data === undefined ? <p className={css.dataLoading} role="status">{t('workbench.analysis.loading')}</p> : (
         <>
           {rows.loading && <div className={css.inlineLoading} role="status">{t('workbench.analysis.loading')}</div>}
-          <div className={css.analysisWorkspace}>
+          <div className={css.analysisWorkspace} data-analysis-layout>
             <section className={css.queuePanel}>
               <SurfaceHeader title={t('workbench.analysis.queueTitle')} description={t('workbench.analysis.queueDescription')} />
               <div className={css.dataToolbar}>
@@ -192,36 +206,34 @@ export function TenderAnalysisView({ sessionId, workflow, loadRows, write, onOpe
                 <select aria-label={t('workbench.data.filterSource')} value={source ?? ''} onChange={(event) => { setSource(event.target.value === '' ? undefined : event.target.value as NonNullable<typeof source>); setPage(1) }}><option value="">{t('workbench.data.filterSourceAll')}</option><option value="tender">{t('workbench.data.source.tender')}</option><option value="proposed">{t('workbench.data.source.proposed')}</option></select>
                 <select aria-label={t('workbench.classification.filter')} value={classification ?? ''} onChange={(event) => { setClassification(event.target.value === '' ? undefined : event.target.value as NonNullable<typeof classification>); setPage(1) }}><option value="">{t('workbench.classification.all')}</option>{(['include', 'observe', 'manual-review', 'exclude', 'unmatched'] as const).map(value => <option key={value} value={value}>{t(`workbench.classification.${value}`)}</option>)}</select>
                 <select aria-label={t('workbench.analysis.filterRecommendation')} value={recommendation ?? ''} onChange={(event) => { setRecommendation(event.target.value === '' ? undefined : event.target.value as NonNullable<typeof recommendation>); setPage(1) }}><option value="">{t('workbench.analysis.recommendationAll')}</option><option value="priority-review">{t('workbench.analysis.recommendation.priority-review')}</option><option value="watch">{t('workbench.analysis.recommendation.watch')}</option><option value="not-recommended">{t('workbench.analysis.recommendation.not-recommended')}</option><option value="unanalyzed">{t('workbench.analysis.unanalyzed')}</option></select>
+                <select aria-label={t('workbench.analysis.sort')} value={sort} onChange={event => { setSort(event.target.value as typeof sort) }}><option value="source-order">{t('workbench.analysis.sort.source')}</option><option value="recommendation">{t('workbench.analysis.sort.recommendation')}</option><option value="published">{t('workbench.analysis.sort.published')}</option></select>
               </div>
-              <div className={css.opportunityList}>{rows.data.rows.map((row, index) => (
+              <div className={css.opportunityList}>{displayedRows.map((row, index) => (
                 <article key={row.project.recordId} className={focused?.project.recordId === row.project.recordId ? css.opportunitySelected : css.opportunityRow}>
                   <input type="checkbox" aria-label={t('workbench.review.selectRecord', { title: row.project.title })} checked={selected.has(row.project.recordId)} onChange={() => { toggle(row.project.recordId) }} />
                   <button type="button" onClick={() => { setFocusedId(row.project.recordId) }} aria-pressed={focused?.project.recordId === row.project.recordId}>
                     <span className={css.rowRank}>{String((page - 1) * 20 + index + 1).padStart(2, '0')}</span>
                     <span className={css.rowMain}><strong>{row.project.title}</strong><small>{t(`workbench.data.source.${row.project.source}`)} · {row.project.region.value ?? t('workbench.data.value.missing')} · {row.project.amount.display}</small></span>
-                    <span className={css.rowSignals}>
-                      <StatusPill tone={row.recommendation?.recommendation === 'priority-review' ? 'success' : row.recommendation?.recommendation === 'watch' ? 'warning' : 'neutral'}>{recommendationLabel(t, row.recommendation?.recommendation)}</StatusPill>
-                      <StatusPill tone={row.review.decision === 'confirmed-candidate' ? 'success' : row.review.decision === 'watch' ? 'warning' : row.review.decision === 'pending' ? 'purple' : 'neutral'}>{decisionLabel(t, row.review.decision, row.project.source)}</StatusPill>
-                    </span>
+                    <span className={css.rowSignals}><span data-agent-recommendation={row.recommendation?.recommendation ?? 'unanalyzed'}><StatusPill tone={row.recommendation?.recommendation === 'priority-review' ? 'success' : row.recommendation?.recommendation === 'watch' ? 'warning' : 'neutral'}>{recommendationLabel(t, row.recommendation?.recommendation)}</StatusPill></span><small>{row.project.publishedAt.value ?? t('workbench.data.value.missing')}</small></span>
                   </button>
                 </article>
               ))}</div>
               <footer className={css.tableFooter}><span>{t('workbench.data.pageSummary', { page: rows.data.page, pages: maximumPage, total: rows.data.total })}</span><div><button type="button" disabled={page <= 1} onClick={() => { setPage(value => value - 1) }}>{t('workbench.data.previous')}</button><button type="button" disabled={page >= maximumPage} onClick={() => { setPage(value => value + 1) }}>{t('workbench.data.next')}</button></div></footer>
             </section>
             {focused === undefined ? null : (
-              <aside className={css.analysisDetail} aria-label={t('workbench.analysis.detailTitle')}>
-                <header><div><StatusPill tone={focused.project.source === 'tender' ? 'brand' : 'warning'}>{t(`workbench.data.source.${focused.project.source}`)}</StatusPill><h3>{focused.project.title}</h3><p>{focused.project.region.value ?? t('workbench.data.value.missing')} · {focused.project.amount.display}</p></div><StatusPill tone={focused.recommendation?.recommendation === 'priority-review' ? 'success' : focused.recommendation?.recommendation === 'watch' ? 'warning' : 'neutral'}>{recommendationLabel(t, focused.recommendation?.recommendation)}</StatusPill></header>
-                <div className={css.reviewLayers}>
-                  <div><span>{t('workbench.review.layerData')}</span><strong>{t(`workbench.data.status.${fieldStatus(focused)}`)}</strong></div>
-                  <div><span>{t('workbench.review.layerClassification')}</span><strong>{focused.classification === undefined ? '—' : t(`workbench.classification.${focused.classification}`)}</strong></div>
-                  <div><span>{t('workbench.review.layerAgent')}</span><strong>{recommendationLabel(t, focused.recommendation?.recommendation)}</strong></div>
-                  <div><span>{t('workbench.review.layerDecision')}</span><strong>{decisionLabel(t, focused.review.decision, focused.project.source)}</strong></div>
+              <aside ref={analysisDetailRef} className={css.analysisDetail} tabIndex={-1} aria-label={t('workbench.analysis.detailTitle')}>
+                <header className={css.analysisDetailHero}><div><StatusPill tone={focused.project.source === 'tender' ? 'brand' : 'warning'}>{t(`workbench.data.source.${focused.project.source}`)}</StatusPill><h3>{focused.project.title}</h3><p>{focused.project.region.value ?? t('workbench.data.value.missing')} · {focused.project.amount.display}</p></div><span data-agent-recommendation={focused.recommendation?.recommendation ?? 'unanalyzed'}><StatusPill tone={focused.recommendation?.recommendation === 'priority-review' ? 'success' : focused.recommendation?.recommendation === 'watch' ? 'warning' : 'neutral'}>{recommendationLabel(t, focused.recommendation?.recommendation)}</StatusPill></span></header>
+                <div className={css.analysisFactGrid}>
+                  <div><span>{t('workbench.analysis.factQuery')}</span><strong>{t(`workbench.data.source.${focused.project.source}`)}</strong></div>
+                  <div><span>{t('workbench.analysis.factRule')}</span><strong>{focused.classification === undefined ? '—' : t(`workbench.classification.${focused.classification}`)}</strong></div>
+                  <div><span>{t('workbench.analysis.factTiming')}</span><strong>{focused.project.publishedAt.value ?? t('workbench.data.value.missing')}</strong></div>
+                  <div><span>{t('workbench.analysis.factDisclosure')}</span><strong>{t(`workbench.data.status.${fieldStatus(focused)}`)}</strong></div>
                 </div>
                 {focused.recommendation === undefined ? <StatePanel title={t('workbench.analysis.unanalyzed')} description={t('workbench.analysis.unanalyzedDescription')} /> : (
                   <>
                     <section className={css.analysisConclusion}><span>{t('workbench.analysis.conclusion')}</span><p>{focused.recommendation.reason}</p></section>
                     <section className={css.detailSection}><h4>{t('workbench.analysis.evidence')}</h4><ul className={css.evidenceList}>{focused.recommendation.evidence.map(item => <li key={item.ref}><strong>{item.label}</strong><span>{item.value}</span>{item.limitation === undefined ? null : <small>{item.limitation}</small>}</li>)}</ul></section>
-                    <div className={css.detailColumns}><section className={css.detailSection}><h4>{t('workbench.analysis.verification')}</h4><ul>{focused.recommendation.verificationItems.map(item => <li key={item}>{item}</li>)}</ul></section><section className={css.detailSection}><h4>{t('workbench.analysis.limitations')}</h4><ul>{focused.recommendation.limitations.map(item => <li key={item}>{item}</li>)}</ul></section></div>
+                    <div className={css.detailColumns}><section className={css.detailSection} data-analysis-risk><h4>{t('workbench.analysis.limitations')}</h4><ul>{focused.recommendation.limitations.map(item => <li key={item}>{item}</li>)}</ul></section><section className={css.detailSection} data-analysis-verification><h4>{t('workbench.analysis.verification')}</h4><ul>{focused.recommendation.verificationItems.map(item => <li key={item}>{item}</li>)}</ul></section></div>
                   </>
                 )}
                 <p className={css.analysisBoundary}>{t('workbench.analysis.boundary')}</p>
@@ -230,6 +242,10 @@ export function TenderAnalysisView({ sessionId, workflow, loadRows, write, onOpe
           </div>
         </>
       )}
+      {footerTarget === null ? null : createPortal(<>
+        <div className={css.footerCopy}><span className={css.footerHint}>{t(workflow.analysis === undefined ? 'workbench.analysis.footerWaiting' : 'workbench.analysis.footerNote')}</span></div>
+        {workflow.analysis === undefined ? null : <button type="button" className={css.primary} disabled={write.busy} onClick={onOpenReview}>{t('workbench.analysis.openReview')}</button>}
+      </>, footerTarget)}
     </section>
   )
 }

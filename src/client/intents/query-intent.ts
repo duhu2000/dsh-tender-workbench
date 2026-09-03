@@ -6,33 +6,29 @@ import {
   QCC_PROPOSED_SEARCH_TOOL,
   QCC_TENDER_SEARCH_TOOL,
 } from '../../contracts/query.ts'
+import { toQccQueryBranches } from '../qcc-request.ts'
+import type { TenderFilters } from '../types.ts'
 
 export interface TenderQueryDraft {
   readonly scope: TenderQueryIntentV1['scope']
   readonly target: string
-  readonly keywords: string
-}
-
-function normalizedKeywords(value: string): readonly string[] | undefined {
-  const keywords = [...new Set(value.split(/[\s,，、]+/u).map(item => item.trim()).filter(Boolean))]
-  return keywords.length === 0 ? undefined : keywords
+  readonly filters: TenderFilters
 }
 
 /** Build the one validated object shared by the form, visible message, and future Host tool. */
 export function createTenderQueryIntent(
   draft: TenderQueryDraft,
   commandId: string,
+  now = new Date(),
 ): TenderQueryIntentV1 {
-  const keywords = normalizedKeywords(draft.keywords)
-  const request = keywords === undefined ? {} : { keywords }
+  const branches = toQccQueryBranches(draft.filters, draft.scope, now)
   return TenderQueryIntentV1Schema.parse({
     schemaVersion: 1,
     commandId,
     kind: 'query.start',
     scope: draft.scope,
     target: draft.target,
-    ...(draft.scope === 'tender' || draft.scope === 'combined' ? { tender: request } : {}),
-    ...(draft.scope === 'proposed' || draft.scope === 'combined' ? { proposed: request } : {}),
+    ...branches,
   })
 }
 

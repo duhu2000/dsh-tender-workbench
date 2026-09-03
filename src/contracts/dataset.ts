@@ -50,9 +50,26 @@ export const NormalizedDateV1Schema = z.object({
   parseStatus: z.enum(['normalized', 'missing', 'unparseable']),
 }).strict()
 
-const sourceEntitySchema = z.object({
+export const NormalizedSourceEntityV1Schema = z.object({
   id: shortText,
   name: shortText,
+}).strict()
+
+export const TenderSourceDetailsV1Schema = z.object({
+  infoType: NormalizedTextV1Schema,
+  noticeStatus: NormalizedTextV1Schema,
+  procurementMethod: NormalizedTextV1Schema,
+  procurementType: NormalizedTextV1Schema,
+  industries: z.array(shortText).max(100),
+  products: z.array(shortText).max(100),
+  agents: z.array(NormalizedSourceEntityV1Schema).max(100),
+  awardees: z.array(NormalizedSourceEntityV1Schema).max(100),
+}).strict()
+
+export const ProposedSourceDetailsV1Schema = z.object({
+  projectStage: NormalizedTextV1Schema,
+  approvalProgress: NormalizedTextV1Schema,
+  approvalAuthorities: z.array(NormalizedSourceEntityV1Schema).max(100),
 }).strict()
 
 export const NormalizedAnnouncementV1Schema = z.object({
@@ -65,7 +82,9 @@ export const NormalizedAnnouncementV1Schema = z.object({
   amount: NormalizedAmountV1Schema,
   publishedAt: NormalizedDateV1Schema,
   deadline: NormalizedDateV1Schema.optional(),
-  parties: z.array(sourceEntitySchema).max(100),
+  parties: z.array(NormalizedSourceEntityV1Schema).max(100),
+  tenderDetails: TenderSourceDetailsV1Schema.optional(),
+  proposedDetails: ProposedSourceDetailsV1Schema.optional(),
   sourceLink: z.string().max(2_048).optional(),
 }).strict()
 
@@ -84,6 +103,8 @@ export const NormalizedProjectV1Schema = z.object({
   amount: NormalizedAmountV1Schema,
   publishedAt: NormalizedDateV1Schema,
   deadline: NormalizedDateV1Schema.optional(),
+  tenderDetails: TenderSourceDetailsV1Schema.optional(),
+  proposedDetails: ProposedSourceDetailsV1Schema.optional(),
   announcements: z.array(NormalizedAnnouncementV1Schema).min(1).max(500),
   disclosure: z.object({
     missingFields: z.array(z.string().min(1).max(128)).max(64),

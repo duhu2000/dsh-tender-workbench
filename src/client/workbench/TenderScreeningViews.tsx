@@ -1,4 +1,5 @@
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   RuleDraftArtifactV1Schema,
@@ -18,7 +19,6 @@ import {
 } from '../../contracts/workflow.ts'
 import type { TenderTranslate } from '../fields/field-props.ts'
 import {
-  createAdjustRulesIntent,
   createConfirmRulesIntent,
   createPreviewRulesIntent,
 } from '../intents/screening-intent.ts'
@@ -31,7 +31,6 @@ import {
 import {
   MetricCard,
   PageHeader,
-  ProgressMeter,
   StatePanel,
   StatusPill,
   SurfaceHeader,
@@ -57,6 +56,7 @@ interface RulesViewProps {
   readonly loadContent: RuleContentLoader
   readonly write: SessionWriteFlight
   readonly onRequestProposal: () => void
+  readonly footerTarget: HTMLElement | null
   readonly t: TenderTranslate
 }
 
@@ -81,10 +81,6 @@ function sourceLink(row: ClassifiedRecordV1): string | undefined {
   }
 }
 
-function rulesEqual(left: TenderRuleV1, right: TenderRuleV1): boolean {
-  return JSON.stringify(left) === JSON.stringify(right)
-}
-
 function PreviewSample({
   sample,
   t,
@@ -94,119 +90,109 @@ function PreviewSample({
 }) {
   return (
     <article className={css.sampleCard} data-sample-kind={sample.kind}>
-      <span>{t(`workbench.rules.sample.${sample.kind}`)}</span>
       <strong>{sample.title}</strong>
       <small>{t(`workbench.data.source.${sample.source}`)} · {t(`workbench.classification.${sample.classification}`)}</small>
+      <span>{t(`workbench.rules.sample.${sample.kind}`)}</span>
     </article>
   )
 }
 
-function RulePreview({ preview, rules, status, t }: {
+function RuleTermsEditor({ values, label, placeholder, disabled, onChange, t }: {
+  readonly values: readonly string[]
+  readonly label: string
+  readonly placeholder: string
+  readonly disabled: boolean
+  readonly onChange: (values: readonly string[]) => void
+  readonly t: TenderTranslate
+}) {
+  const [pending, setPending] = useState('')
+  const commit = (): void => {
+    const additions = terms(pending)
+    if (additions.length === 0) return
+    onChange([...new Set([...values, ...additions])].slice(0, 50))
+    setPending('')
+  }
+  return (
+    <div className={css.ruleKeywordBox}>
+      {values.map(value => <span key={value}>{value}<button type="button" disabled={disabled} aria-label={t('workbench.rules.removeTerm', { term: value })} onClick={() => { onChange(values.filter(item => item !== value)) }}>×</button></span>)}
+      <input
+        type="text"
+        disabled={disabled || values.length >= 50}
+        aria-label={label}
+        placeholder={placeholder}
+        value={pending}
+        onChange={event => { setPending(event.target.value) }}
+        onBlur={commit}
+        onKeyDown={event => {
+          if (event.key !== 'Enter' && event.key !== ',' && event.key !== '，') return
+          event.preventDefault()
+          commit()
+        }}
+      />
+    </div>
+  )
+}
+
+function RulesFooter({ target, children }: { readonly target: HTMLElement | null, readonly children: ReactNode }) {
+  return target === null ? null : createPortal(children, target)
+}
+
+function RulePreview({ preview, rules, selectedRuleId, status, t }: {
   readonly preview: RulePreviewArtifactV1
   readonly rules: readonly TenderRuleV1[]
-  readonly status: 'suggested' | 'current' | 'accepted' | 'stale'
+  readonly selectedRuleId: string
+  readonly status: 'current' | 'accepted' | 'stale'
   readonly t: TenderTranslate
 }) {
   const nameOf = (ruleId: string) => rules.find(rule => rule.id === ruleId)?.name ?? ruleId
   const exceptionCount = preview.ruleImpacts.reduce((sum, impact) => sum + impact.exceptionCount, 0)
   const kindOrder = { conflict: 0, exception: 1, boundary: 2, match: 3 } as const
-  const samples = [...preview.samples].sort((left, right) => kindOrder[left.kind] - kindOrder[right.kind])
-  const featuredSamples = samples.slice(0, 4)
-  const remainingSamples = samples.slice(featuredSamples.length)
+  const samples = [...preview.samples]
+    .filter(sample => sample.finalRuleId === selectedRuleId || sample.matchedRuleIds.includes(selectedRuleId))
+    .sort((left, right) => kindOrder[left.kind] - kindOrder[right.kind])
+  const featuredSamples = samples.slice(0, 3)
+  const selectedRule = rules.find(rule => rule.id === selectedRuleId)
+  const conflictingRules = preview.ruleImpacts.filter(impact => impact.conflictCount > 0).slice(0, 4)
   return (
-    <section className={css.screenCard} aria-label={t('workbench.rules.preview')}>
-      <SurfaceHeader
-        title={t('workbench.rules.preview')}
-        description={t('workbench.rules.previewBoundary')}
-        action={<StatusPill tone={status === 'stale' ? 'warning' : status === 'accepted' ? 'success' : 'brand'}>{t(status === 'suggested'
-          ? 'workbench.rules.previewSuggested'
-          : status === 'current'
-            ? 'workbench.rules.previewCurrent'
-            : status === 'accepted'
-              ? 'workbench.rules.previewAccepted'
-              : 'workbench.rules.previewExpired')}</StatusPill>}
-      />
-      <div className={css.previewSummaryHeading}>
-        <div><strong>{t('workbench.rules.previewSummary')}</strong><p>{t('workbench.rules.previewSummaryDescription')}</p></div>
-        <div className={css.previewHeadlineMetrics}>
-          <span data-emphasis={preview.covered > 0 ? 'strong' : 'muted'}><small>{t('workbench.rules.previewCoverage')}</small><strong>{preview.covered} / {preview.total}</strong></span>
-          <span data-emphasis={preview.conflicts > 0 ? 'warning' : 'muted'}><small>{t('workbench.classification.column.conflict')}</small><strong>{preview.conflicts}</strong></span>
-          <span data-emphasis={exceptionCount > 0 ? 'warning' : 'muted'}><small>{t('workbench.classification.exception')}</small><strong>{exceptionCount}</strong></span>
-        </div>
-      </div>
-      <div className={css.classificationGrid}>
-        {([
-          ['include', preview.counts.include],
-          ['observe', preview.counts.observe],
-          ['manual-review', preview.counts.manualReview],
-          ['exclude', preview.counts.exclude],
-          ['unmatched', preview.counts.unmatched],
-        ] as const).map(([value, count]) => (
-          <MetricCard
-            key={value}
-            label={t(`workbench.classification.${value}`)}
-            value={count}
-            tone={value === 'exclude' ? 'danger' : value === 'manual-review' ? 'purple' : value === 'observe' ? 'warning' : value === 'include' ? 'success' : 'neutral'}
-            dataClassification={value}
-            muted={count === 0}
+    <div className={css.rulePreviewGrid} data-rule-preview-grid aria-label={t('workbench.rules.dryRunResults')}>
+        <section className={css.rulePreviewPane} aria-label={t('workbench.rules.previewSamples')}>
+          <SurfaceHeader
+            title={t('workbench.rules.selectedSamples', { name: selectedRule?.name ?? selectedRuleId })}
+            description={t('workbench.rules.previewSamplesDescription')}
+            action={<StatusPill tone={status === 'stale' ? 'warning' : status === 'accepted' ? 'success' : 'brand'}>{t(status === 'current' ? 'workbench.rules.previewCurrent' : status === 'accepted' ? 'workbench.rules.previewAccepted' : 'workbench.rules.previewExpired')}</StatusPill>}
           />
-        ))}
+          <div className={css.rulePreviewBody}>
+            {featuredSamples.length === 0 ? <p className={css.dataEmpty}>{t('workbench.classification.none')}</p> : <div className={css.sampleList} data-preview-samples="featured">{featuredSamples.map((sample, index) => <PreviewSample key={`${sample.kind}:${sample.recordId}:${index}`} sample={sample} t={t} />)}</div>}
+          </div>
+        </section>
+        <section className={css.rulePreviewPane} aria-label={t('workbench.rules.globalImpact')}>
+          <SurfaceHeader title={t('workbench.rules.globalImpact')} description={t('workbench.rules.globalImpactDescription')} />
+          <div className={css.rulePreviewBody}>
+            <div className={css.previewLegend}>
+              {([
+                ['include', preview.counts.include],
+                ['observe', preview.counts.observe],
+                ['manual-review', preview.counts.manualReview],
+                ['exclude', preview.counts.exclude],
+              ] as const).map(([value, count]) => <div key={value} data-classification={value}><i /><span>{t(`workbench.classification.${value}`)}</span><strong>{count}</strong></div>)}
+            </div>
+            <div className={css.previewFacts}>
+              <span>{t('workbench.rules.covered', { covered: preview.covered, total: preview.total })}</span>
+              <span data-emphasis={preview.conflicts > 0 ? 'warning' : 'muted'}>{t('workbench.rules.conflicts', { count: preview.conflicts })}</span>
+              <span data-emphasis={exceptionCount > 0 ? 'warning' : 'muted'}>{t('workbench.rules.previewExceptions', { count: exceptionCount })}</span>
+              <span>{t('workbench.classification.unmatched')} {preview.counts.unmatched}</span>
+            </div>
+            <div className={css.conflictList} data-preview-impacts>
+              {conflictingRules.length === 0 ? <p>{t('workbench.rules.noConflicts')}</p> : conflictingRules.map(impact => (
+                <article key={impact.ruleId}>
+                  <strong>{nameOf(impact.ruleId)} · {t('workbench.rules.conflicts', { count: impact.conflictCount })}</strong>
+                  <span>{t('workbench.rules.conflictImpact', { raw: impact.rawMatchCount, final: impact.finalCount, exceptions: impact.exceptionCount })}</span>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
       </div>
-      <div className={css.impactSummary}>
-        <span>{t('workbench.rules.covered', { covered: preview.covered, total: preview.total })}</span>
-        <span data-emphasis={preview.conflicts > 0 ? 'warning' : 'muted'}>{t('workbench.rules.conflicts', { count: preview.conflicts })}</span>
-        <span data-emphasis={exceptionCount > 0 ? 'warning' : 'muted'}>{t('workbench.rules.previewExceptions', { count: exceptionCount })}</span>
-        <span>{t('workbench.rules.rawMatches', { count: preview.rawMatches })}</span>
-      </div>
-      <details className={css.previewDisclosure}>
-        <summary>{t('workbench.rules.previewDefinitions')}</summary>
-        <div className={css.previewDefinitions}>
-          {(['Raw', 'Final', 'Conflict', 'Exception'] as const).map(key => (
-            <p key={key}>{t(`workbench.rules.previewDefinition${key}`)}</p>
-          ))}
-        </div>
-      </details>
-      <details className={css.previewDisclosure} data-preview-impacts>
-        <summary>{t('workbench.rules.previewRuleImpacts', { count: preview.ruleImpacts.length })}</summary>
-        <div className={css.ruleImpactList}>
-          {preview.ruleImpacts.map((impact) => {
-            const ruleSamples = samples.filter(sample => sample.finalRuleId === impact.ruleId || sample.matchedRuleIds.includes(impact.ruleId))
-            return (
-              <article key={impact.ruleId} className={css.ruleImpactRow}>
-                <header><strong>{nameOf(impact.ruleId)}</strong></header>
-                <dl>
-                  <div><dt>{t('workbench.rules.previewMetricRaw')}</dt><dd>{impact.rawMatchCount}</dd></div>
-                  <div><dt>{t('workbench.rules.previewMetricFinal')}</dt><dd>{impact.finalCount}</dd></div>
-                  <div data-emphasis={impact.conflictCount > 0 ? 'warning' : 'muted'}><dt>{t('workbench.classification.column.conflict')}</dt><dd>{impact.conflictCount}</dd></div>
-                  <div data-emphasis={impact.exceptionCount > 0 ? 'warning' : 'muted'}><dt>{t('workbench.classification.exception')}</dt><dd>{impact.exceptionCount}</dd></div>
-                </dl>
-                {ruleSamples.length > 0 && (
-                  <details className={css.ruleSamples} data-preview-samples="rule">
-                    <summary>{t('workbench.rules.previewRuleSamples', { count: ruleSamples.length })}</summary>
-                    <div className={css.sampleGrid}>{ruleSamples.map((sample, index) => <PreviewSample key={`${sample.kind}:${sample.recordId}:${index}`} sample={sample} t={t} />)}</div>
-                  </details>
-                )}
-              </article>
-            )
-          })}
-        </div>
-      </details>
-      {featuredSamples.length > 0 && (
-        <details className={css.previewDisclosure} data-preview-samples="all">
-          <summary>{t('workbench.rules.previewSamplesCount', { count: samples.length })}</summary>
-          <section className={css.sampleSection} aria-label={t('workbench.rules.previewSamples')}>
-            <header><strong>{t('workbench.rules.previewSamples')}</strong><p>{t('workbench.rules.previewSamplesDescription')}</p></header>
-            <div className={css.sampleGrid} data-preview-samples="featured">{featuredSamples.map((sample, index) => <PreviewSample key={`${sample.kind}:${sample.recordId}:${index}`} sample={sample} t={t} />)}</div>
-            {remainingSamples.length > 0 && (
-              <details className={css.moreSamples} data-preview-samples="remaining">
-                <summary>{t('workbench.rules.previewMoreSamples', { count: remainingSamples.length })}</summary>
-                <div className={css.sampleGrid}>{remainingSamples.map((sample, index) => <PreviewSample key={`${sample.kind}:${sample.recordId}:${index}`} sample={sample} t={t} />)}</div>
-              </details>
-            )}
-          </section>
-        </details>
-      )}
-    </section>
   )
 }
 
@@ -216,16 +202,16 @@ export function TenderRulesView({
   loadContent,
   write,
   onRequestProposal,
+  footerTarget,
   t,
 }: RulesViewProps) {
   const writeReasonId = useId()
   const dataset = workflow.query?.normalizedData
   const [draft, setDraft] = useState<readonly TenderRuleV1[]>()
-  const [suggestion, setSuggestion] = useState<readonly TenderRuleV1[]>()
   const [selectedId, setSelectedId] = useState<string>()
   const [preview, setPreview] = useState<RulePreviewArtifactV1>()
   const [dirty, setDirty] = useState(false)
-  const [instruction, setInstruction] = useState('')
+  const [validated, setValidated] = useState(false)
   const [error, setError] = useState<string>()
   const writeDisabledReason = write.busy
     ? t('workbench.write.busyReason', {
@@ -235,11 +221,10 @@ export function TenderRulesView({
 
   useEffect(() => {
     setDraft(undefined)
-    setSuggestion(undefined)
     setSelectedId(undefined)
     setPreview(undefined)
-    setInstruction('')
     setDirty(false)
+    setValidated(false)
     setError(undefined)
   }, [dataset?.id, sessionId])
 
@@ -250,13 +235,11 @@ export function TenderRulesView({
     void loadContent(sessionId, artifact, abort.signal).then((content) => {
       const parsed = RuleDraftArtifactV1Schema.safeParse(content)
       if (!parsed.success || parsed.data.activeDatasetId !== dataset?.id) return
-      if (parsed.data.origin === 'agent') {
-        setSuggestion(parsed.data.rules)
-      } else {
-        setDraft(parsed.data.rules)
-        setSelectedId(current => current ?? parsed.data.rules[0]?.id)
-        setDirty(false)
-      }
+      const copied = parsed.data.rules.map(rule => ({ ...rule, sources: [...rule.sources], keywords: [...rule.keywords], exceptions: [...rule.exceptions] }))
+      setDraft(copied)
+      setSelectedId(current => copied.some(rule => rule.id === current) ? current : copied[0]?.id)
+      setDirty(false)
+      setValidated(false)
     }, () => { if (!abort.signal.aborted) setError(t('workbench.rules.loadFailed')) })
     return () => { abort.abort() }
   }, [dataset?.id, loadContent, sessionId, t, workflow.rules?.draft?.id])
@@ -267,13 +250,17 @@ export function TenderRulesView({
     const abort = new AbortController()
     void loadContent(sessionId, artifact, abort.signal).then((content) => {
       const parsed = RulePreviewArtifactV1Schema.safeParse(content)
-      if (parsed.success && parsed.data.activeDatasetId === dataset?.id) setPreview(parsed.data)
+      if (parsed.success && parsed.data.activeDatasetId === dataset?.id) {
+        setPreview(parsed.data)
+        const currentDraft = TenderRuleSetV1Schema.safeParse(draft)
+        if (workflow.rules?.draftOrigin === 'user' && currentDraft.success && parsed.data.draftFingerprint === ruleDraftFingerprint(currentDraft.data)) setDirty(false)
+      }
     }, () => { if (!abort.signal.aborted) setError(t('workbench.rules.loadFailed')) })
     return () => { abort.abort() }
-  }, [dataset?.id, loadContent, sessionId, t, workflow.rules?.preview?.id])
+  }, [dataset?.id, draft, loadContent, sessionId, t, workflow.rules?.draftOrigin, workflow.rules?.preview?.id])
 
   if (dataset === undefined) return <div className={css.emptyState}><p>{t('workbench.rules.requiresData')}</p></div>
-  if (draft === undefined && suggestion === undefined) {
+  if (draft === undefined) {
     return (
       <section className={css.dataView} aria-label={t('workbench.rules.title')}>
         <PageHeader eyebrow={t('workbench.rules.eyebrow')} title={t('workbench.rules.startTitle')} description={t('workbench.rules.startDescription')} />
@@ -295,69 +282,60 @@ export function TenderRulesView({
           </form>
         ) : <p className={css.dataLoading} role="status">{t('workbench.rules.loading')}</p>}
         <SessionWriteProgress id={writeReasonId} t={t} write={write} />
+        <RulesFooter target={footerTarget}><div className={css.footerCopy}><span className={css.footerHint}>{t('workbench.rules.footerWaiting')}</span></div></RulesFooter>
       </section>
     )
   }
 
-  const applySuggestion = (): void => {
-    if (suggestion === undefined) return
-    const copied = suggestion.map(rule => ({ ...rule, sources: [...rule.sources], keywords: [...rule.keywords], exceptions: [...rule.exceptions] }))
-    setDraft(copied)
-    setSelectedId(copied[0]?.id)
-    setSuggestion(undefined)
-    setDirty(false)
-  }
-  const selected = draft?.find(rule => rule.id === selectedId) ?? draft?.[0]
+  const selected = draft.find(rule => rule.id === selectedId) ?? draft[0]
   const updateSelected = (change: Partial<TenderRuleV1>): void => {
-    if (selected === undefined || draft === undefined) return
+    if (selected === undefined) return
     setDraft(draft.map(rule => rule.id === selected.id ? { ...rule, ...change } : rule))
     setDirty(true)
+    setValidated(false)
     setError(undefined)
   }
-  const displayedRules = suggestion ?? draft
-  const fingerprint = displayedRules === undefined ? undefined : ruleDraftFingerprint(displayedRules)
+  const parsedDisplayedRules = TenderRuleSetV1Schema.safeParse(draft)
+  const fingerprint = parsedDisplayedRules.success ? ruleDraftFingerprint(parsedDisplayedRules.data) : undefined
   const previewMatchesCurrentState = preview !== undefined
     && fingerprint === preview.draftFingerprint
     && preview.activeDatasetId === dataset.id
     && preview.stateRevision === workflow.revision
     && workflow.rules?.preview?.id !== undefined
     && workflow.rules.previewRevision === workflow.revision
-  const previewFresh = draft !== undefined && previewMatchesCurrentState
-  const suggestionPreviewFresh = draft === undefined && suggestion !== undefined && previewMatchesCurrentState
+  const previewFresh = previewMatchesCurrentState && !dirty
+  const previewMatchesConfirmedVersion = preview !== undefined
+    && fingerprint === preview.draftFingerprint
+    && preview.activeDatasetId === dataset.id
+    && workflow.rules?.ruleSetVersion !== undefined
+    && workflow.classification?.activeDatasetId === dataset.id
+    && !dirty
   const confirmDisabledReason = write.busy
     ? t('workbench.rules.confirmDisabledRunning')
     : !previewFresh
       ? t('workbench.rules.confirmDisabledStale')
       : undefined
-  const previewAccepted = previewMatchesCurrentState
-    && workflow.rules?.ruleSetVersion !== undefined
-    && workflow.classification !== undefined
-    && !dirty
-  const hasInstruction = instruction.trim() !== ''
-  const previewPresentationStatus = suggestionPreviewFresh
-    ? 'suggested'
+  const previewAccepted = previewMatchesConfirmedVersion
+  const previewPresentationStatus = previewAccepted
+    ? 'accepted'
     : previewFresh
       ? 'current'
-      : previewAccepted
-        ? 'accepted'
-        : 'stale'
+      : 'stale'
   const previewRules = (): void => {
     const parsed = TenderRuleSetV1Schema.safeParse(draft)
     if (!parsed.success) { setError(t('workbench.rules.invalid')); return }
     setError(undefined)
+    setValidated(true)
     write.start('rules.preview', commandId => createPreviewRulesIntent({
       commandId, activeDatasetRef: dataset.id,
       projectionRevision: workflow.revision, rules: parsed.data,
     }))
   }
-  const adjustRules = (): void => {
+  const validateRules = (): void => {
     const parsed = TenderRuleSetV1Schema.safeParse(draft)
-    if (!parsed.success || instruction.trim() === '') { setError(t('workbench.rules.adjustRequired')); return }
+    if (!parsed.success) { setValidated(false); setError(t('workbench.rules.invalid')); return }
     setError(undefined)
-    write.start('rules.adjust', commandId => createAdjustRulesIntent({
-      commandId, activeDatasetRef: dataset.id,
-      projectionRevision: workflow.revision, instruction, rules: parsed.data,
-    }))
+    setValidated(true)
   }
   const confirmRules = (): void => {
     const parsed = TenderRuleSetV1Schema.safeParse(draft)
@@ -369,25 +347,13 @@ export function TenderRulesView({
       projectionRevision: workflow.revision, previewArtifactId: previewArtifact.id, rules: parsed.data,
     }))
   }
-  const taskState = suggestion !== undefined
-    ? 'suggestion'
-    : hasInstruction
-      ? 'adjust'
-      : previewFresh
-        ? 'confirm'
-        : 'preview'
-  const taskAction = taskState === 'suggestion' ? (
-    <button type="button" className={css.primary} disabled={write.busy} aria-describedby={write.busy ? writeReasonId : undefined} title={writeDisabledReason} onClick={applySuggestion}>{t('workbench.rules.applySuggestion')}</button>
-  ) : taskState === 'adjust' ? (
-    <button type="button" className={css.primary} data-write-button="rules.adjust" disabled={write.busy} aria-busy={write.state.action === 'rules.adjust' && write.busy} aria-describedby={write.busy ? writeReasonId : undefined} title={writeDisabledReason} onClick={adjustRules}>
-      <SessionWriteButtonLabel action="rules.adjust" idle={t('workbench.rules.askAgent')} t={t} write={write} />
-    </button>
-  ) : taskState === 'confirm' ? (
+  const taskState = previewAccepted ? 'accepted' : previewFresh ? 'confirm' : 'preview'
+  const confirmAction = (
     <button
       type="button"
       className={css.primary}
       data-write-button="rules.confirm"
-      disabled={write.busy}
+      disabled={confirmDisabledReason !== undefined}
       aria-busy={write.state.action === 'rules.confirm' && write.busy}
       aria-describedby={write.busy ? writeReasonId : undefined}
       title={confirmDisabledReason}
@@ -395,9 +361,10 @@ export function TenderRulesView({
     >
       <SessionWriteButtonLabel action="rules.confirm" idle={t('workbench.rules.confirm')} t={t} write={write} />
     </button>
-  ) : (
+  )
+  const dryRunAction = (
     <button type="button" className={css.primary} data-write-button="rules.preview" disabled={write.busy} aria-busy={write.state.action === 'rules.preview' && write.busy} aria-describedby={write.busy ? writeReasonId : undefined} title={writeDisabledReason} onClick={previewRules}>
-      <SessionWriteButtonLabel action="rules.preview" idle={t('workbench.rules.runPreview')} t={t} write={write} />
+      <SessionWriteButtonLabel action="rules.preview" idle={t('workbench.rules.saveAndDryRun')} t={t} write={write} />
     </button>
   )
 
@@ -407,61 +374,34 @@ export function TenderRulesView({
         eyebrow={t('workbench.rules.eyebrow')}
         title={t('workbench.rules.pageTitle')}
         description={t('workbench.rules.description')}
-        aside={<StatusPill tone={taskState === 'confirm' ? 'success' : taskState === 'preview' && dirty ? 'warning' : 'brand'}>{t(`workbench.rules.taskStatus.${taskState}`)}</StatusPill>}
+        aside={<div className={css.summaryInline}><StatusPill>{t('workbench.rules.draftChip')}</StatusPill><StatusPill>{dataset.rowCount ?? workflow.query?.total ?? 0} {t('workbench.data.records')}</StatusPill><StatusPill>{t('workbench.rules.enabledCount', { count: draft.filter(rule => rule.enabled).length })}</StatusPill><StatusPill tone={taskState === 'accepted' || taskState === 'confirm' ? 'success' : dirty ? 'warning' : 'brand'}>{t(`workbench.rules.taskStatus.${taskState}`)}</StatusPill></div>}
       />
 
       <StatePanel
-        tone={taskState === 'confirm' ? 'success' : taskState === 'preview' && dirty ? 'warning' : 'brand'}
-        title={t(`workbench.rules.taskTitle.${taskState}`)}
-        description={t(`workbench.rules.taskDescription.${taskState}`, {
-          count: suggestion?.length ?? draft?.length ?? 0,
-          covered: preview?.covered ?? 0,
-          conflicts: preview?.conflicts ?? 0,
-        })}
-        action={taskAction}
+        tone="brand"
+        title={t('workbench.rules.noDefaultTitle')}
+        description={t('workbench.rules.noDefaultDescription')}
       />
 
-      {draft !== undefined && suggestion === undefined && (
-        <section className={css.adjustCard} aria-label={t('workbench.rules.adjust')}>
-          <div className={css.agentAvatar} aria-hidden="true">招</div>
-          <label><span>{t('workbench.rules.adjust')}</span><textarea disabled={write.busy} value={instruction} maxLength={2048} placeholder={t('workbench.rules.adjustPlaceholder')} onChange={event => { setInstruction(event.target.value) }} /></label>
-          <small>{t('workbench.rules.adjustHint')}</small>
-        </section>
-      )}
-
-      {suggestion !== undefined && (
-        <section className={css.agentSuggestion} role="status">
-          <header>
-            <div><strong>{t('workbench.rules.agentSuggestion')}</strong><p>{t('workbench.rules.agentSuggestionDescription', { count: suggestion.length })}</p></div>
-          </header>
-          <div className={css.suggestionDiff} aria-label={t('workbench.rules.suggestionDiff')}>
-            {suggestion.map((rule) => {
-              const previous = draft?.find(candidate => candidate.id === rule.id)
-              const change = previous === undefined ? 'Added' : rulesEqual(previous, rule) ? 'Unchanged' : 'Changed'
-              return (
-                <article key={rule.id} data-change={change.toLowerCase()}>
-                  <span>{t(`workbench.rules.suggestion${change}`)}</span>
-                  <strong>{rule.name}</strong>
-                  <small>{t('workbench.rules.suggestionMeta', { action: t(`workbench.classification.${rule.action}`), sources: rule.sources.map(source => t(`workbench.data.source.${source}`)).join(' / '), priority: rule.priority })}</small>
-                </article>
-              )
-            })}
-            {draft?.filter(rule => !suggestion.some(candidate => candidate.id === rule.id)).map(rule => (
-              <article key={rule.id} data-change="removed"><span>{t('workbench.rules.suggestionRemoved')}</span><strong>{rule.name}</strong></article>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {draft !== undefined && selected !== undefined && (
-        <div className={css.rulesLayout}>
-          <section className={css.ruleList} aria-label={t('workbench.rules.list')}>
+      {selected !== undefined && (
+        <div className={css.rulesLayout} data-rule-workspace>
+          <section className={css.ruleListPanel} aria-label={t('workbench.rules.list')}>
+            <header><div><strong>{t('workbench.rules.list')}</strong><small>{t('workbench.rules.listHint')}</small></div><button type="button" className={css.ghostButton} disabled={write.busy} onClick={() => {
+              const ids = new Set(draft.map(rule => rule.id))
+              let index = draft.length + 1
+              while (ids.has(`local-rule-${index}`)) index += 1
+              const next: TenderRuleV1 = { id: `local-rule-${index}`, name: t('workbench.rules.newRuleName'), enabled: true, action: 'observe', sources: ['tender', 'proposed'], scope: 'title', keywords: [], priority: 0, exceptions: [], reason: t('workbench.rules.newRuleReason') }
+              setDraft([...draft, next]); setSelectedId(next.id); setDirty(true); setValidated(false); setError(undefined)
+            }}>+ {t('workbench.rules.add')}</button></header>
+            <div className={css.ruleList}>
             {draft.map((rule) => (
-              <div key={rule.id} className={rule.id === selected.id ? css.ruleSelected : css.ruleItem}>
+              <article key={rule.id} className={rule.id === selected.id ? `${css.ruleItem} ${css.ruleSelected}` : css.ruleItem} data-rule-card>
                 <button type="button" className={css.ruleSelectButton} aria-pressed={rule.id === selected.id} onClick={() => { setSelectedId(rule.id) }}>
-                  <span>
+                  <span className={css.ruleCardCopy}>
                     <strong>{rule.name}</strong>
-                    <small><span data-classification={rule.action}>{t(`workbench.classification.${rule.action}`)}</span><span>{t('workbench.rules.priority')} {rule.priority}</span><span>{t(rule.enabled ? 'workbench.rules.enabledShort' : 'workbench.rules.disabledShort')}</span></small>
+                    <p>{rule.reason}</p>
+                    <small><span data-classification={rule.action}>{t(`workbench.classification.${rule.action}`)}</span><span>{rule.sources.map(source => t(`workbench.data.source.${source}`)).join(' / ')}</span><span>{t('workbench.rules.priority')} {rule.priority}</span></small>
+                    {(() => { const impact = preview?.ruleImpacts.find(value => value.ruleId === rule.id); return impact === undefined ? null : <em>{t('workbench.rules.ruleImpactCompact', { raw: impact.rawMatchCount, final: impact.finalCount })}</em> })()}
                   </span>
                 </button>
                 <input
@@ -469,37 +409,47 @@ export function TenderRulesView({
                   checked={rule.enabled}
                   disabled={write.busy}
                   aria-label={t('workbench.rules.enabled', { name: rule.name })}
-                  onChange={event => { setDraft(draft.map(item => item.id === rule.id ? { ...item, enabled: event.target.checked } : item)); setDirty(true) }}
+                  onChange={event => { setDraft(draft.map(item => item.id === rule.id ? { ...item, enabled: event.target.checked } : item)); setDirty(true); setValidated(false) }}
                 />
-              </div>
+              </article>
             ))}
+            </div>
           </section>
-          <section className={css.ruleEditor} aria-label={t('workbench.rules.editor')}>
+          <section className={css.ruleEditor} data-rule-editor aria-label={t('workbench.rules.editor')}>
             <header className={css.editorHeader}>
               <div><strong>{t('workbench.rules.editor')}</strong><span>{t(dirty ? 'workbench.rules.localChangesPending' : 'workbench.rules.localDraft')}</span></div>
-              <span className={css.stageState} data-draft-state={dirty ? 'changed' : 'draft'}>{t(dirty ? 'workbench.rules.state.changed' : 'workbench.rules.state.editable')}</span>
+              <div className={css.editorHeaderActions}><span className={css.stageState} data-draft-state={dirty ? 'changed' : 'draft'}>{t(dirty ? 'workbench.rules.state.changed' : 'workbench.rules.state.editable')}</span><button type="button" className={css.iconButton} disabled={write.busy || draft.length <= 1} title={draft.length <= 1 ? t('workbench.rules.keepOne') : undefined} aria-label={t('workbench.rules.delete', { name: selected.name })} onClick={() => {
+                const remaining = draft.filter(rule => rule.id !== selected.id)
+                setDraft(remaining); setSelectedId(remaining[0]?.id); setDirty(true); setValidated(false); setError(undefined)
+              }}>×</button></div>
             </header>
             <div className={css.editorGrid}>
               <label><span>{t('workbench.rules.name')}</span><input disabled={write.busy} value={selected.name} maxLength={128} onChange={event => { updateSelected({ name: event.target.value }) }} /></label>
               <label><span>{t('workbench.rules.action')}</span><select disabled={write.busy} value={selected.action} onChange={event => { updateSelected({ action: event.target.value as TenderRuleV1['action'] }) }}><option value="include">{t('workbench.classification.include')}</option><option value="observe">{t('workbench.classification.observe')}</option><option value="manual-review">{t('workbench.classification.manual-review')}</option><option value="exclude">{t('workbench.classification.exclude')}</option></select></label>
               <label><span>{t('workbench.rules.sources')}</span><select disabled={write.busy} value={selected.sources.length === 2 ? 'all' : selected.sources[0]} onChange={event => { updateSelected({ sources: event.target.value === 'all' ? ['tender', 'proposed'] : [event.target.value as 'tender' | 'proposed'] }) }}><option value="all">{t('workbench.rules.source.all')}</option><option value="tender">{t('workbench.data.source.tender')}</option><option value="proposed">{t('workbench.data.source.proposed')}</option></select></label>
-              <label><span>{t('workbench.rules.scope')}</span><select disabled={write.busy} value={selected.scope} onChange={event => { updateSelected({ scope: event.target.value as TenderRuleV1['scope'] }) }}><option value="title">{t('workbench.rules.scope.title')}</option><option value="purchaser">{t('workbench.rules.scope.purchaser')}</option><option value="all">{t('workbench.rules.scope.all')}</option></select></label>
-              <label className={css.editorWide}><span>{t('workbench.rules.keywords')}</span><textarea disabled={write.busy} value={selected.keywords.join('，')} onChange={event => { updateSelected({ keywords: terms(event.target.value) }) }} /></label>
-              <label className={css.editorWide}><span>{t('workbench.rules.exceptions')}</span><textarea disabled={write.busy} value={selected.exceptions.join('，')} onChange={event => { updateSelected({ exceptions: terms(event.target.value) }) }} /></label>
+              <section className={`${css.editorWide} ${css.ruleConditionEditor}`}><header><div><strong>{t('workbench.rules.conditionGroup')}</strong><span>{t('workbench.rules.conditionHint')}</span></div></header><div className={css.ruleConditionRow}><label><span>{t('workbench.rules.scope')}</span><select disabled={write.busy} value={selected.scope} onChange={event => { updateSelected({ scope: event.target.value as TenderRuleV1['scope'] }) }}><option value="title">{t('workbench.rules.scope.title')}</option><option value="purchaser">{t('workbench.rules.scope.purchaser')}</option><option value="all">{t('workbench.rules.scope.all')}</option></select></label><div className={css.ruleOperator}><span>{t('workbench.rules.operator')}</span><strong>{t('workbench.rules.operatorAny')}</strong></div><label><span>{t('workbench.rules.keywords')}</span><RuleTermsEditor key={`keywords:${selected.id}`} values={selected.keywords} label={t('workbench.rules.keywords')} placeholder={t('workbench.rules.keywordPlaceholder')} disabled={write.busy} onChange={values => { updateSelected({ keywords: [...values] }) }} t={t} /></label></div></section>
+              <section className={`${css.editorWide} ${css.ruleExceptionEditor}`}><header><strong>{t('workbench.rules.exceptions')}</strong><small>{t('workbench.rules.exceptionHint')}</small></header><RuleTermsEditor key={`exceptions:${selected.id}`} values={selected.exceptions} label={t('workbench.rules.exceptions')} placeholder={t('workbench.rules.exceptionPlaceholder')} disabled={write.busy} onChange={values => { updateSelected({ exceptions: [...values] }) }} t={t} /></section>
               <label><span>{t('workbench.rules.priority')}</span><input disabled={write.busy} type="number" min={-1000} max={1000} value={selected.priority} onChange={event => { updateSelected({ priority: Number(event.target.value) }) }} /></label>
               <label className={css.editorWide}><span>{t('workbench.rules.reason')}</span><textarea disabled={write.busy} maxLength={512} value={selected.reason} onChange={event => { updateSelected({ reason: event.target.value }) }} /></label>
             </div>
+            <footer className={css.ruleEditorFooter}><span role="status">{t(validated ? 'workbench.rules.validationPassed' : dirty ? 'workbench.rules.localChangesPending' : 'workbench.rules.localDraft')}</span><button type="button" className={css.secondary} disabled={write.busy} onClick={validateRules}>{t('workbench.rules.validate')}</button>{dryRunAction}</footer>
           </section>
         </div>
       )}
+
+      {selected !== undefined && preview !== undefined && <section className={css.selectedRuleImpact} data-selected-rule-impact={selected.id} data-preview-status={previewPresentationStatus} aria-label={t('workbench.rules.selectedImpact')}>{(() => { const impact = preview.ruleImpacts.find(value => value.ruleId === selected.id); return <dl><div><dt>{t('workbench.rules.previewMetricRaw')}</dt><dd>{impact?.rawMatchCount ?? 0}</dd></div><div><dt>{t('workbench.rules.previewMetricFinal')}</dt><dd>{impact?.finalCount ?? 0}</dd></div><div><dt>{t('workbench.classification.column.conflict')}</dt><dd>{impact?.conflictCount ?? 0}</dd></div><div><dt>{t('workbench.rules.selectedCoverage')}</dt><dd>{preview.total === 0 ? '0%' : `${(((impact?.rawMatchCount ?? 0) / preview.total) * 100).toFixed(1)}%`}</dd></div></dl> })()}</section>}
 
       <SessionWriteProgress id={writeReasonId} t={t} write={write} />
       {(workflow.stages.rules.errorMessage ?? workflow.stages.classification.errorMessage) !== undefined && (
         <StatePanel tone="danger" role="alert" title={t('workbench.status.failed')} description={workflow.stages.rules.errorMessage ?? workflow.stages.classification.errorMessage} />
       )}
       {error !== undefined && <StatePanel tone="danger" role="alert" title={t('workbench.status.failed')} description={error} />}
-      {preview !== undefined && !previewFresh && !suggestionPreviewFresh && (dirty || workflow.classification === undefined) && <StatePanel tone="warning" role="alert" title={t('workbench.rules.previewExpired')} description={t('workbench.rules.previewStale')} />}
-      {preview !== undefined && displayedRules !== undefined && previewMatchesCurrentState && <RulePreview preview={preview} rules={displayedRules} status={previewPresentationStatus} t={t} />}
+      {preview !== undefined && !previewFresh && !previewAccepted && (dirty || workflow.classification === undefined) && <p className={css.staleNotice} role="alert"><strong>{t('workbench.rules.previewExpired')}</strong> {t('workbench.rules.previewStale')}</p>}
+      {preview !== undefined && selected !== undefined && <RulePreview preview={preview} rules={draft} selectedRuleId={selected.id} status={previewPresentationStatus} t={t} />}
+      <RulesFooter target={footerTarget}>
+        <div className={css.footerCopy}><span className={css.footerHint}>{t(taskState === 'accepted' ? 'workbench.rules.footerAccepted' : 'workbench.rules.footerNote')}</span>{taskState === 'accepted' || confirmDisabledReason === undefined ? null : <span className={css.disabledReason}>{confirmDisabledReason}</span>}</div>
+        {taskState === 'accepted' ? null : confirmAction}
+      </RulesFooter>
     </section>
   )
 }
@@ -509,8 +459,10 @@ interface ClassificationViewProps {
   readonly workflow: TenderWorkflowProjectionV1
   readonly loadRows: ClassifiedRowsLoader
   readonly loadContent: RuleContentLoader
+  readonly write: SessionWriteFlight
   readonly onOpenAnalysis: () => void
   readonly onOpenReview: () => void
+  readonly footerTarget: HTMLElement | null
   readonly t: TenderTranslate
 }
 
@@ -519,8 +471,10 @@ export function TenderClassificationView({
   workflow,
   loadRows,
   loadContent,
+  write,
   onOpenAnalysis,
   onOpenReview,
+  footerTarget,
   t,
 }: ClassificationViewProps) {
   const classification = workflow.classification
@@ -538,6 +492,8 @@ export function TenderClassificationView({
   const [loading, setLoading] = useState(true)
   const [rulesFailed, setRulesFailed] = useState(false)
   const [requestVersion, setRequestVersion] = useState(0)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const traceRef = useRef<HTMLElement>(null)
   const filter = useMemo<ClassifiedRowsFilterV1>(() => ({
     page, pageSize: 50,
     ...(query.trim() === '' ? {} : { query: query.trim() }),
@@ -583,16 +539,18 @@ export function TenderClassificationView({
   const reset = () => { setPage(1); setSelected(undefined) }
   const ruleName = (id: string | undefined) => rules.find(rule => rule.id === id)?.name ?? id ?? t('workbench.classification.none')
   const selectedSourceLink = selected === undefined ? undefined : sourceLink(selected)
+  useEffect(() => { if (selected !== undefined) traceRef.current?.focus() }, [selected])
   return (
     <section className={css.dataView} aria-label={t('workbench.classification.title')}>
+      {detailsOpen && <button type="button" className={css.backButton} onClick={() => { setDetailsOpen(false); setSelected(undefined) }}>← {t('workbench.classification.backOverview')}</button>}
       <PageHeader
         eyebrow={t('workbench.classification.eyebrow')}
-        title={t('workbench.classification.title')}
-        description={t('workbench.classification.description')}
-        aside={<StatusPill tone="success">{t('workbench.phaseStatus.completed')}</StatusPill>}
+        title={t(detailsOpen ? 'workbench.classification.detailsTitle' : 'workbench.classification.title')}
+        description={t(detailsOpen ? 'workbench.classification.detailsDescription' : 'workbench.classification.description')}
+        aside={<div className={css.summaryInline}><StatusPill>{classification.ruleSetVersion}</StatusPill><StatusPill>{classification.data.rowCount ?? workflow.query?.total ?? 0} {t('workbench.data.records')}</StatusPill><StatusPill tone="success">{t('workbench.phaseStatus.completed')}</StatusPill></div>}
       />
       <p className={css.scopeNotice}>{t('workbench.classification.boundary')}</p>
-      <div className={css.classificationGrid}>
+      {!detailsOpen && <div className={css.classificationGrid} data-classification-overview>
         {([
           ['include', classification.include], ['observe', classification.observe],
           ['manual-review', classification.manualReview], ['exclude', classification.exclude],
@@ -604,16 +562,23 @@ export function TenderClassificationView({
             className={css.classificationMetric}
             data-classification={value}
             aria-pressed={category === value}
-            onClick={() => { setCategory(current => current === value ? undefined : value); reset() }}
+            onClick={() => { setCategory(value); reset(); setDetailsOpen(true) }}
           >
             <span>{t(`workbench.classification.${value}`)}</span><strong>{count}</strong><small>{t('workbench.classification.openDetails')}</small>
           </button>
         ))}
-      </div>
-      <div className={css.classificationOverview}>
+      </div>}
+      {!detailsOpen && <div className={css.classificationOverview}>
         <section className={css.summarySurface}>
-          <SurfaceHeader title={t('workbench.classification.coverageTitle')} description={t('workbench.classification.coverageDescription')} />
-          <ProgressMeter value={classification.covered} max={classification.data.rowCount ?? workflow.query?.total ?? 0} label={t('workbench.classification.coveredRecords')} />
+          <SurfaceHeader title={t('workbench.classification.coverageTitle')} description={t('workbench.classification.coverageDescription')} action={<button type="button" className={css.secondary} onClick={() => { setDetailsOpen(true) }}>{t('workbench.classification.openDetails')}</button>} />
+          <div className={css.classificationFunnel} data-classification-funnel>
+            {([
+              [t('workbench.classification.rawRecords'), workflow.query?.sourceRecordCount ?? workflow.query?.total ?? 0],
+              [t('workbench.classification.auditNormalized'), workflow.query?.total ?? classification.data.rowCount ?? 0],
+              [t('workbench.classification.coveredRecords'), classification.covered],
+              [t('workbench.classification.include'), classification.include],
+            ] as const).map(([label, value], index) => <div key={label}><span>{label}</span><i style={{ width: `${Math.max(12, 100 - index * 18)}%` }} /><strong>{value}</strong></div>)}
+          </div>
         </section>
         <aside className={css.summarySurface}>
           <SurfaceHeader title={t('workbench.classification.auditTitle')} description={t('workbench.classification.auditDescription')} />
@@ -623,9 +588,10 @@ export function TenderClassificationView({
             <div><dt>{t('workbench.rules.rawMatches', { count: classification.covered })}</dt><dd>{workflow.rules?.rawMatches ?? classification.covered}</dd></div>
           </dl>
         </aside>
-      </div>
+      </div>}
+      {!detailsOpen && data !== undefined && data.rows.length > 0 && <section className={css.screenCard} data-classification-samples><SurfaceHeader title={t('workbench.classification.sampleTitle')} description={t('workbench.classification.sampleDescription')} action={<button type="button" className={css.primary} onClick={() => { setDetailsOpen(true) }}>{t('workbench.classification.openAll', { count: data.total })}</button>} /><div className={css.dataTableWrap}><table className={css.dataTable}><thead><tr><th>{t('workbench.classification.column.classification')}</th><th>{t('workbench.data.column.project')}</th><th>{t('workbench.classification.column.finalRule')}</th><th>{t('workbench.classification.column.conflict')}</th><th>{t('workbench.data.column.source')}</th><th>{t('workbench.data.column.action')}</th></tr></thead><tbody>{data.rows.slice(0, 4).map(row => <tr key={row.project.recordId}><td><span className={css.sourceTag} data-classification={row.classification}>{t(`workbench.classification.${row.classification}`)}</span></td><td><strong>{row.project.title}</strong></td><td>{ruleName(row.finalRuleId)}</td><td>{row.conflictRuleIds.length > 0 ? t('workbench.classification.hasConflict') : '—'}</td><td>{t(`workbench.data.source.${row.project.source}`)}</td><td><button type="button" className={css.rowAction} onClick={() => { setSelected(row); setDetailsOpen(true) }}>{t('workbench.classification.trace')}</button></td></tr>)}</tbody></table></div></section>}
       {rulesFailed && <p className={css.staleNotice} role="status">{t('workbench.classification.rulesLoadFailed')}</p>}
-      <div className={selected === undefined ? css.classificationWorkspace : `${css.classificationWorkspace} ${css.classificationWorkspaceOpen}`}>
+      {detailsOpen && <div className={selected === undefined ? css.classificationWorkspace : `${css.classificationWorkspace} ${css.classificationWorkspaceOpen}`} data-classification-details>
       <section className={css.screenCard} aria-busy={loading}>
         <SurfaceHeader title={t('workbench.classification.detailsTitle')} description={t('workbench.classification.detailsDescription')} />
         <div className={css.detailToolbar}>
@@ -653,7 +619,7 @@ export function TenderClassificationView({
         )}
       </section>
       {selected !== undefined && (
-        <section className={css.traceCard} aria-label={t('workbench.classification.traceTitle')}>
+        <section ref={traceRef} className={css.traceCard} tabIndex={-1} aria-label={t('workbench.classification.traceTitle')}>
           <header><div><StatusPill tone={selected.conflictRuleIds.length > 0 ? 'warning' : 'success'}>{t(`workbench.classification.${selected.classification}`)}</StatusPill><strong>{selected.project.title}</strong><p>{t('workbench.classification.tracePath')}</p></div><button type="button" className={css.iconButton} aria-label={t('action.cancel')} onClick={() => { setSelected(undefined) }}>×</button></header>
           <ol>
             <li><strong>{t('workbench.classification.traceSource')}</strong><span>{t(`workbench.data.source.${selected.project.source}`)} · {selected.project.sourceId}</span></li>
@@ -665,14 +631,14 @@ export function TenderClassificationView({
           {selectedSourceLink !== undefined && <a className={css.sourceLink} href={selectedSourceLink} target="_blank" rel="noreferrer">{t('workbench.data.openSource')} ↗</a>}
         </section>
       )}
-      </div>
-      <section className={css.nextSuggestion}>
-        <div><strong>{t('workbench.classification.nextTitle')}</strong><p>{t('workbench.classification.nextDescription')}</p></div>
-        <div className={css.nextActions}>
-          <button type="button" className={css.secondary} onClick={onOpenReview}>{t('workbench.classification.openReview')}</button>
-          <button type="button" className={css.primary} onClick={onOpenAnalysis}>{t('workbench.classification.openAnalysis')}</button>
+      </div>}
+      <RulesFooter target={footerTarget}>
+        <div className={css.footerCopy}><span className={css.footerHint}>{t('workbench.classification.footerNote')}</span></div>
+        <div className={css.footerActions}>
+          <button type="button" className={css.secondary} disabled={write.busy} onClick={onOpenReview}>{t('workbench.classification.openReview')}</button>
+          <button type="button" className={css.primary} data-write-button="analysis.request" disabled={write.busy} aria-busy={write.state.action === 'analysis.request' && write.busy} onClick={onOpenAnalysis}><SessionWriteButtonLabel action="analysis.request" idle={t('workbench.classification.openAnalysis')} t={t} write={write} /></button>
         </div>
-      </section>
+      </RulesFooter>
     </section>
   )
 }

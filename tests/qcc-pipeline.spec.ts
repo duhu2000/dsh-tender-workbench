@@ -40,7 +40,15 @@ describe('qcc source adapters and deterministic normalization', () => {
   it('keeps schema-valid source facts unchanged while adding separate normalized values', () => {
     const sourceTitle = ' 某银行数据治理项目（来源原值） '
     const amount = '约 860 万元'
-    const adapted = adaptQccTenderPayload(tenderPayload([tenderItem({ 标题: sourceTitle, '预算金额（元）': amount })]))
+    const adapted = adaptQccTenderPayload(tenderPayload([tenderItem({
+      标题: sourceTitle,
+      '预算金额（元）': amount,
+      招采方式: '公开招标',
+      招采类型: '服务',
+      标讯行业分类: ['信息技术'],
+      相关产品: ['数据治理软件'],
+      代理单位: [{ 企业ID: 'agent-1', 企业名称: '某代理机构' }],
+    })]))
     const dataset = normalizeQccSources({
       tender: adapted,
       sources: { tender: { status: 'succeeded', loaded: 1 } },
@@ -55,6 +63,16 @@ describe('qcc source adapters and deterministic normalization', () => {
       parseStatus: 'approximate',
     })
     expect(dataset.rows[0]?.announcements[0]?.sourceRecordId).toBe('t-1')
+    expect(dataset.rows[0]?.tenderDetails).toMatchObject({
+      infoType: { original: '招标公告', value: '招标公告', status: 'normalized' },
+      noticeStatus: { original: '招标', value: '招标', status: 'normalized' },
+      procurementMethod: { value: '公开招标' },
+      procurementType: { value: '服务' },
+      industries: ['信息技术'],
+      products: ['数据治理软件'],
+      agents: [{ id: 'agent-1', name: '某代理机构' }],
+    })
+    expect(dataset.rows[0]?.announcements[0]?.tenderDetails).toEqual(dataset.rows[0]?.tenderDetails)
     expect(dataset).not.toHaveProperty('confidence')
   })
 
@@ -114,7 +132,8 @@ describe('qcc source adapters and deterministic normalization', () => {
     const tender = adaptQccTenderPayload(tenderPayload([tenderItem({ 标讯ID: 'award', 信息类型: '中标公告', 公告子状态: '中标成交' })]))
     const proposed = adaptQccProposedPayload(proposedPayload([{
       拟建项目ID: 'p-1', 项目名称: '智算中心拟建项目', 项目阶段: '项目备案', 审批进度: '审批中',
-      省市区: '浙江省', '项目总投资（元）': '4.6亿元', 发布时间: '2026-08-27', 建设单位: [], 项目编号: 'P-1',
+      省市区: '浙江省', '项目总投资（元）': '4.6亿元', 发布时间: '2026-08-27', 建设单位: [],
+      审批单位: [{ 企业ID: 'approval-1', 企业名称: '某审批单位' }], 项目编号: 'P-1',
     }]))
     const dataset = normalizeQccSources({
       tender,
@@ -128,6 +147,11 @@ describe('qcc source adapters and deterministic normalization', () => {
     expect(dataset.rows.find(row => row.source === 'tender')?.lifecycle).toBe('awarded')
     expect(dataset.rows.find(row => row.source === 'proposed')?.lifecycle).toBe('early-signal')
     expect(dataset.rows.find(row => row.source === 'proposed')?.amount.type).toBe('total-investment')
+    expect(dataset.rows.find(row => row.source === 'proposed')?.proposedDetails).toEqual({
+      projectStage: { original: '项目备案', value: '项目备案', status: 'normalized' },
+      approvalProgress: { original: '审批中', value: '审批中', status: 'normalized' },
+      approvalAuthorities: [{ id: 'approval-1', name: '某审批单位' }],
+    })
   })
 
   it('rejects only definite payload-envelope contract violations and parses strict dates/amounts', () => {

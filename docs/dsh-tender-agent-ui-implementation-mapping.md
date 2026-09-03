@@ -1,6 +1,6 @@
 # 招投标工作台 UI 实施映射
 
-> 状态：S5.1 / S5.2 UI/UX 对齐实施与验收基线
+> 状态：S5.1 / S5.2 对齐结论已撤回，正在按原型 HTML/CSS/交互脚本重新收敛
 > 基线：`docs/dsh-tender-agent-ui-mockup.html`
 > 更新日期：2026-09-02
 
@@ -11,18 +11,21 @@
 - 一个状态只突出一个主操作；技术标识、内部版本和 revision 不进入业务界面，仅用于日志与自动化定位。
 - 现有 React 组件、DOM 结构和 CSS 不构成兼容约束。达到原型要求需要重构时直接重构，不保留旧页面、兼容布局、第二入口或平行实现。
 - 原型中超出 MVP 的能力不做静态占位、禁用按钮或假 Toast；允许省略的项目以第 5 节封闭清单为准，不能在实现中继续扩张。
+- 功能等价不等于 UI/UX 对齐。每个工作面必须保持原型的区块顺序、组件形态、展开模型、主从列关系和视觉密度；旧组件只有在这些维度一致时才能复用。
+- 改动面、共享样式影响和后续页面回归不构成兼容理由。本轮可以让后续页面暂时受影响，但不得为保护旧页面而保留两套 DOM、兼容样式或近似控件。
+- 真实验收必须在相同内容宽度、相同页面状态下同时取得原型基线和实现截图，并逐区域记录差异。只有所有非封闭差异归零后，才能恢复“已实施/已通过”状态。
 
 ## 2. 页面映射
 
 | 页面 / 工作面 | 原型意图 | 当前真实能力 | 最终实现 |
 | --- | --- | --- | --- |
 | 工作台壳与全局状态 | 紧凑标题、当前状态、四阶段渐进导航 | Better Sidebar 单实例 Tab；Session Projection；七个内部节点 | 保留四阶段导航；状态与阶段进度分离；业务界面不展示 Session id 或内部节点；宽中窄均保持阶段和主操作可达 |
-| 查询与执行计划 | 编辑区与来源执行计划双栏；公共条件和两个来源分支完整展开 | `TenderQueryIntentV1` 与 qcc Schema 已覆盖设计稿列明的公共条件、招投标分支和拟建项目分支；现有工作台只接入目标、来源范围和关键词 | S5.1 接入完整条件；左侧结构化编辑，右侧按来源显示实际执行参数、提交校验、活动快照替换和局部失败语义；不保留简化/高级两套入口 |
+| 查询与执行计划 | 编辑区与来源执行计划双栏；公共条件和两个来源分支完整展开 | `TenderQueryIntentV1` 与 qcc Schema 覆盖设计稿列明的公共条件、招投标分支和拟建项目分支；工作台已接入同一完整主链路 | 左侧结构化编辑，右侧按来源显示实际执行参数、提交校验、活动快照替换和局部失败语义；不保留简化/高级两套入口 |
 | 数据概况 | 当前任务、关键数量、来源处理与数据质量 | 查询 Projection 提供来源状态、原始数、规范化数、关联数和披露问题 | 当前任务置顶；关键指标先于来源进度；正常零值弱化，局部失败与无效记录就近突出；唯一主操作为继续筛选 |
 | 数据明细 | 来源分段、筛选工具栏、表格与记录详情 | Session 私有 Artifact 分页 API；真实来源链接 | 来源分段控件 + 状态/排序筛选；宽屏表格/详情双栏，窄屏纵向展开；只显示实际加载字段和实际来源链接 |
-| Agent 初筛建议 | Agent 协作状态与规则工作区相邻 | `rules.propose` 提供初始建议，建议与本地草稿分离；S5.2 不暴露 `rules.adjust` 自然语言调整入口 | 初始建议及其状态位于规则工作面上方；建议必须显式应用；不把建议直接当成确认规则 |
+| Agent 初筛建议 | Agent 建议规则直接出现在列表/编辑器中 | `rules.propose` 提供建议 Artifact；Client 从中初始化当前 Session 的可编辑工作副本；S5.2 不暴露 `rules.adjust` 自然语言调整入口 | 不设置“应用结构化建议”门槛或只读落地页；建议来源、可编辑副本和确认版本仍独立，加载不触发分类 |
 | 结构化口径编辑 | 规则列表与单条编辑器主从布局 | 一层规则契约：来源、字段范围、关键词、例外、动作、优先级、启用状态 | 左侧规则列表，右侧编辑器；编辑状态、预览状态和已确认版本分层；内部规则 id 不进入业务界面 |
-| 影响预览 | 先结论、覆盖、冲突、例外，再看样本 | 确定性 preview Artifact，有限样本和规则影响 | 分类总数、覆盖/冲突/例外先展示；零值降权；代表样本先显示，其余样本和逐规则样本折叠；过期预览明确阻止确认 |
+| 页内 Dry Run 影响 | 编辑器后四项影响条；代表性样本与全局影响/冲突双栏 | preview Artifact，有限样本和逐规则真实影响 | 不建立独立“确定性影响预览”页面；本地修改令旧结果过期，“保存到草案并 Dry Run”刷新，过期时底部确认可见但禁用 |
 | 分类概况 | 分类总量、覆盖与审计检查 | 五类互斥统计、覆盖、冲突和分类 Artifact | 五类可筛选指标 + 覆盖进度 + 审计摘要；分类完成后提供“进入 Agent 分析”主操作和“直接人工复核”次操作 |
 | 分类明细与追溯 | 列表/判定链路双栏 | 分类分页、来源/规则/冲突/披露筛选；稳定判定链路 | 宽屏列表/追溯双栏，窄屏上下排列；来源、规范化、规则命中、例外、冲突和最终裁决逐层显示 |
 | Agent 候选分析 | 分析队列与单条证据详情 | 显式记录/分类范围分析；有界证据；允许未分析记录直接复核 | 左侧队列、右侧建议详情；初筛分类、Agent 建议、用户决定和数据状态并列分层；证据、待核验项和局限渐进展开 |
@@ -59,10 +62,12 @@ S5.1 必须在唯一查询页补齐下列真实条件。每个可见值都必须
 
 | 工作面 | 必须对齐的页面与交互 |
 | --- | --- |
-| 初筛口径 | Agent 协作状态与规则工作区相邻；规则列表/选中规则编辑器主从布局；新增、选择、启停、删除和字段编辑有明确状态；建议必须显式应用到本地草案 |
-| 影响预览 | 先呈现分类总数、覆盖、冲突、例外和过期状态，再呈现代表样本与逐规则样本；有效预览前不能确认，草案变化立即标记预览过期 |
+| 初筛口径 | 三页签始终可见；Agent 建议直接初始化可编辑工作副本；规则列表/选中规则编辑器主从布局；新增、选择、启停、删除和字段编辑有明确状态；不存在建议应用门槛 |
+| 页内 Dry Run 影响 | 编辑器后依次显示四项影响条和代表性样本/全局影响与冲突双栏；不出现独立“确定性影响预览”表面；草案变化立即标记结果过期并禁用底部确认 |
 | 确定性分类 | 五类互斥指标、处理漏斗/覆盖和审计信息先行；分类概况可进入明细，分类/来源/规则/冲突/披露筛选和追溯详情保持原型主从结构 |
 | Agent 分析 | 分析边界、推荐分布、筛选/排序、候选列表和证据详情按原型组织；查询匹配、规则依据、时效/金额、披露度、风险与待核验项分层展示，不把 Agent 推荐写成用户决定 |
+
+筛候选的主动作顺序固定为“确认口径并开始分类 → 让 Agent 分析候选 → 进入人工定案”。确认成功聚焦分类页，分类页主动作发送绑定当前分类 Artifact 的分析 Intent，分析完成聚焦 Agent 分析页；内容区不得再放置平行的下一步卡片。
 
 上述工作面必须同时对齐原型的间距、密度、颜色语义、排版、边框、控件尺寸、选中/悬停/聚焦/禁用/加载/失败状态、滚动边界和响应式折叠。允许把原型示例替换成真实契约支持的一层规则控件，但不能改成与原型信息架构无关的卡片集合或技术状态面板。
 
@@ -91,3 +96,46 @@ S5.1 必须在唯一查询页补齐下列真实条件。每个可见值都必须
 - S5.1 与 S5.2 各自在真实 DSH Web 中保存 wide / medium / narrow 关键状态截图，并记录逐页结构、样式、布局、交互、键盘/焦点和控制台结论。
 - 截图必须覆盖查询完整字段与执行计划、数据概况/明细、口径编辑/预览、分类/追溯和 Agent 分析；不能用静态 HTML 或 Fixture 代替真实 Profile 装载。
 - 任一非第 5 节批准的差异、旧页面残留、双入口、假操作或关键状态未覆盖，均表示对应迭代未完成，不能进入 S6。
+
+## 8. 2026-09-02 真实 DSH Web 验收记录
+
+### 8.1 安装与运行基线
+
+- 组合版本：`@deepseek-ai/dsh 0.1.1-rc.2`、`dsh-better-sidebar 0.17.1`、`pnpm 10.33.2`，固定地址 `http://127.0.0.1:3080/`。
+- 内容寻址包：`dsh-tender-workbench-0.2.1-beta.0-9e599893c981.tgz`，SHA-256 `9e599893c981b121503b462bb612b4e1be75e4c7e8eb523e7e9e5535710ccda9`。
+- 安装命令：`corepack pnpm@10.33.2 dlx @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile web add <absolute-tarball>`。Profile 依赖由旧的 `104395e0adfb` 内容包更新到本轮 `9e599893c981` 内容包；Bundle 中 Better Sidebar 仍位于本插件之前，二者各出现一次。
+- `dsh web --dump-config` 只有一条 `id: tender-workbench` Loader；安装目录的 Host `lib/index.js` 与 Client `lib/client.js` 分别与本轮构建 SHA-256 `f4a0d1655adc0087b7fc4a6a6702a4a08cf1dc5d81858483b0a957430fc793f7`、`4d1b68d00b84c7e81d24a5348646651f44728ba5942031c7a49ee6314b51c220` 一致。
+- 自动化门禁使用仓库声明的 `pnpm 11.7.0` 执行：`pnpm --config.auto-install-peers=false run typecheck`、`pnpm --config.auto-install-peers=false run test`、`pnpm --config.auto-install-peers=false run build` 全部通过；测试为 34 个文件、156 项。单次配置与现有 `node_modules` 的安装状态一致，不修改项目配置或锁文件。
+
+### 8.2 S5.1 实测结果
+
+- 专用 Session：`session-26ac4192-3654-4095-8020-28d28847d01c`（“华东金融招投标机会查询”）。组合查询使用关键词“数据治理 / 信创 / 数据中心”、近一月、上海/江苏/浙江/安徽和明确分析目标。
+- 招投标实际参数为招标公告、招标阶段、公开招标/竞争性磋商、服务、信息技术、预算不低于 300 万元；拟建项目实际参数为项目备案、审批通过、总投资 1,000 万至 5,000 万元。页面执行计划、用户可见 JSON Intent、查询规格 Artifact 与 Host receipt 逐字段一致。
+- 两个来源独立成功：招投标加载 19 条，拟建项目加载 0 条；规范化项目 16 条、保守去重 3 条、未披露 0、无法解析 0。零结果没有被误报为失败，两个分支的实际覆盖范围分别显示。
+- 工作台宽度 `1020px`、`800px`、`520px` 分别验证 wide / medium / narrow；中窄查询布局按设计顺序单列，窄屏无工作台水平溢出。查询分支页签支持左右方向键并把焦点移到新页签。
+- 浏览器侧仅对一次真实 Artifact GET 做 2.5 秒延迟和一次 `net::ERR_FAILED` 中断，分别验证加载、失败、明确重试与恢复；解除拦截后恢复 16 行，无残留告警。该故障没有修改 Profile、Session 事实或 Artifact。
+
+### 8.3 S5.2 实测结果
+
+- 2026-09-02 记录中的“先显式应用结构化建议”交互已于 2026-09-03 判定为不符合批准设计，因此该步骤不再构成有效验收。当前契约要求 6 条 Agent 建议及绑定 Dry Run 结果直接初始化可编辑工作副本；新的安装包必须重新完成本地编辑、Dry Run 过期、重跑和确认验收后才能恢复 S5.2 通过状态。
+- 重新预览得到覆盖 `12/16`、跨动作冲突 `6`、例外抑制 `0`、原始规则命中 `18`；分布为初选 0、观察 0、人工复核 9、排除 3、未匹配 4。逐规则影响与关联样本可用键盘 Enter 展开并保持焦点。
+- 显式确认形成不可变口径 `rsv-4-185f46165e3177ce` 并完成 16 条确定性分类。分类来源/类别/规则/冲突/字段状态筛选有效；“仅冲突记录”得到 6 条，追溯详情聚焦后显示来源记录、活动快照、确认口径、规范化、命中/例外与稳定裁决链。
+- 可选 Agent 分析只对“人工复核”分类的 9 条记录执行，结果为重点复核 1、建议关注 1、暂不建议 7，另 7 条保持未分析。建议排序和推荐筛选有效；详情展示 5 项当前来源证据、待核验项和局限，Agent 建议仍独立于用户决定，不输出企业适配度、中标概率、利润、资格符合或 Bid/No-Bid 结论。
+- 强制刷新后恢复 `9/16` 分析覆盖；切到新 Session 显示空状态，切回专用 Session 恢复 16 条数据和下游事实。连续重复打开前后均只有一个 Better Sidebar `招投标` Tab 和一个工作台实例。
+
+### 8.4 截图与控制台
+
+S5.1 截图：
+
+- [`s5-1-query-wide.png`](../artifacts/ui-regression/s5-1-query-wide.png)、[`s5-1-query-medium.png`](../artifacts/ui-regression/s5-1-query-medium.png)、[`s5-1-query-narrow.png`](../artifacts/ui-regression/s5-1-query-narrow.png)
+- [`s5-1-overview-wide.png`](../artifacts/ui-regression/s5-1-overview-wide.png)、[`s5-1-details-medium.png`](../artifacts/ui-regression/s5-1-details-medium.png)、[`s5-1-details-narrow-trace.png`](../artifacts/ui-regression/s5-1-details-narrow-trace.png)
+- [`s5-1-details-loading-narrow.png`](../artifacts/ui-regression/s5-1-details-loading-narrow.png)、[`s5-1-details-failure-narrow.png`](../artifacts/ui-regression/s5-1-details-failure-narrow.png)
+
+S5.2 截图：
+
+- [`s5-2-rules-suggestion-narrow.png`](../artifacts/ui-regression/s5-2-rules-suggestion-narrow.png)、[`s5-2-rules-editor-wide.png`](../artifacts/ui-regression/s5-2-rules-editor-wide.png)
+- [`s5-2-rules-preview-stale-medium-state.png`](../artifacts/ui-regression/s5-2-rules-preview-stale-medium-state.png)、[`s5-2-rules-preview-wide.png`](../artifacts/ui-regression/s5-2-rules-preview-wide.png)
+- [`s5-2-classification-wide.png`](../artifacts/ui-regression/s5-2-classification-wide.png)、[`s5-2-classification-trace-medium.png`](../artifacts/ui-regression/s5-2-classification-trace-medium.png)
+- [`s5-2-analysis-medium.png`](../artifacts/ui-regression/s5-2-analysis-medium.png)、[`s5-2-analysis-detail-wide.png`](../artifacts/ui-regression/s5-2-analysis-detail-wide.png)、[`s5-2-analysis-evidence-wide.png`](../artifacts/ui-regression/s5-2-analysis-evidence-wide.png)、[`s5-2-analysis-detail-narrow.png`](../artifacts/ui-regression/s5-2-analysis-detail-narrow.png)
+
+受控失败场景只产生预期的一条 `net::ERR_FAILED` 资源错误；恢复并再次强制刷新后，控制台错误、页面异常和非预期失败请求均为 0。未出现旧查询页、简化/高级双入口、兼容布局、重复 Tab、排除清单中的禁用按钮/假入口或跨 Session 状态。

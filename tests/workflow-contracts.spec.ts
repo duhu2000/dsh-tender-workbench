@@ -24,6 +24,18 @@ describe('V1 workflow contracts', () => {
     expect(() => TenderQueryIntentV1Schema.parse({ ...valid, scope: 'tender' })).toThrow()
   })
 
+  it('enforces the UI keyword limit and a real filter in every Host query branch', () => {
+    const base = {
+      schemaVersion: 1, commandId: 'command-limits', kind: 'query.start', scope: 'tender', target: '目标',
+    } as const
+    expect(() => TenderQueryIntentV1Schema.parse({ ...base, tender: {} })).toThrow()
+    expect(() => TenderQueryIntentV1Schema.parse({ ...base, tender: { smartSort: true } })).toThrow()
+    expect(() => TenderQueryIntentV1Schema.parse({
+      ...base,
+      tender: { keywords: Array.from({ length: 11 }, (_, index) => `关键词${index}`) },
+    })).toThrow()
+  })
+
   it('fixes the flat OR-keyword rule shape without a generic expression tree', () => {
     const rule = {
       id: 'rule-1',

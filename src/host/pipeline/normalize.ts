@@ -22,6 +22,8 @@ type NormalizedAmountV1 = z.infer<typeof NormalizedAmountV1Schema>
 type NormalizedDateV1 = z.infer<typeof NormalizedDateV1Schema>
 type NormalizedRegionV1 = z.infer<typeof NormalizedRegionV1Schema>
 type NormalizedTextV1 = z.infer<typeof NormalizedTextV1Schema>
+type TenderSourceDetailsV1 = NonNullable<NormalizedProjectV1['tenderDetails']>
+type ProposedSourceDetailsV1 = NonNullable<NormalizedProjectV1['proposedDetails']>
 
 export interface NormalizeQccSourcesInput {
   readonly tender?: AdaptedQccSource<QccTenderSourceItem>
@@ -42,6 +44,35 @@ function normalizedText(value: string | undefined): NormalizedTextV1 {
   return trimmed === ''
     ? { original, status: 'missing' }
     : { original, value: trimmed, status: 'normalized' }
+}
+
+function sourceEntities(values: readonly { readonly 企业ID: string; readonly 企业名称: string }[] | undefined) {
+  return (values ?? []).map(entity => ({ id: entity.企业ID, name: entity.企业名称 }))
+}
+
+function sourceStrings(values: readonly string[] | undefined): string[] {
+  return [...(values ?? [])]
+}
+
+function tenderDetails(item: QccTenderSourceItem): TenderSourceDetailsV1 {
+  return {
+    infoType: normalizedText(item.信息类型),
+    noticeStatus: normalizedText(item.公告子状态),
+    procurementMethod: normalizedText(item.招采方式),
+    procurementType: normalizedText(item.招采类型),
+    industries: sourceStrings(item.标讯行业分类),
+    products: sourceStrings(item.相关产品),
+    agents: sourceEntities(item.代理单位),
+    awardees: sourceEntities(item.中标单位),
+  }
+}
+
+function proposedDetails(item: QccProposedSourceItem): ProposedSourceDetailsV1 {
+  return {
+    projectStage: normalizedText(item.项目阶段),
+    approvalProgress: normalizedText(item.审批进度),
+    approvalAuthorities: sourceEntities(item.审批单位),
+  }
 }
 
 function datePartsValid(year: number, month: number, day: number): boolean {
@@ -217,7 +248,7 @@ function tenderCandidates(items: readonly QccTenderSourceItem[]): AnnouncementCa
     const amount = lifecycle === 'awarded' || lifecycle === 'contracted'
       ? normalizeAmount(item['中标金额（元）'] ?? item['预算金额（元）'], item['中标金额（元）'] === undefined ? 'budget' : 'award')
       : normalizeAmount(item['预算金额（元）'], 'budget')
-    const parties = (item.招采单位 ?? []).map(entity => ({ id: entity.企业ID, name: entity.企业名称 }))
+    const parties = sourceEntities(item.招采单位)
     const link = sourceLink(item)
     return {
       index,
@@ -233,6 +264,7 @@ function tenderCandidates(items: readonly QccTenderSourceItem[]): AnnouncementCa
         publishedAt: normalizeDate(item.发布时间),
         deadline: normalizeDate(item.投标截止时间),
         parties,
+        tenderDetails: tenderDetails(item),
         ...(link === undefined ? {} : { sourceLink: link }),
       },
     }
@@ -241,7 +273,7 @@ function tenderCandidates(items: readonly QccTenderSourceItem[]): AnnouncementCa
 
 function proposedCandidates(items: readonly QccProposedSourceItem[]): AnnouncementCandidate[] {
   return items.map((item, index) => {
-    const parties = (item.建设单位 ?? []).map(entity => ({ id: entity.企业ID, name: entity.企业名称 }))
+    const parties = sourceEntities(item.建设单位)
     const link = sourceLink(item)
     return {
       index,
@@ -256,6 +288,7 @@ function proposedCandidates(items: readonly QccProposedSourceItem[]): Announceme
         amount: normalizeAmount(item['项目总投资（元）'], 'total-investment'),
         publishedAt: normalizeDate(item.发布时间),
         parties,
+        proposedDetails: proposedDetails(item),
         ...(link === undefined ? {} : { sourceLink: link }),
       },
     }
@@ -337,6 +370,58 @@ function projectsFromCandidates(
       ...(deadline === undefined ? {} : { deadline }),
     }
     const counterparty = normalizedText(parties.map(party => party.name).filter(Boolean).join('、'))
+    const selectedTenderDetails = source === 'tender'
+      ? {
+          infoType: newestDisclosed(
+            announcement => announcement.tenderDetails?.infoType ?? normalizedText(undefined),
+            value => value.status !== 'missing',
+          ),
+          noticeStatus: newestDisclosed(
+            announcement => announcement.tenderDetails?.noticeStatus ?? normalizedText(undefined),
+            value => value.status !== 'missing',
+          ),
+          procurementMethod: newestDisclosed(
+            announcement => announcement.tenderDetails?.procurementMethod ?? normalizedText(undefined),
+            value => value.status !== 'missing',
+          ),
+          procurementType: newestDisclosed(
+            announcement => announcement.tenderDetails?.procurementType ?? normalizedText(undefined),
+            value => value.status !== 'missing',
+          ),
+          industries: newestDisclosed(
+            announcement => announcement.tenderDetails?.industries ?? [],
+            value => value.length > 0,
+          ),
+          products: newestDisclosed(
+            announcement => announcement.tenderDetails?.products ?? [],
+            value => value.length > 0,
+          ),
+          agents: newestDisclosed(
+            announcement => announcement.tenderDetails?.agents ?? [],
+            value => value.length > 0,
+          ),
+          awardees: newestDisclosed(
+            announcement => announcement.tenderDetails?.awardees ?? [],
+            value => value.length > 0,
+          ),
+        } satisfies TenderSourceDetailsV1
+      : undefined
+    const selectedProposedDetails = source === 'proposed'
+      ? {
+          projectStage: newestDisclosed(
+            announcement => announcement.proposedDetails?.projectStage ?? normalizedText(undefined),
+            value => value.status !== 'missing',
+          ),
+          approvalProgress: newestDisclosed(
+            announcement => announcement.proposedDetails?.approvalProgress ?? normalizedText(undefined),
+            value => value.status !== 'missing',
+          ),
+          approvalAuthorities: newestDisclosed(
+            announcement => announcement.proposedDetails?.approvalAuthorities ?? [],
+            value => value.length > 0,
+          ),
+        } satisfies ProposedSourceDetailsV1
+      : undefined
     return {
       schemaVersion: 1,
       recordId: recordId(key),
@@ -352,6 +437,8 @@ function projectsFromCandidates(
       amount,
       publishedAt: newest.publishedAt,
       ...(deadline === undefined ? {} : { deadline }),
+      ...(selectedTenderDetails === undefined ? {} : { tenderDetails: selectedTenderDetails }),
+      ...(selectedProposedDetails === undefined ? {} : { proposedDetails: selectedProposedDetails }),
       announcements,
       disclosure: fieldIssues(effective, source),
     }

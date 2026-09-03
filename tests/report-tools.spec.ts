@@ -6,14 +6,14 @@ import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import ExcelJS from 'exceljs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ReviewDatasetV1Schema, ReviewRecordV1Schema } from '../src/contracts/analysis-review.ts'
-import { ReportDatasetV1Schema, type ReportDatasetV1, type ReportNarrativeV1 } from '../src/contracts/reporting.ts'
+import { ReportDatasetSchema, type ReportDataset, type ReportNarrativeV1 } from '../src/contracts/reporting.ts'
 import { createEmptyTenderWorkflowProjection, type TenderWorkflowProjectionV1 } from '../src/contracts/workflow.ts'
 import { CommandReceiptCoordinator, emptyCommandReceiptManifest } from '../src/host/artifacts/command-receipts.ts'
 import { ArtifactTransaction, readArtifactManifest, readManifestArtifact, sessionArtifactRoot } from '../src/host/artifacts/store.ts'
 import { adaptQccProposedPayload, adaptQccTenderPayload } from '../src/host/pipeline/qcc-adapters.ts'
 import { normalizeQccSources } from '../src/host/pipeline/normalize.ts'
 import { escapeExcelText, renderReportExcel } from '../src/host/reporting/excel.ts'
-import { renderReportPdf, reportNarrativeSummaryNote } from '../src/host/reporting/pdf.ts'
+import { renderReportPdf, reportBusinessSummary } from '../src/host/reporting/pdf.ts'
 import { buildReportDataset, createReportContext } from '../src/host/reporting/report-dataset.ts'
 import {
   createTenderWorkbenchGenerateReportTool,
@@ -29,8 +29,8 @@ function normalizedFixture() {
   const tender = adaptQccTenderPayload({
     查询摘要: { 命中总数: 2, 结果说明: '报告测试', 生效筛选: {} },
     标讯列表: [
-      { 标讯ID: 't-1', 标题: '数据治理平台', 信息类型: '招标公告', 招采单位: [{ 企业ID: 'e-1', 企业名称: '某银行' }], 发布时间: '2026-08-30', 投标截止时间: '2026-09-18', 预算金额: '860万元' },
-      { 标讯ID: 't-2', 标题: '云平台扩容', 信息类型: '招标公告', 招采单位: [{ 企业ID: 'e-2', 企业名称: '某集团' }], 发布时间: '2026-08-29', 投标截止时间: '2026-09-12' },
+      { 标讯ID: 't-1', 标题: '数据治理平台', 信息类型: '招标公告', 公告子状态: '招标', 招采单位: [{ 企业ID: 'e-1', 企业名称: '某银行' }], 招采方式: '公开招标', 招采类型: '服务', 标讯行业分类: ['信息技术'], 发布时间: '2026-08-30', 投标截止时间: '2026-09-18', '预算金额（元）': '860万元' },
+      { 标讯ID: 't-2', 标题: '云平台扩容', 信息类型: '招标公告', 公告子状态: '招标', 招采单位: [{ 企业ID: 'e-2', 企业名称: '某集团' }], 招采方式: '竞争性磋商', 招采类型: '服务', 发布时间: '2026-08-29', 投标截止时间: '2026-09-12' },
     ],
   })
   const proposed = adaptQccProposedPayload({
@@ -63,6 +63,7 @@ async function harness(options: { readonly complete?: boolean } = {}) {
   const rows = normalized.rows.map(project => ReviewRecordV1Schema.parse({
     schemaVersion: 1,
     project,
+    ...(project.sourceId === 't-1' ? { classification: 'exclude' as const, finalRuleId: 'rule-overridden' } : {}),
     ...(project.sourceId === 't-1' ? {
       recommendation: {
         recordRef: project.recordId,
@@ -165,6 +166,7 @@ function narrativeFor(recordRef: string): ReportNarrativeV1 {
       statement: '当前用户决定已形成候选与待复核的清晰分层，后续应继续核验证据边界。',
       metricRefs: ['reviewed-projects', 'pending-review'],
       recordRefs: [],
+      distributionRefs: ['review-decisions'],
       limitations: ['该判断不涉及企业适配、资格符合或投标决策。'],
     },
     keyFindings: [],
@@ -173,6 +175,7 @@ function narrativeFor(recordRef: string): ReportNarrativeV1 {
       statement: '该记录具备当前可定位证据，仍需用户核验采购范围和截止要求。',
       metricRefs: [],
       recordRefs: [recordRef],
+      distributionRefs: [],
       limitations: ['来源披露范围可能不完整。'],
     }],
     risksAndLimitations: [],
@@ -191,10 +194,13 @@ describe('S5 report context, immutable snapshot, and renderer retry', () => {
     })
     const first = await tool.execute(test.binding(), test.context('context-1')) as ReportContextResultV1
     const repeated = await tool.execute(test.binding(), test.context('context-2')) as ReportContextResultV1
-    expect(repeated.context).toEqual(first.context)
+    expect(repeated.context.schemaVersion).toBe(2)
+    expect(repeated.context.activeDatasetId).toBe(first.context.activeDatasetId)
     expect(first.context.priorityRecords).toHaveLength(2)
     expect(first.context.priorityRecords.map(record => record.source)).toEqual(['tender', 'proposed'])
     expect(first.context.metrics.find(metric => metric.metricId === 'pending-review')?.value).toBe(1)
+    expect(first.context.distributions.map(distribution => distribution.id)).toContain('tender-deadline-window')
+    expect(first.context.priorityRecords[0]).toMatchObject({ counterparty: '某银行', amountDisplay: '860万元' })
     expect(first.context.contextFingerprint).toMatch(/^rc_[a-f0-9]{64}$/u)
     const rendered = tool.output.render(test.binding(), first)
     expect(rendered).toHaveLength(1)
@@ -228,6 +234,7 @@ describe('S5 report context, immutable snapshot, and renderer retry', () => {
             risksAndLimitations: { type: 'array' },
           },
         },
+        contextAsOf: { type: 'string' },
       },
     })
     if (!('parameters' in generate) || typeof generate.parameters !== 'object' || generate.parameters === null) {
@@ -247,6 +254,7 @@ describe('S5 report context, immutable snapshot, and renderer retry', () => {
       reviewRevision: binding.reviewRevision,
       projectionRevision: binding.projectionRevision,
       contextFingerprint: first.context.contextFingerprint,
+      contextAsOf: first.context.createdAt,
       narrative: narrativeFor(recordRef),
       confirmPending: false,
     }
@@ -278,16 +286,16 @@ describe('S5 report context, immutable snapshot, and renderer retry', () => {
     const recordRef = reportContext.priorityRecords[0]?.recordRef
     if (recordRef === undefined) throw new Error('missing priority record')
     const expectedNarrative = narrativeFor(recordRef)
-    const excelDatasets: ReportDatasetV1[] = []
-    const pdfDatasets: ReportDatasetV1[] = []
+    const excelDatasets: ReportDataset[] = []
+    const pdfDatasets: ReportDataset[] = []
     let excelAttempt = 0
-    const excel = vi.fn(async (dataset: ReportDatasetV1) => {
+    const excel = vi.fn(async (dataset: ReportDataset) => {
       excelDatasets.push(structuredClone(dataset))
       excelAttempt += 1
       if (excelAttempt === 1) throw new Error('forced excel failure')
       return { bytes: Buffer.from('xlsx-success'), fileName: 'report.xlsx', mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
     })
-    const pdf = vi.fn(async (dataset: ReportDatasetV1) => {
+    const pdf = vi.fn(async (dataset: ReportDataset) => {
       pdfDatasets.push(structuredClone(dataset))
       return { bytes: Buffer.from('%PDF-success'), fileName: 'report.pdf', mediaType: 'application/pdf' }
     })
@@ -306,6 +314,7 @@ describe('S5 report context, immutable snapshot, and renderer retry', () => {
       projectionRevision: binding.projectionRevision,
       confirmPending: true,
       contextFingerprint: reportContext.contextFingerprint,
+      contextAsOf: reportContext.createdAt,
       narrative: expectedNarrative,
     }, test.context('report-create')) as ReportMutationResultV1
     test.adopt(created.state)
@@ -335,7 +344,8 @@ describe('S5 report context, immutable snapshot, and renderer retry', () => {
     expect(snapshots).toHaveLength(1)
     const snapshot = snapshots[0]
     if (snapshot === undefined) throw new Error('missing snapshot entry')
-    const stored = ReportDatasetV1Schema.parse(JSON.parse((await readManifestArtifact(root, snapshot)).toString('utf8')) as unknown)
+    const stored = ReportDatasetSchema.parse(JSON.parse((await readManifestArtifact(root, snapshot)).toString('utf8')) as unknown)
+    expect(stored.schemaVersion).toBe(2)
     expect(stored.finalSnapshotId).toBe(snapshotId)
     expect(stored.narrative).toEqual(expectedNarrative)
     expect(stored.contextFingerprint).toBe(reportContext.contextFingerprint)
@@ -343,7 +353,12 @@ describe('S5 report context, immutable snapshot, and renderer retry', () => {
 
   it('renders the fixed real workbook/PDF with narrative only in the designated Excel summary area', async () => {
     const test = await harness()
-    const context = createReportContext({ normalized: test.normalized, review: test.reviewDataset, stateRevision: 4 })
+    const context = createReportContext({
+      normalized: test.normalized,
+      review: test.reviewDataset,
+      stateRevision: 4,
+      createdAt: '2026-09-02T14:00:00.000+08:00',
+    })
     const recordRef = context.priorityRecords[0]?.recordRef
     if (recordRef === undefined) throw new Error('missing priority record')
     const narrative = narrativeFor(recordRef)
@@ -360,12 +375,8 @@ describe('S5 report context, immutable snapshot, and renderer retry', () => {
       },
       narrative,
     })
-    expect(reportNarrativeSummaryNote(dataset)).toBeUndefined()
-    expect(reportNarrativeSummaryNote({
-      ...dataset,
-      narrative: { ...narrative, executiveSummary: undefined },
-    })).toContain('未提供 Agent 管理摘要')
-    expect(reportNarrativeSummaryNote({ ...dataset, narrative: undefined })).toContain('未包含 Agent 叙述')
+    expect(reportBusinessSummary(dataset)).toContain('正式招投标候选')
+    expect(reportBusinessSummary({ ...dataset, narrative: undefined })).not.toContain('Agent')
     const signal = new AbortController().signal
     const [xlsx, pdf] = await Promise.all([renderReportExcel(dataset, signal), renderReportPdf(dataset, signal)])
     const qaOutput = process.env['DSH_TENDER_REPORT_QA_OUTPUT']
@@ -379,13 +390,20 @@ describe('S5 report context, immutable snapshot, and renderer retry', () => {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(xlsx.bytes as never)
     expect(workbook.worksheets.map(sheet => sheet.name)).toEqual([
-      '分析概况', '招投标候选', '拟建重点线索', '观察与待复核', '排除与异常', '全量规范化数据',
+      '交付总览', '结果分布', '正式招投标候选', '拟建重点线索', '待复核', '观察项目',
+      '排除项目', '全量项目', '决策追溯', '数据质量与口径',
     ])
     const statement = narrative.executiveSummary?.statement ?? ''
-    expect(JSON.stringify(workbook.getWorksheet('分析概况')?.model)).toContain(statement)
-    workbook.worksheets.slice(1).forEach(sheet => expect(JSON.stringify(sheet.model)).not.toContain(statement))
+    expect(JSON.stringify(workbook.getWorksheet('结果分布')?.model)).toContain(statement)
+    ;['正式招投标候选', '拟建重点线索', '待复核', '观察项目', '排除项目', '全量项目']
+      .forEach(name => expect(JSON.stringify(workbook.getWorksheet(name)?.model)).not.toContain(statement))
+    expect(workbook.getWorksheet('正式招投标候选')?.getRow(1).values).toContain('截止窗口')
+    expect(workbook.getWorksheet('拟建重点线索')?.getRow(1).values).toContain('审批进度')
+    expect(workbook.getWorksheet('交付总览')?.getCell('A1').value).toBe('招投标机会筛选结果报告')
+    expect(workbook.getWorksheet('排除项目')?.rowCount).toBe(1)
     expect(pdf.bytes.subarray(0, 5).toString('ascii')).toBe('%PDF-')
     expect(pdf.bytes.byteLength).toBeGreaterThan(10_000)
+    expect(pdf.bytes.toString('latin1').match(/\/Type\s*\/Page\b/gu)).toHaveLength(2)
     ;['=2+2', '+SUM(A1:A2)', '-1+1', '@cmd', '\t=HYPERLINK("https://evil.test")', '\n+SUM(A1:A2)']
       .forEach(value => expect(escapeExcelText(value)).toMatch(/^'/u))
     expect(escapeExcelText('line one\tline two\nline three')).not.toMatch(/[\t\r\n]/u)
@@ -394,8 +412,8 @@ describe('S5 report context, immutable snapshot, and renderer retry', () => {
 
   it('creates a complete deterministic report without calling for or storing Agent narrative', async () => {
     const test = await harness({ complete: true })
-    const datasets: ReportDatasetV1[] = []
-    const renderer = vi.fn(async (dataset: ReportDatasetV1, _signal: AbortSignal) => {
+    const datasets: ReportDataset[] = []
+    const renderer = vi.fn(async (dataset: ReportDataset, _signal: AbortSignal) => {
       datasets.push(structuredClone(dataset))
       return { bytes: Buffer.from('deterministic'), fileName: 'report.bin', mediaType: 'application/octet-stream' }
     })

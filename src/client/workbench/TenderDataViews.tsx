@@ -194,6 +194,8 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
   const [page, setPage] = useState(1)
   const [query, setQuery] = useState('')
   const [source, setSource] = useState<ArtifactRowsFilterV1['source']>()
+  const [region, setRegion] = useState<string>()
+  const [lifecycle, setLifecycle] = useState<ArtifactRowsFilterV1['lifecycle']>()
   const [fieldStatus, setFieldStatus] = useState<ArtifactRowsFilterV1['fieldStatus']>()
   const [sort, setSort] = useState<NonNullable<ArtifactRowsFilterV1['sort']>>('published-desc')
   const [data, setData] = useState<ArtifactRowsPageV1>()
@@ -206,9 +208,11 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
     pageSize: 50,
     ...(query.trim() === '' ? {} : { query: query.trim() }),
     ...(source === undefined ? {} : { source }),
+    ...(region === undefined ? {} : { region }),
+    ...(lifecycle === undefined ? {} : { lifecycle }),
     ...(fieldStatus === undefined ? {} : { fieldStatus }),
     sort,
-  }), [fieldStatus, page, query, sort, source])
+  }), [fieldStatus, lifecycle, page, query, region, sort, source])
 
   useEffect(() => {
     const abort = new AbortController()
@@ -235,6 +239,7 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
   const maximumPage = Math.max(1, Math.ceil((data?.total ?? 0) / 50))
   const selectedRow = data?.rows.find(row => row.recordId === selectedRecordId)
   const selectedSourceLink = selectedRow === undefined ? undefined : sourceLink(selectedRow)
+  const regionOptions = useMemo(() => [...new Set((data?.rows ?? []).map(row => row.region.value ?? row.region.original).filter((value): value is string => value !== ''))].sort((left, right) => left.localeCompare(right, 'zh-CN')), [data?.rows])
   const resetPage = () => { setPage(1) }
 
   useEffect(() => {
@@ -271,6 +276,12 @@ export function TenderDataDetails({ sessionId, artifact, loadRows, onBack, t }: 
             placeholder={t('workbench.data.searchPlaceholder')}
             onChange={(event) => { setQuery(event.target.value); resetPage() }}
           />
+          <select aria-label={t('workbench.data.filterRegion')} value={region ?? ''} onChange={(event) => { setRegion(event.target.value || undefined); resetPage() }}>
+            <option value="">{t('workbench.data.filterRegionAll')}</option>{regionOptions.map(value => <option key={value} value={value}>{value}</option>)}
+          </select>
+          <select aria-label={t('workbench.data.filterStage')} value={lifecycle ?? ''} onChange={(event) => { setLifecycle(event.target.value === '' ? undefined : event.target.value as NonNullable<typeof lifecycle>); resetPage() }}>
+            <option value="">{t('workbench.data.filterStageAll')}</option><option value="active-procurement">{t('workbench.data.lifecycle.active-procurement')}</option><option value="awarded">{t('workbench.data.lifecycle.awarded')}</option><option value="early-signal">{t('workbench.data.lifecycle.early-signal')}</option><option value="superseded">{t('workbench.data.lifecycle.superseded')}</option>
+          </select>
           <select aria-label={t('workbench.data.filterStatus')} value={fieldStatus ?? ''} onChange={(event) => { setFieldStatus(event.target.value === '' ? undefined : event.target.value as NonNullable<typeof fieldStatus>); resetPage() }}>
             <option value="">{t('workbench.data.filterStatusAll')}</option><option value="missing">{t('workbench.data.status.missing')}</option><option value="unparseable">{t('workbench.data.status.unparseable')}</option>
           </select>

@@ -12,10 +12,10 @@ import { NormalizedDatasetV1Schema, type NormalizedDatasetV1 } from '../../contr
 import {
   GenerateReportCommandV1Schema,
   GetReportContextCommandV1Schema,
-  ReportContextV1Schema,
-  ReportDatasetV1Schema,
+  ReportContextV2Schema,
+  ReportDatasetSchema,
   type GetReportContextCommandV1,
-  type ReportDatasetV1,
+  type ReportDataset,
 } from '../../contracts/reporting.ts'
 import { ClassifiedDatasetV1Schema } from '../../contracts/screening.ts'
 import {
@@ -43,9 +43,9 @@ import {
   validateReportNarrative,
 } from '../reporting/report-dataset.ts'
 
-const ReportContextResultV1Schema = z.object({
+const ReportContextResultV2Schema = z.object({
   message: z.string().min(1).max(512),
-  context: ReportContextV1Schema,
+  context: ReportContextV2Schema,
 }).strict()
 
 const ReportMutationResultV1Schema = z.object({
@@ -54,10 +54,11 @@ const ReportMutationResultV1Schema = z.object({
   state: TenderWorkflowProjectionV1Schema,
 }).strict()
 
-export type ReportContextResultV1 = z.infer<typeof ReportContextResultV1Schema>
+export type ReportContextResultV2 = z.infer<typeof ReportContextResultV2Schema>
+export type ReportContextResultV1 = ReportContextResultV2
 export type ReportMutationResultV1 = z.infer<typeof ReportMutationResultV1Schema>
 
-type Renderer = (dataset: ReportDatasetV1, signal: AbortSignal) => Promise<RenderedReportFile>
+type Renderer = (dataset: ReportDataset, signal: AbortSignal) => Promise<RenderedReportFile>
 
 export interface ReportToolDependencies {
   readonly sessionProjections: Pick<SessionProjectionRegistry, 'stateOf'>
@@ -185,6 +186,7 @@ function reportObservationParameter() {
       statement: { type: 'string' as const, required: true as const },
       metricRefs: { type: 'array' as const, items: { type: 'string' as const }, required: true as const },
       recordRefs: { type: 'array' as const, items: { type: 'string' as const }, required: true as const },
+      distributionRefs: { type: 'array' as const, items: { type: 'string' as const } },
       limitations: { type: 'array' as const, items: { type: 'string' as const }, required: true as const },
     },
   }
@@ -194,7 +196,7 @@ function reportNarrativeParameter() {
   return {
     type: 'object' as const,
     additionalProperties: false,
-    description: 'Exact ReportNarrativeV1. Use only allowed refs from ReportContextV1; omit executiveSummary or provide one complete observation.',
+    description: 'Exact ReportNarrativeV1. Use only allowed metric, distribution, and record refs from ReportContextV2; omit executiveSummary or provide one complete observation.',
     properties: {
       executiveSummary: reportObservationParameter(),
       keyFindings: { type: 'array' as const, items: reportObservationParameter(), required: true as const },
@@ -207,7 +209,7 @@ function reportNarrativeParameter() {
 export function createTenderWorkbenchReportContextTool(dependencies: ReportToolDependencies) {
   return defineTool({
     name: 'tender_workbench_get_report_context',
-    description: 'Read one bounded deterministic ReportContextV1 for the current active data and review state. This read-only tool returns Host metrics, analysis coverage, at most ten Host-selected priority records, allowed refs, and a context fingerprint. It never creates a snapshot, reads the full dataset into Agent context, or asks Agent to calculate facts.',
+    description: 'Read one bounded deterministic ReportContextV2 for the current active data and review state. This read-only tool returns metrics, bounded result distributions, analysis coverage, at most ten time-ordered verification records, allowed refs, an as-of time, and a context fingerprint. It never creates a snapshot or reads the full dataset into Agent context.',
     parameters: reportBindingParameters(false),
     output: {
       schema: {
@@ -219,10 +221,10 @@ export function createTenderWorkbenchReportContextTool(dependencies: ReportToolD
         },
       },
       render(_args, value) {
-        const parsed = ReportContextResultV1Schema.parse(value)
+        const parsed = ReportContextResultV2Schema.parse(value)
         return [{
           type: 'text',
-          text: `${parsed.message}\n\nReportContextV1（叙述只能引用其中的 metricRefs、recordRefs，并原样绑定 contextFingerprint 与 stateRevision）：\n${JSON.stringify(parsed.context, null, 2)}`,
+          text: `${parsed.message}\n\nReportContextV2（叙述只能引用其中的 metricRefs、distributionRefs、recordRefs，并原样绑定 contextFingerprint、createdAt 与 stateRevision）：\n${JSON.stringify(parsed.context, null, 2)}`,
         }]
       },
     },
@@ -235,9 +237,11 @@ export function createTenderWorkbenchReportContextTool(dependencies: ReportToolD
       await transaction.load()
       const { normalized, review } = await loadCurrentData(transaction, state)
       exec.signal.throwIfAborted()
-      const context = createReportContext({ normalized, review, stateRevision: state.revision })
-      return ReportContextResultV1Schema.parse({
-        message: `已返回有界报告上下文：${context.metrics.length} 项 Host 指标、${context.priorityRecords.length} 条确定性优先核验记录；上下文只允许这些引用。`,
+      const context = createReportContext({
+        normalized, review, stateRevision: state.revision, createdAt: new Date().toISOString(),
+      })
+      return ReportContextResultV2Schema.parse({
+        message: `已返回有界报告上下文：${context.metrics.length} 项指标、${context.distributions.length} 项结果分布、${context.priorityRecords.length} 条近期需核验记录。`,
         context,
       })
     },
@@ -251,7 +255,7 @@ function formatError(caught: unknown): string {
 
 async function renderFormat(
   transaction: ArtifactTransaction,
-  dataset: ReportDatasetV1,
+  dataset: ReportDataset,
   format: 'excel' | 'pdf',
   renderer: Renderer,
   signal: AbortSignal,
@@ -268,7 +272,7 @@ async function renderFormat(
 function projectionReport(
   previous: TenderWorkflowProjectionV1,
   nextRevision: number,
-  dataset: ReportDatasetV1,
+  dataset: ReportDataset,
   finalSnapshot: ArtifactRefV1,
   excel: NonNullable<TenderWorkflowProjectionV1['report']>['excel'],
   pdf: NonNullable<TenderWorkflowProjectionV1['report']>['pdf'],
@@ -325,6 +329,7 @@ export function createTenderWorkbenchGenerateReportTool(dependencies: ReportTool
       mode: { type: 'string' as const, enum: ['create', 'retry'], required: true as const },
       confirmPending: { type: 'boolean' as const },
       contextFingerprint: { type: 'string' as const },
+      contextAsOf: { type: 'string' as const },
       narrative: reportNarrativeParameter(),
       finalSnapshotId: { type: 'string' as const },
       formats: { type: 'array' as const, items: { type: 'string' as const } },
@@ -370,7 +375,10 @@ export function createTenderWorkbenchGenerateReportTool(dependencies: ReportTool
               projectionRevision: args.projectionRevision,
             }))
             const { normalized, review } = await loadCurrentData(transaction, previousState)
-            const context = createReportContext({ normalized, review, stateRevision: previousState.revision })
+            const createdAt = args.contextAsOf ?? new Date().toISOString()
+            const context = createReportContext({
+              normalized, review, stateRevision: previousState.revision, createdAt,
+            })
             if (args.contextFingerprint !== undefined && args.contextFingerprint !== context.contextFingerprint) {
               throw new Error('报告上下文指纹已过期；数据、分类、分析或用户决定已变化。')
             }
@@ -379,7 +387,6 @@ export function createTenderWorkbenchGenerateReportTool(dependencies: ReportTool
             if (pending > 0 && !args.confirmPending) {
               throw new Error(`当前仍有 ${pending} 个待复核项目；生成阶段性报告前必须明确确认 pending 范围。`)
             }
-            const createdAt = new Date().toISOString()
             const finalSnapshotId = `fs_${createHash('sha256').update(JSON.stringify({ commandId: args.commandId, contextFingerprint: context.contextFingerprint, createdAt }), 'utf8').digest('hex').slice(0, 32)}`
             const query = previousState.query
             if (query === undefined) throw new Error('当前 Session 缺少报告查询范围。')
@@ -422,7 +429,7 @@ export function createTenderWorkbenchGenerateReportTool(dependencies: ReportTool
           args.formats.forEach((format) => {
             if (report[format].status !== 'failed') throw new Error(`只能重试失败格式：${format}`)
           })
-          const dataset = ReportDatasetV1Schema.parse(
+          const dataset = ReportDatasetSchema.parse(
             await transaction.readJsonArtifact(report.finalSnapshot.id, 'final-snapshot'),
           )
           if (dataset.finalSnapshotId !== args.finalSnapshotId) throw new Error('交付快照内容与重试参数不一致。')

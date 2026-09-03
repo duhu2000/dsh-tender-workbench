@@ -139,6 +139,15 @@ function renderS4(sendIntent = vi.fn(async (_intent: unknown) => {})) {
 }
 
 describe('S4 analysis and review workbench', () => {
+  it('uses the completed Agent analysis footer action to enter human review', async () => {
+    renderS4()
+    fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
+    expect(await screen.findByRole('heading', { name: zh['workbench.analysis.title'] })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.analysis.openReview'] }))
+    expect(screen.getByRole('tab', { name: zh['workbench.phase.decision'] }).getAttribute('aria-selected')).toBe('true')
+    expect(await screen.findByRole('heading', { name: zh['workbench.review.title'] })).toBeTruthy()
+  })
+
   it('keeps evidence, Agent recommendation, and pending user decision separate while analyzing an explicit selection', async () => {
     const sendIntent = vi.fn((_intent: unknown) => new Promise<void>(() => {}))
     renderS4(sendIntent)
@@ -149,10 +158,18 @@ describe('S4 analysis and review workbench', () => {
     const tenderRow = tenderSelect.closest('article')
     if (tenderRow === null) throw new Error('missing tender row')
     expect(within(tenderRow).getByText(zh['workbench.analysis.recommendation.priority-review'])).toBeTruthy()
-    expect(within(tenderRow).getByText(zh['workbench.review.decision.pending'])).toBeTruthy()
     expect(screen.getByText('项目名称')).toBeTruthy()
-    expect(screen.getByText(zh['workbench.review.layerClassification'])).toBeTruthy()
-    expect(screen.getByText(zh['workbench.review.layerDecision'])).toBeTruthy()
+    expect(screen.getAllByText(zh['workbench.analysis.factRule']).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(zh['workbench.analysis.factTiming'])).toBeTruthy()
+    expect(document.querySelector('[data-analysis-layout]')).toBeTruthy()
+    expect(document.querySelector('[data-analysis-risk]')).toBeTruthy()
+    expect(document.querySelector('[data-analysis-verification]')).toBeTruthy()
+    expect(screen.getByLabelText(zh['workbench.analysis.sort'])).toBeTruthy()
+    const proposedButton = screen.getByText('智算中心拟建项目').closest('button')
+    if (proposedButton === null) throw new Error('missing proposed analysis row')
+    fireEvent.click(proposedButton)
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByLabelText(zh['workbench.analysis.detailTitle'])) })
+    expect(within(screen.getByLabelText(zh['workbench.analysis.detailTitle'])).getByText(zh['workbench.analysis.unanalyzedDescription'])).toBeTruthy()
     fireEvent.click(tenderSelect)
     const analyze = screen.getByRole('button', { name: '分析选中 1 条' })
     fireEvent.click(analyze)

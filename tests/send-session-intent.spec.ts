@@ -4,6 +4,7 @@ import {
   createTenderQueryIntent,
   serializeTenderQueryIntent,
 } from '../src/client/intents/query-intent.ts'
+import { createInitialTenderFilters } from '../src/client/types.ts'
 import {
   sendSessionTenderQueryIntent,
   sendSessionTenderWorkbenchIntent,
@@ -23,13 +24,23 @@ describe('typed Session Intent', () => {
     const intent = createTenderQueryIntent({
       scope: 'combined',
       target: '查找数据治理项目',
-      keywords: '数据治理，AI 数据治理',
-    }, 'command-1')
+      filters: {
+        ...createInitialTenderFilters(), keywords: '数据治理 AI 数据治理', regionCodes: ['SH'],
+        noticeType: 'ifb', tenderStages: ['变更'], procurementMethods: ['竞磋'], tenderAmountMin: '300',
+        proposedStages: ['项目备案'], approvalProgress: ['审批通过'], proposedInvestmentMin: '1000',
+      },
+    }, 'command-1', new Date('2026-08-30T12:00:00+08:00'))
     expect(intent).toMatchObject({
       commandId: 'command-1',
       scope: 'combined',
-      tender: { keywords: ['数据治理', 'AI'] },
-      proposed: { keywords: ['数据治理', 'AI'] },
+      tender: {
+        keywords: ['数据治理', 'AI'], beginDate: '2026-05-30', regions: ['上海市'],
+        infoTypes: ['招标公告'], bidStatuses: ['招标变更'], procurementMethods: ['竞争性磋商'], budgetMin: 3_000_000,
+      },
+      proposed: {
+        keywords: ['数据治理', 'AI'], beginDate: '2026-05-30', regions: ['上海市'],
+        projectStages: ['项目备案'], approvalStatuses: ['审批通过'], investmentMin: 10_000_000,
+      },
     })
     const message = serializeTenderQueryIntent(intent)
     expect(message).toContain(JSON.stringify(intent, null, 2))
@@ -49,7 +60,7 @@ describe('typed Session Intent', () => {
     )))
     const scope = vi.fn((sessionId: string) => ({ get: getConversation(sessionId) }))
     const sessions = { scope } as unknown as Pick<ISessions, 'scope'>
-    const intent = createTenderQueryIntent({ scope: 'tender', target: '目标', keywords: '云平台' }, 'command-2')
+    const intent = createTenderQueryIntent({ scope: 'tender', target: '目标', filters: { ...createInitialTenderFilters(), keywords: '云平台' } }, 'command-2')
     await sendSessionTenderQueryIntent(sessions, 'two' as never, intent)
     expect(scope).toHaveBeenCalledWith('two')
     expect(getConversation).toHaveBeenCalledWith('two')
@@ -60,7 +71,7 @@ describe('typed Session Intent', () => {
 
   it('fails explicitly when the addressed Session is unavailable', async () => {
     const sessions = { scope: () => undefined } as unknown as Pick<ISessions, 'scope'>
-    const intent = createTenderQueryIntent({ scope: 'tender', target: '目标', keywords: '' }, 'command-3')
+    const intent = createTenderQueryIntent({ scope: 'tender', target: '目标', filters: createInitialTenderFilters() }, 'command-3')
     await expect(sendSessionTenderQueryIntent(sessions, 'missing' as never, intent))
       .rejects.toBeInstanceOf(TenderSessionUnavailableError)
   })
@@ -69,7 +80,7 @@ describe('typed Session Intent', () => {
     const sessions = {
       scope: () => ({ get: () => undefined }),
     } as unknown as Pick<ISessions, 'scope'>
-    const intent = createTenderQueryIntent({ scope: 'tender', target: '目标', keywords: '' }, 'command-4')
+    const intent = createTenderQueryIntent({ scope: 'tender', target: '目标', filters: createInitialTenderFilters() }, 'command-4')
     await expect(sendSessionTenderQueryIntent(sessions, 'missing-conversation' as never, intent))
       .rejects.toThrow('Tender conversation is unavailable')
   })
@@ -95,7 +106,8 @@ describe('typed Session Intent', () => {
     })
     const message = serializeTenderWorkbenchIntent(adjustment)
     expect(message).toContain(JSON.stringify(adjustment, null, 2))
-    expect(message).toContain('用户在工作台选择“应用结构化建议”后')
+    expect(message).toContain('作为当前 Session 规则工作区的可编辑草案载入')
+    expect(message).toContain('不会自动确认或分类')
 
     const send = vi.fn(async (_text: string) => {})
     const sessions = { scope: () => ({ get: () => ({ send }) }) } as unknown as Pick<ISessions, 'scope'>
@@ -116,7 +128,7 @@ describe('typed Session Intent', () => {
     expect(narrativeMessage).toContain('自由文本不得写数字、比例、金额或日期')
     expect(narrativeMessage).toContain('priorityVerification')
     expect(narrativeMessage).toContain('risksAndLimitations')
-    expect(narrativeMessage).toContain('title、statement、metricRefs、recordRefs、limitations')
+    expect(narrativeMessage).toContain('title、statement、metricRefs、recordRefs、distributionRefs、limitations')
     expect(narrativeMessage).toContain('不得使用 item、refs、verificationPriorities')
 
     const deterministic = createGenerateReportIntent({ ...withNarrative, commandId: 'report-2', includeNarrative: false })

@@ -154,12 +154,12 @@ export function serializeTenderWorkbenchIntent(input: TenderWorkbenchIntentV1): 
       visibleJson(intent),
       '',
       '请只基于消息中的当前结构化草案和用户调整要求输出完整的一层规则草案；不得重新查询 qcc、读取 Artifact、写文件或使用 Shell。',
-      '准确调用一次 tender_workbench_preview_rules，origin 必须为 agent，并省略 draftFingerprint，由 Host 计算并绑定。工具返回后本轮立即结束，不得再次改稿或预览，也不要执行确认。用户在工作台选择“应用结构化建议”后，本地草案才会改变。',
+      '准确调用一次 tender_workbench_preview_rules，origin 必须为 agent，并省略 draftFingerprint，由 Host 计算并绑定。工具返回后本轮立即结束，不得再次改稿、预览或执行确认。返回的建议会作为当前 Session 规则工作区的可编辑草案载入，但不会自动确认或分类。',
     ].join('\n')
   }
   if (intent.kind === 'rules.preview') {
     return [
-      '请对当前用户编辑的初筛口径执行确定性影响预览。',
+      '请保存当前用户编辑的初筛口径草案并执行一次 Dry Run。',
       '',
       '类型化工作台意图（schemaVersion 1）：',
       visibleJson(intent),
@@ -210,10 +210,10 @@ export function serializeTenderWorkbenchIntent(input: TenderWorkbenchIntentV1): 
     return [
       ...common,
       '先准确调用一次只读 tender_workbench_get_report_context：将 kind 改为 report.context，原样传递状态绑定并省略 commandId、confirmPending 与 includeNarrative。不得读取完整数据 Artifact、重新查询来源、使用 Shell 或自行计算统计。',
-      '只能基于返回的 ReportContextV1 形成一个结构化 ReportNarrativeV1：可选管理摘要、主要发现最多五项、优先核验最多十项、风险/局限最多五项。每项必须引用上下文允许的 metricRef 或 recordRef。',
-      'ReportNarrativeV1 顶层只能包含 executiveSummary（可省略）、keyFindings、priorityVerification、risksAndLimitations；后三项必须是数组。每个叙述项只能包含 title、statement、metricRefs、recordRefs、limitations 五个字段；三个引用/局限字段都必须是数组，且 metricRefs 与 recordRefs 至少一个非空。不得使用 item、refs、verificationPriorities 或其他字段名。',
+      '只能基于返回的 ReportContextV2 形成一个结构化 ReportNarrativeV1：可选管理摘要、主要发现最多五项、优先核验最多十项、风险/局限最多五项。每项必须引用上下文允许的 metricRef、distributionRef 或 recordRef。',
+      'ReportNarrativeV1 顶层只能包含 executiveSummary（可省略）、keyFindings、priorityVerification、risksAndLimitations；后三项必须是数组。每个叙述项只能包含 title、statement、metricRefs、recordRefs、distributionRefs、limitations 六个字段；四个引用/局限字段都必须是数组，且三类引用至少一个非空。不得使用 item、refs、verificationPriorities 或其他字段名。',
       '自由文本不得写数字、比例、金额或日期；不得生成脚本、HTML/CSS、公式、Sheet、章节、图表或版式描述，也不得改变 Host 选出的重点记录和顺序。',
-      '随后准确调用一次 tender_workbench_generate_report：将 kind 改为 report.generate、mode 设为 create，原样传递全部状态绑定、commandId 与 confirmPending，并提交工具返回的 contextFingerprint 和 ReportNarrativeV1。工具返回后立即结束。',
+      '随后准确调用一次 tender_workbench_generate_report：将 kind 改为 report.generate、mode 设为 create，原样传递全部状态绑定、commandId 与 confirmPending，并提交工具返回的 contextFingerprint、createdAt（参数名 contextAsOf）和 ReportNarrativeV1。工具返回后立即结束。',
     ].join('\n')
   }
   if (intent.kind === 'report.retry') return [

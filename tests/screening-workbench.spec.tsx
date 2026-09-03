@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NormalizedProjectV1 } from '../src/contracts/dataset.ts'
@@ -121,6 +121,10 @@ describe('S3 screening workbench', () => {
     expect(sendIntent).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
     expect(sendIntent).not.toHaveBeenCalled()
+    const screeningTabs = within(screen.getByRole('tablist', { name: zh['workbench.screening.views'] }))
+    expect(screeningTabs.getAllByRole('tab')).toHaveLength(3)
+    expect((screeningTabs.getByRole('tab', { name: zh['workbench.classification.title'] }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screeningTabs.getByRole('tab', { name: zh['workbench.analysis.shortTitle'] }) as HTMLButtonElement).disabled).toBe(true)
     const continueButton = screen.getByRole('button', { name: zh['workbench.data.continue'] })
     const continueForm = continueButton.closest('form')
     fireEvent.click(continueButton)
@@ -143,83 +147,45 @@ describe('S3 screening workbench', () => {
     expect(sendIntent).toHaveBeenCalledTimes(1)
   })
 
-  it('requires applying an Agent structured suggestion before local editing and never persists local edits by itself', async () => {
-    const adjustedRules = [{ ...draftRules[0]!, name: '调整后的数据方向', sources: ['tender', 'proposed'] as ('tender' | 'proposed')[] }]
-    let currentRules = draftRules
+  it('opens Agent rules directly as an editable local draft without a suggestion-application gate', async () => {
     const loadContent = vi.fn<RuleContentLoader>(async (_session, artifact): Promise<RuleArtifactContentV1> => {
-      if (artifact.kind === 'rule-preview') return previewArtifact('agent', 2, currentRules)
-      return { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 1, draftFingerprint: ruleDraftFingerprint(currentRules), origin: 'agent', rules: [...currentRules] }
+      if (artifact.kind === 'rule-preview') return previewArtifact('agent', 2, draftRules)
+      return { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 1, draftFingerprint: fingerprint, origin: 'agent', rules: [...draftRules] }
     })
     const sendIntent = vi.fn(async (_intent: TenderWorkbenchIntentV1) => {})
     const view = renderWorkbench({ projection: { status: 'ready', projection: draftProjection() }, sendIntent, loadContent })
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
-    expect(await screen.findByText(zh['workbench.rules.agentSuggestion'])).toBeTruthy()
-    expect(screen.getByText(zh['workbench.rules.taskTitle.suggestion'])).toBeTruthy()
-    expect(await screen.findByText(zh['workbench.rules.previewSuggested'])).toBeTruthy()
-    expect(screen.queryByText(zh['workbench.rules.previewStale'])).toBeNull()
-    expect(screen.queryByDisplayValue('数据方向')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.rules.applySuggestion'] }))
     const name = await screen.findByDisplayValue('数据方向')
-    expect(screen.getByRole('button', { name: /数据方向/u }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByText(zh['workbench.rules.noDefaultTitle'])).toBeTruthy()
+    expect(screen.queryByText(zh['workbench.rules.previewStale'])).toBeNull()
+    expect(screen.queryByRole('button', { name: /应用结构化建议/u })).toBeNull()
+    expect(screen.queryByText(/确定性影响预览/u)).toBeNull()
+    expect(screen.queryByPlaceholderText(zh['workbench.rules.adjustPlaceholder'])).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['workbench.rules.askAgent'] })).toBeNull()
+    expect(screen.getByRole('button', { name: /^数据方向/u }).getAttribute('aria-pressed')).toBe('true')
+    expect(document.querySelector('[data-rule-workspace]')).toBeTruthy()
+    expect(document.querySelectorAll('[data-rule-card]')).toHaveLength(1)
+    expect(document.querySelector('[data-rule-editor]')).toBeTruthy()
+    expect(document.querySelector('[data-selected-rule-impact="r-data"]')).toBeTruthy()
+    expect(document.querySelector('[data-rule-preview-grid]')).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh['workbench.rules.saveAndDryRun'] })).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh['workbench.rules.confirm'] })).toBeTruthy()
     fireEvent.change(name, { target: { value: '用户本地编辑' } })
+    expect(await screen.findByText(zh['workbench.rules.previewStale'])).toBeTruthy()
+    expect((screen.getByRole('button', { name: zh['workbench.rules.confirm'] }) as HTMLButtonElement).disabled).toBe(true)
+    const keywordInput = screen.getByLabelText(zh['workbench.rules.keywords'])
+    fireEvent.change(keywordInput, { target: { value: '云平台' } })
+    fireEvent.keyDown(keywordInput, { key: 'Enter' })
+    expect(screen.getByRole('button', { name: t('workbench.rules.removeTerm', { term: '云平台' }) })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: t('workbench.rules.removeTerm', { term: '云平台' }) }))
+    expect(screen.queryByRole('button', { name: t('workbench.rules.removeTerm', { term: '云平台' }) })).toBeNull()
     expect(sendIntent).not.toHaveBeenCalled()
-
-    fireEvent.change(screen.getByPlaceholderText(zh['workbench.rules.adjustPlaceholder']), { target: { value: '扩展到拟建来源' } })
-    expect(screen.queryByRole('button', { name: zh['workbench.rules.confirm'] })).toBeNull()
-    const adjustButton = screen.getByRole('button', { name: zh['workbench.rules.askAgent'] })
-    expect(document.querySelectorAll('[data-write-button]')).toHaveLength(1)
-    const adjustForm = adjustButton.closest('form')
-    fireEvent.click(adjustButton)
-    fireEvent.click(adjustButton)
-    if (adjustForm !== null) {
-      fireEvent.submit(adjustForm)
-      fireEvent.submit(adjustForm)
-    }
-    await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
-    expect(view.getCommandCount()).toBe(1)
-    expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({ commandId: 'command-1', kind: 'rules.adjust', instruction: '扩展到拟建来源', rules: [{ name: '用户本地编辑' }] })
-    expect((screen.getByDisplayValue('用户本地编辑') as HTMLInputElement).disabled).toBe(true)
-    await waitFor(() => {
-      const progress = expectWriteProgress('rules.adjust', 'waiting-agent', zh['workbench.write.adjust.waiting'])
-      expect(document.querySelector('[data-write-button="rules.adjust"]')?.getAttribute('aria-describedby')).toBe(progress.id)
-    })
-    expect((screen.getByRole('button', { name: /用户本地编辑/u }) as HTMLButtonElement).disabled).toBe(false)
-
-    const runningAdjustment = {
-      ...draftProjection(),
-      activeOperation: {
-        callId: 'call-adjust', commandId: 'command-1',
-        command: 'tender_workbench_preview_rules' as const, stage: 'rules' as const,
-      },
-      stages: { ...draftProjection().stages, rules: { status: 'running' as const } },
-    }
-    view.rerender(<TenderWorkbenchView
-      sessionId={'session-1' as never}
-      projection={{ status: 'ready', projection: runningAdjustment }}
-      navigation={createTenderWorkbenchNavigationController()}
-      sendIntent={sendIntent}
-      createCommandId={() => 'command-next'}
-      loadRuleContent={loadContent}
-      t={t}
-    />)
-    await waitFor(() => {
-      expectWriteProgress('rules.adjust', 'running', zh['workbench.write.adjust.running'])
-    })
-    currentRules = adjustedRules
-    view.rerender(<TenderWorkbenchView
-      sessionId={'session-1' as never}
-      projection={{ status: 'ready', projection: { ...draftProjection('agent', adjustedRules, 3), rules: { ...draftProjection('agent', adjustedRules, 3).rules!, draft: { ...draftRef, id: 'adjusted-draft' }, preview: { ...previewRef, id: 'adjusted-preview' } } } }}
-      navigation={createTenderWorkbenchNavigationController()}
-      sendIntent={sendIntent}
-      createCommandId={() => 'command-next'}
-      loadRuleContent={loadContent}
-      t={t}
-    />)
-    fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
-    expect(await screen.findByText(zh['workbench.rules.agentSuggestion'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /新增口径/u }))
+    expect(screen.getByDisplayValue(zh['workbench.rules.newRuleName'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['workbench.rules.delete'].replace('{name}', zh['workbench.rules.newRuleName']) }))
+    expect(screen.queryByDisplayValue(zh['workbench.rules.newRuleName'])).toBeNull()
     expect(screen.getByDisplayValue('用户本地编辑')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.rules.applySuggestion'] }))
-    expect(await screen.findByDisplayValue('调整后的数据方向')).toBeTruthy()
+    expect(view.getCommandCount()).toBe(0)
   })
 
   it('marks previews stale after a local edit, blocks confirmation, and previews only on explicit action', async () => {
@@ -232,13 +198,13 @@ describe('S3 screening workbench', () => {
     const confirm = await screen.findByRole('button', { name: zh['workbench.rules.confirm'] })
     expect(confirm.hasAttribute('disabled')).toBe(false)
     expect(screen.getByRole('heading', { name: zh['workbench.rules.pageTitle'] })).toBeTruthy()
-    expect(screen.getByText(zh['workbench.rules.taskTitle.confirm'])).toBeTruthy()
-    expect(screen.getByText(zh['workbench.rules.previewSummary'])).toBeTruthy()
+    expect(screen.getByText(zh['workbench.rules.noDefaultTitle'])).toBeTruthy()
+    expect(screen.getByText(zh['workbench.rules.globalImpact'])).toBeTruthy()
     fireEvent.change(screen.getByDisplayValue('数据方向'), { target: { value: '已修改名称' } })
     expect(await screen.findByText(zh['workbench.rules.previewStale'])).toBeTruthy()
-    expect(screen.queryByRole('button', { name: zh['workbench.rules.confirm'] })).toBeNull()
-    const previewButton = screen.getByRole('button', { name: zh['workbench.rules.runPreview'] })
-    expect(document.querySelectorAll('[data-write-button]')).toHaveLength(1)
+    expect((screen.getByRole('button', { name: zh['workbench.rules.confirm'] }) as HTMLButtonElement).disabled).toBe(true)
+    const previewButton = screen.getByRole('button', { name: zh['workbench.rules.saveAndDryRun'] })
+    expect(document.querySelectorAll('[data-write-button]')).toHaveLength(2)
     const previewForm = previewButton.closest('form')
     fireEvent.click(previewButton)
     fireEvent.click(previewButton)
@@ -267,6 +233,36 @@ describe('S3 screening workbench', () => {
     />)
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
     expect(screen.queryByDisplayValue('已修改名称')).toBeNull()
+  })
+
+  it('keeps an unpreviewed local draft when navigating to classification and back', async () => {
+    const content = vi.fn<RuleContentLoader>(async (_session, artifact) => artifact.kind === 'rule-preview'
+      ? previewArtifact('user')
+      : { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 1, draftFingerprint: fingerprint, origin: 'user', rules: [...draftRules] })
+    const classifiedRef = { id: 'classified-navigation', kind: 'classified-data' as const, fileName: 'classified.json', mediaType: 'application/json', rowCount: 2, createdAt, accessToken: 'classified-token' }
+    const base = draftProjection('user')
+    const withClassification: TenderWorkflowProjectionV1 = {
+      ...base,
+      currentStage: 'classification',
+      stages: { ...base.stages, classification: { status: 'succeeded', updatedAt: createdAt } },
+      classification: { data: classifiedRef, include: 1, observe: 0, manualReview: 0, exclude: 0, unmatched: 1, covered: 1, conflicts: 0, ruleSetVersion: 'rsv-navigation', activeDatasetId: dataset.id },
+    }
+    const loadRows = vi.fn<ClassifiedRowsLoader>(async (_session, artifact, filter) => ({
+      schemaVersion: 1, artifactId: artifact.id, page: filter.page, pageSize: filter.pageSize, total: 0, rows: [],
+    }))
+    renderWorkbench({ projection: { status: 'ready', projection: withClassification }, loadContent: content, loadClassifiedRows: loadRows })
+    fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
+    fireEvent.change(await screen.findByDisplayValue('数据方向'), { target: { value: '跨页保留的本地草案' } })
+    expect(await screen.findByText(zh['workbench.rules.previewStale'])).toBeTruthy()
+
+    const tabs = within(screen.getByRole('tablist', { name: zh['workbench.screening.views'] }))
+    fireEvent.click(tabs.getByRole('tab', { name: zh['workbench.classification.title'] }))
+    expect(await screen.findByRole('heading', { name: zh['workbench.classification.title'] })).toBeTruthy()
+    fireEvent.click(tabs.getByRole('tab', { name: zh['workbench.rules.title'] }))
+
+    expect(screen.getByDisplayValue('跨页保留的本地草案')).toBeTruthy()
+    expect(screen.getByText(zh['workbench.rules.previewStale'])).toBeTruthy()
+    expect((screen.getByRole('button', { name: zh['workbench.rules.confirm'] }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('single-flights confirmation through waiting/running and unlocks only on explicit failure or success', async () => {
@@ -356,7 +352,7 @@ describe('S3 screening workbench', () => {
     expect(screen.getByRole('button', { name: zh['workbench.query.submit'] }).hasAttribute('disabled')).toBe(false)
   })
 
-  it('puts preview conclusions before bounded, collapsed samples and weakens zero values', async () => {
+  it('keeps Dry Run impact inline after the editor with bounded selected-rule samples and real conflicts', async () => {
     const baseSample = previewArtifact('user').samples[0]!
     const emphasizedPreview: RulePreviewArtifactV1 = {
       ...previewArtifact('user'),
@@ -381,29 +377,22 @@ describe('S3 screening workbench', () => {
     renderWorkbench({ projection: { status: 'ready', projection: draftProjection('user') }, loadContent: content })
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
 
-    expect(await screen.findByText(zh['workbench.rules.previewSummary'])).toBeTruthy()
-    expect(screen.getAllByText(zh['workbench.classification.column.conflict']).some(node => node.closest('span')?.getAttribute('data-emphasis') === 'warning')).toBe(true)
-    expect(screen.getAllByText(zh['workbench.classification.exception']).some(node => node.closest('span')?.getAttribute('data-emphasis') === 'warning')).toBe(true)
-    expect(document.querySelector('[data-classification="observe"]')?.getAttribute('data-zero')).toBe('true')
-    expect(document.querySelector('[data-classification="manual-review"]')?.getAttribute('data-zero')).toBe('false')
-    expect(screen.getByText(zh['workbench.rules.previewDefinitionRaw'])).toBeTruthy()
-    expect(screen.getByText(zh['workbench.rules.previewDefinitionFinal'])).toBeTruthy()
-    expect(screen.getByText(zh['workbench.rules.previewDefinitionConflict'])).toBeTruthy()
-    expect(screen.getByText(zh['workbench.rules.previewDefinitionException'])).toBeTruthy()
+    expect(await screen.findByText(zh['workbench.rules.globalImpact'])).toBeTruthy()
+    expect(screen.getByText(t('workbench.rules.selectedSamples', { name: '数据方向' }))).toBeTruthy()
+    expect(screen.getByText(t('workbench.rules.conflicts', { count: 1 }))).toBeTruthy()
+    expect(screen.getByText(t('workbench.rules.previewExceptions', { count: 1 }))).toBeTruthy()
+    expect(document.querySelector('[data-classification="observe"]')).toBeTruthy()
+    expect(document.querySelector('[data-classification="manual-review"]')).toBeTruthy()
+    expect(screen.queryByText(/确定性影响预览/u)).toBeNull()
 
     const featured = document.querySelector('[data-preview-samples="featured"]')
-    const remaining = document.querySelector<HTMLDetailsElement>('[data-preview-samples="remaining"]')
-    const byRule = document.querySelector<HTMLDetailsElement>('[data-preview-samples="rule"]')
-    const allSamples = document.querySelector<HTMLDetailsElement>('[data-preview-samples="all"]')
-    const impacts = document.querySelector<HTMLDetailsElement>('[data-preview-impacts]')
-    expect(featured?.querySelectorAll('[data-sample-kind]')).toHaveLength(4)
-    expect(remaining?.querySelectorAll('[data-sample-kind]')).toHaveLength(2)
-    expect(remaining?.open).toBe(false)
-    expect(byRule?.open).toBe(false)
-    expect(allSamples?.open).toBe(false)
-    expect(impacts?.open).toBe(false)
+    const impacts = document.querySelector<HTMLElement>('[data-preview-impacts]')
+    expect(featured?.querySelectorAll('[data-sample-kind]')).toHaveLength(3)
+    expect(document.querySelector('[data-preview-samples="remaining"]')).toBeNull()
+    expect(impacts).toBeTruthy()
+    expect(document.querySelector('[data-rule-preview-grid]')).toBeTruthy()
     expect(document.body.textContent).not.toContain('技术详情')
-    expect(document.querySelectorAll('[data-write-button]')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-write-button]')).toHaveLength(2)
     expect(screen.getByRole('button', { name: zh['workbench.rules.confirm'] })).toBeTruthy()
   })
 
@@ -431,14 +420,27 @@ describe('S3 screening workbench', () => {
       classification: { data: classifiedRef, include: 1, observe: 0, manualReview: 0, exclude: 0, unmatched: 1, covered: 1, conflicts: 0, ruleSetVersion: 'rsv-3-test', activeDatasetId: dataset.id },
     }
     const loadRows = vi.fn<ClassifiedRowsLoader>(async (_session, artifact, filter) => ({ schemaVersion: 1, artifactId: artifact.id, page: filter.page, pageSize: filter.pageSize, total: 1, rows: [classifiedRow] }))
-    const loadContent = vi.fn<RuleContentLoader>(async () => ({ schemaVersion: 1, ruleSetVersion: 'rsv-3-test', activeDatasetId: dataset.id, previewArtifactId: previewRef.id, confirmedAt: createdAt, commandId: 'confirm', draftFingerprint: fingerprint, rules: [...draftRules] }))
-    renderWorkbench({ projection: { status: 'ready', projection }, loadClassifiedRows: loadRows, loadContent })
+    const loadContent = vi.fn<RuleContentLoader>(async (_session, artifact) => {
+      if (artifact.kind === 'rule-preview') return previewArtifact('user', 3)
+      if (artifact.kind === 'rule-draft') return { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 2, draftFingerprint: fingerprint, origin: 'user', rules: [...draftRules] }
+      return { schemaVersion: 1, ruleSetVersion: 'rsv-3-test', activeDatasetId: dataset.id, previewArtifactId: previewRef.id, confirmedAt: createdAt, commandId: 'confirm', draftFingerprint: fingerprint, rules: [...draftRules] }
+    })
+    const view = renderWorkbench({ projection: { status: 'ready', projection }, loadClassifiedRows: loadRows, loadContent })
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
-    expect(await screen.findByText('数据治理平台')).toBeTruthy()
+    const classificationPanel = screen.getByRole('tabpanel', { name: zh['workbench.classification.title'] })
+    expect(document.querySelector('[data-classification-overview]')).toBeTruthy()
+    expect(document.querySelector('[data-classification-funnel]')).toBeTruthy()
+    expect(await within(classificationPanel).findByText('数据治理平台')).toBeTruthy()
+    expect(document.querySelector('[data-classification-samples]')).toBeTruthy()
     const classificationTab = screen.getByRole('tab', { name: zh['workbench.classification.title'] })
+    expect((classificationTab as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('tab', { name: zh['workbench.analysis.shortTitle'] }) as HTMLButtonElement).disabled).toBe(false)
     classificationTab.focus()
     fireEvent.keyDown(classificationTab, { key: 'ArrowLeft' })
     expect(screen.getByRole('tab', { name: zh['workbench.rules.title'] }).getAttribute('aria-selected')).toBe('true')
+    expect(await screen.findByText(zh['workbench.rules.previewAccepted'])).toBeTruthy()
+    expect(screen.queryByText(zh['workbench.rules.previewStale'])).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['workbench.rules.confirm'] })).toBeNull()
     fireEvent.keyDown(screen.getByRole('tab', { name: zh['workbench.rules.title'] }), { key: 'ArrowRight' })
     expect(classificationTab.getAttribute('aria-selected')).toBe('true')
     expect(await screen.findByRole('button', { name: zh['workbench.classification.openAnalysis'] })).toBeTruthy()
@@ -448,19 +450,28 @@ describe('S3 screening workbench', () => {
     const includeCard = await screen.findByRole('button', { name: /初选.*1/u })
     expect(includeCard.getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(includeCard)
-    expect(includeCard.getAttribute('aria-pressed')).toBe('true')
-    fireEvent.click(includeCard)
-    expect(includeCard.getAttribute('aria-pressed')).toBe('false')
+    expect(document.querySelector('[data-classification-details]')).toBeTruthy()
+    expect(await within(classificationPanel).findByText('数据治理平台')).toBeTruthy()
     fireEvent.change(screen.getByLabelText(zh['workbench.classification.conflictFilter']), { target: { value: 'false' } })
     await waitFor(() => { expect(loadRows).toHaveBeenLastCalledWith('session-1', classifiedRef, expect.objectContaining({ conflict: false }), expect.any(AbortSignal)) })
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.classification.trace'] }))
     expect(screen.getByText(zh['workbench.classification.tracePath'])).toBeTruthy()
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByLabelText(zh['workbench.classification.traceTitle'])) })
     expect(screen.queryByText(/dataDisposition=/u)).toBeNull()
     expect(screen.getByText(zh['workbench.classification.traceSnapshot'])).toBeTruthy()
     expect(screen.getByText(t('workbench.classification.traceSnapshotValue', { snapshot: dataset.id, version: 'rsv-3-test' }))).toBeTruthy()
     expect(screen.getByRole('link', { name: /打开来源记录/u }).getAttribute('href')).toBe('https://example.test/tender/t-1')
     expect(screen.getByText(/同一动作内/u)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.classification.openAnalysis'] }))
+    await waitFor(() => { expect(view.sendIntent).toHaveBeenCalledOnce() })
+    expect(view.sendIntent.mock.calls[0]?.[0]).toMatchObject({
+      kind: 'analysis.request',
+      activeDatasetRef: dataset.id,
+      classificationArtifactRef: classifiedRef.id,
+      ruleSetVersion: 'rsv-3-test',
+      scope: { kind: 'classifications', classifications: ['include'] },
+    })
+    expect(screen.getByRole('tab', { name: zh['workbench.analysis.shortTitle'] }).getAttribute('aria-selected')).toBe('true')
     expect(await screen.findByRole('heading', { name: zh['workbench.analysis.title'] })).toBeTruthy()
   })
 })
