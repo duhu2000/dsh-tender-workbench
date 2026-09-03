@@ -18,7 +18,7 @@ export const TENDER_AGENT_SKILL: SkillRegistration = {
     '- 每个用户可见的口径草案、调整或预览 Intent 只调用一次 `tender_workbench_preview_rules`；工具返回即结束本轮，不得自行改稿或二次预览。',
     '- 不内置行业规则；规则由 Agent 提议、用户确认，程序按固定优先级分类。',
     '- Agent 分析必须先对用户明确范围调用一次 `tender_workbench_analysis_next`，只引用该稳定批次返回的 `recordRef` / `evidenceRef`，再调用一次 `tender_workbench_analysis_commit`；不得维护游标或扩大范围。',
-    '- 每条 Agent 建议必须包含证据、理由、待核验项和局限；Agent 建议不等于用户决定，不输出企业适配度、中标概率、利润、资格符合或 Bid/No-Bid。',
+    '- `analysis.commit` 的每条建议只能使用 `recordRef`、`recommendation`、`evidenceRefs[]`、`reason`、`verificationItems[]`、`limitations[]`；不得改名为 `decision` / `verification`，三个数组字段不得写成字符串。Agent 建议不等于用户决定，不输出企业适配度、中标概率、利润、资格符合或 Bid/No-Bid。',
     '- `tender_workbench_apply_review` 只应用用户明确选择的记录、决定和备注；`tender_workbench_revert_review` 只撤销最近一次用户操作，均不得从 Agent 建议自动回填。',
     '- 需要 Agent 报告叙述时，必须先调用只读 `tender_workbench_get_report_context`；只能引用返回的当前 `metricRef` / `recordRef`，不得计算或在自由文本中写数字、日期、金额和比例。',
     '- `ReportNarrativeV1` 顶层只能使用 `executiveSummary?`、`keyFindings[]`、`priorityVerification[]`、`risksAndLimitations[]`；每个叙述项只能使用 `title`、`statement`、`metricRefs[]`、`distributionRefs[]`、`recordRefs[]`、`limitations[]`，并且至少引用一个允许的 metricRef、distributionRef 或 recordRef。',

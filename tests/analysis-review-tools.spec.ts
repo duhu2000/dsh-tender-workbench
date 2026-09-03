@@ -116,6 +116,23 @@ describe('S4 bounded Agent analysis and independent human review', () => {
     expect(rendered[0].text).toContain(first.batch.batchId)
     expect(rendered[0].text).toContain(first.batch.records[0]?.recordRef)
     expect(rendered[0].text).toContain(first.batch.records[0]?.evidence[0]?.ref)
+    expect(rendered[0].text).toContain('recordRef、recommendation、evidenceRefs、reason、verificationItems、limitations')
+    expect(rendered[0].text).toContain('不要使用 decision、verification')
+    const commitDefinition = test.commit as unknown as { readonly parameters: Readonly<Record<string, unknown>> }
+    expect(commitDefinition.parameters['recommendations']).toMatchObject({
+      type: 'array',
+      required: true,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          recommendation: { type: 'string', enum: ['priority-review', 'watch', 'not-recommended'], required: true },
+          evidenceRefs: { type: 'array', items: { type: 'string' }, required: true },
+          verificationItems: { type: 'array', items: { type: 'string' }, required: true },
+          limitations: { type: 'array', items: { type: 'string' }, required: true },
+        },
+      },
+    })
 
     const recommendations = first.batch.records.map((row, index) => ({
       recordRef: row.recordRef,

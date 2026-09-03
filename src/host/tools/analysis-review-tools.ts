@@ -3,6 +3,7 @@ import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-project
 import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { z } from 'zod'
 import {
+  AGENT_RECOMMENDATIONS,
   AnalysisBatchV1Schema,
   AnalysisCommitCommandV1Schema,
   AnalysisDatasetV1Schema,
@@ -211,6 +212,23 @@ function presentationMeta(
   })
 }
 
+function analysisRecommendationParameter() {
+  const textArray = { type: 'array' as const, items: { type: 'string' as const }, required: true as const }
+  return {
+    type: 'object' as const,
+    additionalProperties: false,
+    description: 'Exact AgentRecommendationInputV1. Use only these six fields; do not rename recommendation to decision or verificationItems to verification.',
+    properties: {
+      recordRef: { type: 'string' as const, required: true as const },
+      recommendation: { type: 'string' as const, enum: [...AGENT_RECOMMENDATIONS], required: true as const },
+      evidenceRefs: textArray,
+      reason: { type: 'string' as const, required: true as const },
+      verificationItems: textArray,
+      limitations: textArray,
+    },
+  }
+}
+
 export function createTenderWorkbenchAnalysisNextTool(dependencies: AnalysisReviewToolDependencies) {
   return defineTool({
     name: 'tender_workbench_analysis_next',
@@ -227,7 +245,7 @@ export function createTenderWorkbenchAnalysisNextTool(dependencies: AnalysisRevi
         const parsed = AnalysisNextResultV1Schema.parse(value)
         return [{
           type: 'text',
-          text: `${parsed.message}\n\nAnalysisBatchV1（必须逐字使用其中的 batchId、recordRef 与 evidenceRef）：\n${JSON.stringify(parsed.batch, null, 2)}`,
+          text: `${parsed.message}\n\nAnalysisBatchV1（必须逐字使用其中的 batchId、recordRef 与 evidenceRef）：\n${JSON.stringify(parsed.batch, null, 2)}\n\n提交 recommendations 时，每个对象只能包含 recordRef、recommendation、evidenceRefs、reason、verificationItems、limitations。recommendation 只能是 priority-review、watch 或 not-recommended；evidenceRefs、verificationItems、limitations 都必须是字符串数组。不要使用 decision、verification 等近义字段。`,
         }]
       },
       presentationMeta(args, value) {
@@ -275,14 +293,14 @@ export function createTenderWorkbenchAnalysisNextTool(dependencies: AnalysisRevi
 export function createTenderWorkbenchAnalysisCommitTool(dependencies: AnalysisReviewToolDependencies) {
   return defineTool({
     name: 'tender_workbench_analysis_commit',
-    description: 'Commit exactly one previously returned analysis batch. Every batch record needs one bounded recommendation with locatable evidence, reason, verification items, and limitations. Agent recommendations remain optional and never create user decisions.',
+    description: 'Commit exactly one previously returned analysis batch. Every recommendations item must use the exact AgentRecommendationInputV1 fields: recordRef, recommendation, evidenceRefs, reason, verificationItems, limitations. verificationItems and limitations are string arrays. Do not use decision or verification aliases. Agent recommendations remain optional and never create user decisions.',
     parameters: {
       ...commonParameters(),
       kind: { type: 'string', const: 'analysis.commit', required: true },
       scope: scopeParameter(),
       batchSize: { type: 'integer', required: true },
       batchId: { type: 'string', required: true },
-      recommendations: { type: 'array', items: { type: 'json' }, required: true },
+      recommendations: { type: 'array', items: analysisRecommendationParameter(), required: true },
     },
     output: {
       ...outputSchema(),

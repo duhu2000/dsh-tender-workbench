@@ -182,7 +182,7 @@ export function serializeTenderWorkbenchIntent(input: TenderWorkbenchIntentV1): 
     visibleJson(intent),
     '',
     '先准确调用一次 tender_workbench_analysis_next：把 kind 改为 analysis.next，其余绑定、范围、batchSize 和 commandId 原样传递。不得扩大 scope、重新查询来源或维护隐藏游标。',
-    '只使用该工具返回的本批 recordRef 与 evidenceRef，为每条记录形成一个 priority-review、watch 或 not-recommended 建议；每条必须包含 evidenceRefs、理由、待核验项和局限。',
+    '只使用该工具返回的本批 recordRef 与 evidenceRef，为每条记录形成一个 priority-review、watch 或 not-recommended 建议。recommendations 中每个对象只能包含 recordRef、recommendation、evidenceRefs、reason、verificationItems、limitations；evidenceRefs、verificationItems、limitations 都必须是字符串数组。不得使用 decision、verification 等近义字段，也不得把 limitations 写成字符串。',
     '随后准确调用一次 tender_workbench_analysis_commit，原样传递批次绑定、batchId 和完整建议。本轮只提交这一批，工具返回后立即结束。',
     '不得输出企业适配度、中标概率、利润、资格符合或 Bid/No-Bid 结论；分析失败或未覆盖的记录必须保留为可直接人工复核。',
   ].join('\n')

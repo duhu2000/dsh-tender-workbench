@@ -15,6 +15,7 @@ import {
   createContinueScreeningIntent,
   createPreviewRulesIntent,
   createGenerateReportIntent,
+  createRequestAnalysisIntent,
   createRetryReportIntent,
   serializeTenderWorkbenchIntent,
 } from '../src/client/intents/screening-intent.ts'
@@ -143,5 +144,17 @@ describe('typed Session Intent', () => {
     expect(retryMessage).toContain('mode 设为 retry')
     expect(retryMessage).toContain('不得调用报告上下文工具')
     expect(retryMessage).toContain('不得请求或改写 Agent 叙述')
+  })
+
+  it('serializes the exact analysis recommendation field contract', () => {
+    const intent = createRequestAnalysisIntent({
+      commandId: 'analysis-1', activeDatasetRef: 'data-1', classificationArtifactRef: 'classification-1',
+      ruleSetVersion: 'rules-1', projectionRevision: 3,
+      scope: { kind: 'classifications', classifications: ['include'] }, batchSize: 12,
+    })
+    const message = serializeTenderWorkbenchIntent(intent)
+    expect(message).toContain('recordRef、recommendation、evidenceRefs、reason、verificationItems、limitations')
+    expect(message).toContain('不得使用 decision、verification 等近义字段')
+    expect(message).toContain('不得把 limitations 写成字符串')
   })
 })
