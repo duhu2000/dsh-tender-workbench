@@ -1,9 +1,15 @@
-.inputEntry {
-  display: inline-flex;
-  align-items: center;
+.topMount {
+  flex: none;
+  width: 100%;
+  min-width: 0;
 }
 
-.inputButton,
+.topEntry {
+  box-sizing: border-box;
+  width: 100%;
+  padding-right: var(--dsh-sidebar-inline-padding, 12px);
+}
+
 .sidebarButton,
 .headerButton {
   display: inline-flex;
@@ -17,15 +23,6 @@
   font: inherit;
 }
 
-.inputButton {
-  min-height: 28px;
-  padding: 4px 7px;
-  border-radius: 7px;
-  font-size: 12px;
-}
-
-.inputButton:hover,
-.inputButton:focus-visible,
 .sidebarButton:hover,
 .sidebarButton:focus-visible,
 .headerButton:hover,
@@ -36,14 +33,102 @@
 
 .sidebarButton {
   width: 100%;
-  min-height: 34px;
-  padding: 7px 10px;
-  border-radius: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  justify-content: flex-start;
+  font-size: 13px;
 }
 
 .sidebarRail {
-  width: 34px;
+  width: 40px;
   padding-inline: 0;
+  justify-content: center;
+}
+
+.dockHost {
+  order: 120;
+  flex: none;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0 0 14px;
+}
+
+.dockBar {
+  display: flex;
+  box-sizing: border-box;
+  width: min(calc(var(--dsh-composer-card-max-width, 780px) + 32px), 100%);
+  min-width: 0;
+  min-height: 34px;
+  margin: 0 auto;
+  padding: 0 var(--dsh-composer-side-clearance, 16px);
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-secondary, #475467);
+  font: inherit;
+  letter-spacing: 0;
+}
+
+.dockBrand,
+.dockActions,
+.dockButton {
+  display: inline-flex;
+  align-items: center;
+}
+
+.dockBrand {
+  flex: none;
+  gap: 6px;
+  padding-right: 4px;
+  color: var(--text-primary, #1f2430);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dockActions {
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.dockButton {
+  flex: none;
+  min-height: 32px;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--border-color, #e1e5ea);
+  border-radius: 5px;
+  color: var(--text-secondary, #475467);
+  background: var(--background-primary, #fff);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.dockButton:hover,
+.dockButton:focus-visible {
+  border-color: var(--text-secondary, #475467);
+  color: var(--text-primary, #1f2430);
+  background: var(--background-secondary, #f2f4f7);
+}
+
+.dockButton[data-phase-status='running'] {
+  border-color: color-mix(in srgb, var(--color-primary, #4f6ef7) 45%, transparent);
+  color: var(--color-primary, #4f6ef7);
+}
+
+.dockButton[data-phase-status='completed'] {
+  color: #217a4b;
+}
+
+.dockButton[data-phase-status='failed'],
+.dockButton[data-phase-status='blocked'] {
+  color: #b42318;
 }
 
 .headerButton {
@@ -63,4 +148,22 @@
 .headerButton[data-workbench-status='unavailable'] {
   border-color: color-mix(in srgb, #d92d20 40%, transparent);
   color: #b42318;
+}
+
+@media (max-width: 640px) {
+  .dockBar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dockActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .dockButton {
+    flex: 1 1 calc(50% - 3px);
+    justify-content: center;
+    min-width: 0;
+  }
 }

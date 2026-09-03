@@ -83,7 +83,7 @@ function entryOf<T>(entries: readonly unknown[], name: string): T {
 }
 
 describe('S1a client integration', () => {
-  it('registers one workbench Tab and exactly the three official entries', () => {
+  it('registers one workbench Tab, two launch surfaces, and the Header recovery entry', () => {
     const test = harness()
     apply(test.ctx)
 
@@ -94,12 +94,12 @@ describe('S1a client integration', () => {
       single: true,
     }))
     expect(test.ctx.slots.inject).toHaveBeenCalledWith('sidebar.footer.action', expect.any(Function))
-    expect(test.ctx.slots.inject).toHaveBeenCalledWith('conversation.input.left', expect.any(Function))
+    expect(test.ctx.slots.inject).toHaveBeenCalledWith('conversation.input.dock', expect.any(Function))
     expect(test.ctx.slots.inject).toHaveBeenCalledWith('conversation.session.header.actions', expect.any(Function))
     expect(test.entries).toHaveLength(3)
     expect(test.entries).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'sidebar.footer.action', id: 'dsh-tender-workbench:sidebar' }),
-      expect.objectContaining({ name: 'conversation.input.left', id: 'dsh-tender-workbench:query' }),
+      expect.objectContaining({ name: 'conversation.input.dock', id: 'dsh-tender-workbench:dock', order: 120 }),
       expect.objectContaining({ name: 'conversation.session.header.actions', id: 'dsh-tender-workbench:reopen' }),
     ]))
   })
@@ -107,8 +107,8 @@ describe('S1a client integration', () => {
   it('routes all entries through the same targeted Tab opener and starts the native flow without a Session', () => {
     const test = harness()
     apply(test.ctx)
-    const input = entryOf<{ inject(sessionId: string): { openWorkbench(): boolean } }>(
-      test.entries, 'conversation.input.left',
+    const dock = entryOf<{ inject(sessionId: string): { openWorkbench(phase: string): boolean } }>(
+      test.entries, 'conversation.input.dock',
     ).inject('session-2')
     const header = entryOf<{ inject(sessionId: string): { openWorkbench(): boolean } }>(
       test.entries, 'conversation.session.header.actions',
@@ -117,7 +117,7 @@ describe('S1a client integration', () => {
       test.entries, 'sidebar.footer.action',
     ).inject()
 
-    expect(input.openWorkbench()).toBe(true)
+    expect(dock.openWorkbench('delivery')).toBe(true)
     expect(header.openWorkbench()).toBe(true)
     expect(sidebar.openCurrentWorkbench()).toBe(true)
     expect(test.openTab).toHaveBeenNthCalledWith(1, { type: TENDER_WORKBENCH_TAB_ID }, {

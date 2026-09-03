@@ -1,8 +1,8 @@
 # dsh-tender-workbench
 
-`dsh-tender-workbench` is an open-source DeepSeek Harness tender Agent workbench. The current S1-S5.3 MVP provides one Session-scoped Better Sidebar workbench, three official entry points, a four-phase progressive shell over seven internal Projection nodes, and a real query → optional analysis → human review → immutable Excel/PDF delivery chain.
+`dsh-tender-workbench` is an open-source DeepSeek Harness tender Agent workbench. The current S1-S5.3 MVP provides one Session-scoped Better Sidebar workbench, a top-left “招投标” launcher, a four-phase launcher below the composer card, a Session Header recovery action, a progressive shell over seven internal Projection nodes, and a real query → optional analysis → human review → immutable Excel/PDF delivery chain.
 
-The three entries are `sidebar.footer.action` (“招投标”), `conversation.input.left` (“搜索招投标”), and `conversation.session.header.actions` (reopen). They all focus the same Better Sidebar single-instance Tab for the addressed Session. The workbench reads only that Session's Host Projection through a narrow `TenderProjectionPort`; it does not infer business state from chat text or maintain cross-Session state.
+The top-left launcher uses `sidebar.footer.action` as its lifecycle owner and portals an owned mount next to `sidebar.workspaces`; when Data Cleaning is present, it follows that plugin's top launcher. The composer launcher uses `conversation.input.dock` as its lifecycle owner and portals an owned row after the composer card, ordered after the Previsit mode bar. Its four buttons open “Find opportunities / Screen candidates / Human confirmation / Deliver” directly. `conversation.session.header.actions` remains the recovery action. Every entry focuses the same Better Sidebar single-instance Tab for the addressed Session. The workbench reads only that Session's Host Projection through a narrow `TenderProjectionPort`; it does not infer business state from chat text or maintain cross-Session state.
 
 The single query workspace now captures the complete approved condition set: source scope, up to ten keywords, publication presets/prior year/custom dates, up to twenty province/city/district regions, the analysis goal, tender information type and conditional stages/amounts, procurement method/industry/type, and proposed-project stage/approval/investment. The visible execution plan, user message, Host validation, and exact qcc calls all come from the same `TenderQueryIntentV1`; hidden or inactive branches cannot leak stale values, and `smartSort` is not exposed as a user filter.
 
@@ -10,7 +10,7 @@ S5.1 and S5.2 implement the mandatory UI convergence before S6. “Find opportun
 
 The S5.2 MVP intentionally omits “让 Agent 调整草案”, rule import, rule copy, nested condition groups, rule-version browsing/comparison, and follow-up questions for the focused project. These omissions are not rendered as disabled or simulated controls. Apart from that closed list, the two phases must match the approved design in structure, styling, layout, states, responsive behavior, and interaction.
 
-The plugin does not modify DeepSeek Harness source, inspect or write the native composer DOM, fetch MCP from the Client, access connector storage, or hold credentials. Explicit workbench submission validates one `TenderQueryIntentV1`, serializes the same object into a user-visible message, and sends it through the public scoped `conversation.send()` service without touching the composer draft.
+The plugin does not modify DeepSeek Harness source, read or write the native composer input, fetch MCP from the Client, access connector storage, or hold credentials. Private DOM access is limited to locating the two host layout containers and creating/removing this plugin's own Portal mounts; it does not inspect another plugin's Store, React root, or business state. Explicit workbench submission validates one `TenderQueryIntentV1`, serializes the same object into a user-visible message, and sends it through the public scoped `conversation.send()` service without touching the composer draft.
 
 S2 implements `tender_workbench_query`, the exact `mcp__qcc-tender__search_tenders` and `mcp__qcc-tender__search_proposed_projects` nested calls, source-specific runtime validation, deterministic normalization, conservative announcement linking, Session-private Artifact storage, the Host Projection result, data overview, and paged/filterable data details. Empty, waiting-for-Agent, running, partial, failed, completed, and capability-missing states are projected without parsing model text.
 
@@ -77,7 +77,7 @@ To install an exact version:
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add dsh-tender-workbench@0.2.1-beta.3
+dsh plugin --profile web add dsh-tender-workbench@0.2.1-beta.4
 ```
 
 After a stable version is published to `latest`, users will be able to install it without an explicit tag:
@@ -114,7 +114,7 @@ pnpm dsh web --no-open
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add ./dsh-tender-workbench-0.2.1-beta.3.tgz
+dsh plugin --profile web add ./dsh-tender-workbench-0.2.1-beta.4.tgz
 dsh web --no-open
 ```
 
@@ -140,7 +140,7 @@ dsh plugin --profile web remove dsh-tender-workbench
 - S5.1 and S5.2 are implemented as the mandatory design-convergence gates before S6. Their regression contracts keep the checked-in HTML UX information architecture, responsive grids, focus behavior, exact query mapping, and closed MVP omission list from drifting back to legacy or placeholder UI.
 - Batch review inputs and the focused-record editor keep separate local state. Selecting a record initializes its saved decision and note, so a batch choice or a previously focused record cannot leak into an individual review command.
 - Report creation shows the current reviewed/pending scope and requires explicit confirmation for a partial report. Excel and PDF download independently through same-origin Session/token headers; temporary Blob URLs are revoked after use.
-- The input shortcut always selects the “Find opportunities” phase. Sidebar and Header entries reopen the same Session Tab without duplicating the workbench.
+- The composer launcher exposes the four existing business phases as direct shortcuts. The top-left and Header entries reopen the same Session Tab without duplicating the workbench.
 - When no Session is selected, the sidebar entry invokes the native New Session flow.
-- The Better Sidebar registration, Projection subscription, Reveal attachment, and all three Slot entries dispose with the Client Context.
+- The Better Sidebar registration, Projection subscription, Reveal attachment, all three Slot registrations, the placement observer, and all owned Portal mounts dispose with the Client Context or component lifecycle.
 - Narrow layouts use a container-responsive four-phase navigation and keep the main action reachable below a scrollable content area.

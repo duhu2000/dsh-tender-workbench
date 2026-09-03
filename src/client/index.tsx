@@ -7,10 +7,10 @@ import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
 import type { TenderClientContext } from './client-context.ts'
 import type { TenderTranslate } from './fields/field-props.ts'
 import {
-  TenderEntry,
+  TenderDockEntry,
   TenderSessionHeaderEntry,
   TenderSidebarEntry,
-  type TenderEntryInjected,
+  type TenderDockEntryInjected,
   type TenderHeaderEntryInjected,
   type TenderSidebarEntryInjected,
 } from './TenderEntry.tsx'
@@ -79,7 +79,7 @@ function RegisteredTenderWorkbenchTab({
   )
 }
 
-/** Register the S1a workbench Tab and its three official entry points. */
+/** Register the workbench Tab, two placement bridges, and the Header recovery action. */
 export function apply(ctx: TenderClientContext): void {
   ctx.conversationEvents.register(tenderSearchDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-tender-workbench: dictionaries')
@@ -139,15 +139,15 @@ export function apply(ctx: TenderClientContext): void {
     inject: (): TenderSidebarEntryInjected => ({ openCurrentWorkbench: openCurrent }),
   }, TenderSidebarEntry))
 
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
-    name: 'conversation.input.left',
-    id: 'dsh-tender-workbench:query',
-    order: 100,
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
+    id: 'dsh-tender-workbench:dock',
+    order: 120,
     locale: NS,
-    inject: (sessionId): TenderEntryInjected => ({
-      openWorkbench: () => openSession(sessionId, 'opportunity'),
+    inject: (sessionId): TenderDockEntryInjected => ({
+      openWorkbench: phase => openSession(sessionId, phase),
     }),
-  }, TenderEntry))
+  }, TenderDockEntry))
 
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
     name: 'conversation.session.header.actions',
