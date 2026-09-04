@@ -4,16 +4,17 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createEmptyTenderWorkflowProjection } from '../src/contracts/workflow.ts'
 import {
-  TenderDockEntry,
-  TenderDockEntryView,
+  TenderHeroBrandMark,
+  TenderHeroTitleBridge,
   TenderSidebarEntry,
   TenderSessionHeaderEntry,
-  type TenderDockEntryProps,
+  type TenderHeroBrandMarkProps,
+  type TenderHeroTitleBridgeProps,
   type TenderHeaderEntryProps,
   type TenderSidebarEntryProps,
 } from '../src/client/TenderEntry.tsx'
 import { zh, type TenderKey } from '../src/client/locales.ts'
-import type { WorkbenchPhase } from '../src/client/workbench/navigation-controller.ts'
+import { TENDER_ENTRY_SESSION_ID_PREFIX } from '../src/client/tender-session-entry.ts'
 
 const t = ((key: TenderKey) => zh[key]) as TranslateNS<'tenderFilter'>
 
@@ -23,25 +24,7 @@ afterEach(() => {
 })
 
 describe('S1a tender entries', () => {
-  it('maps the composer launcher group to the four existing workbench phases', () => {
-    const openWorkbench = vi.fn((_phase: WorkbenchPhase) => true)
-    render(<TenderDockEntryView openWorkbench={openWorkbench} projection={null} t={t} />)
-
-    expect(screen.getByRole('group', { name: zh['workbench.phases'] })).toBeTruthy()
-    expect(screen.getByText(zh['sidebar.label'])).toBeTruthy()
-    for (const label of [
-      zh['workbench.phase.opportunity'],
-      zh['workbench.phase.screening'],
-      zh['workbench.phase.decision'],
-      zh['workbench.phase.delivery'],
-    ]) fireEvent.click(screen.getByRole('button', { name: label }))
-
-    expect(openWorkbench.mock.calls.map(([phase]) => phase)).toEqual([
-      'opportunity', 'screening', 'decision', 'delivery',
-    ])
-  })
-
-  it('portals the sidebar launcher after Data Cleaning and removes its mount on unload', () => {
+  it('prepends the sidebar launcher without depending on third-party entries and removes it on unload', () => {
     const sidebar = document.createElement('div')
     const dataCleaning = document.createElement('div')
     dataCleaning.dataset.dataCleaningTopMount = 'true'
@@ -52,9 +35,9 @@ describe('S1a tender entries', () => {
     sidebar.append(dataCleaning, mcp, workspaces)
     document.body.append(sidebar)
 
-    const openCurrentWorkbench = vi.fn(() => true)
+    const startTenderSession = vi.fn(async () => {})
     const props = {
-      openCurrentWorkbench,
+      startTenderSession,
       t,
       useSessions: vi.fn(),
       useWorkspaces: vi.fn(),
@@ -63,11 +46,11 @@ describe('S1a tender entries', () => {
     const mount = sidebar.querySelector<HTMLElement>('[data-dsh-tender-top-mount="true"]')
 
     expect(mount).toBeTruthy()
-    expect(dataCleaning.nextElementSibling).toBe(mount)
-    expect(mount?.nextElementSibling).toBe(mcp)
+    expect(sidebar.firstElementChild).toBe(mount)
+    expect(mount?.nextElementSibling).toBe(dataCleaning)
     expect(screen.getByText(zh['sidebar.label'])).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['sidebar.aria'] }))
-    expect(openCurrentWorkbench).toHaveBeenCalledTimes(1)
+    expect(startTenderSession).toHaveBeenCalledTimes(1)
 
     view.rerender(<TenderSidebarEntry {...props} wide={false} />)
     expect(screen.queryByText(zh['sidebar.label'])).toBeNull()
@@ -77,7 +60,7 @@ describe('S1a tender entries', () => {
     expect(sidebar.querySelector('[data-dsh-tender-top-mount="true"]')).toBeNull()
   })
 
-  it('repositions the sidebar launcher when Data Cleaning mounts later', async () => {
+  it('does not reorder the sidebar launcher when Data Cleaning mounts later', async () => {
     const sidebar = document.createElement('div')
     const mcp = document.createElement('div')
     const workspaces = document.createElement('div')
@@ -86,49 +69,111 @@ describe('S1a tender entries', () => {
     document.body.append(sidebar)
 
     const props = {
-      openCurrentWorkbench: vi.fn(() => true),
+      startTenderSession: vi.fn(async () => {}),
       t,
       useSessions: vi.fn(),
       useWorkspaces: vi.fn(),
     } as unknown as Omit<TenderSidebarEntryProps, 'wide'>
     render(<TenderSidebarEntry {...props} wide />)
     const mount = sidebar.querySelector<HTMLElement>('[data-dsh-tender-top-mount="true"]')
-    expect(mount?.nextElementSibling).toBe(workspaces)
+    expect(sidebar.firstElementChild).toBe(mount)
+    expect(mount?.nextElementSibling).toBe(mcp)
 
     const dataCleaning = document.createElement('div')
     dataCleaning.dataset.dataCleaningTopMount = 'true'
     sidebar.insertBefore(dataCleaning, mcp)
 
     await waitFor(() => {
-      expect(dataCleaning.nextElementSibling).toBe(mount)
+      expect(sidebar.firstElementChild).toBe(mount)
+      expect(mount?.nextElementSibling).toBe(dataCleaning)
+      expect(dataCleaning.nextElementSibling).toBe(mcp)
       expect(sidebar.querySelectorAll('[data-dsh-tender-top-mount="true"]')).toHaveLength(1)
     })
   })
 
-  it('appends the composer launcher after an existing Previsit mode host and disposes it', () => {
-    const composerStack = document.createElement('div')
-    composerStack.className = 'host-composerStack_hash'
-    const inputDock = document.createElement('div')
-    const previsitHost = document.createElement('div')
-    previsitHost.className = 'qccModesHost'
-    composerStack.append(inputDock, previsitHost)
-    document.body.append(composerStack)
-
+  it('single-flights Session creation and shows a bounded failure', async () => {
+    const sidebar = document.createElement('div')
+    const workspaces = document.createElement('div')
+    workspaces.dataset.slot = 'sidebar.workspaces'
+    sidebar.append(workspaces)
+    document.body.append(sidebar)
+    let reject!: (reason: Error) => void
+    const startTenderSession = vi.fn(() => new Promise<void>((_resolve, nextReject) => { reject = nextReject }))
     const props = {
-      sessionId: 'session-1',
-      openWorkbench: vi.fn(() => true),
+      startTenderSession,
       t,
-      useProjection: vi.fn(() => null),
-    } as unknown as TenderDockEntryProps
-    const view = render(<TenderDockEntry {...props} />, { container: inputDock })
-    const dockHost = composerStack.querySelector<HTMLElement>('[data-dsh-tender-dock-host="true"]')
+      useSessions: vi.fn(),
+      useWorkspaces: vi.fn(),
+    } as unknown as Omit<TenderSidebarEntryProps, 'wide'>
+    render(<TenderSidebarEntry {...props} wide />)
 
-    expect(dockHost).toBeTruthy()
-    expect(previsitHost.nextElementSibling).toBe(dockHost)
-    expect(screen.getByRole('group', { name: zh['workbench.phases'] })).toBeTruthy()
+    const launcher = screen.getByRole('button', { name: zh['sidebar.aria'] })
+    fireEvent.click(launcher)
+    fireEvent.click(launcher)
+    expect(startTenderSession).toHaveBeenCalledTimes(1)
+    expect(launcher.getAttribute('aria-busy')).toBe('true')
 
-    view.unmount()
-    expect(composerStack.querySelector('[data-dsh-tender-dock-host="true"]')).toBeNull()
+    reject(new Error('当前 DSH 不支持新建招投标专属会话。'))
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('当前 DSH 不支持新建招投标专属会话。')
+      expect(launcher.getAttribute('aria-busy')).toBe('false')
+    })
+  })
+
+  it('uses the tender mark and headline only for Sessions created by the tender entry', async () => {
+    const useSessions = (selector: (value: { current?: string }) => unknown) => selector({ current: 'ordinary-session' })
+    const ordinaryProps = {
+      size: 34,
+      className: 'brand',
+      useSessions,
+      useWorkspaces: vi.fn(),
+    } as unknown as TenderHeroBrandMarkProps
+    const ordinary = render(<TenderHeroBrandMark {...ordinaryProps} />)
+    const nativeMark = ordinary.container.innerHTML
+    ordinary.unmount()
+
+    const tenderUseSessions = (selector: (value: { current?: string }) => unknown) => selector({
+      current: `${TENDER_ENTRY_SESSION_ID_PREFIX}12345678-1234-4234-8234-123456789abc`,
+    })
+    const tenderProps = {
+      ...ordinaryProps,
+      useSessions: tenderUseSessions,
+    } as unknown as TenderHeroBrandMarkProps
+    const tender = render(<TenderHeroBrandMark {...tenderProps} />)
+    expect(tender.container.innerHTML).not.toBe(nativeMark)
+    tender.unmount()
+
+    const hero = document.createElement('div')
+    hero.dataset.phase = 'hero'
+    const headline = document.createElement('span')
+    headline.textContent = '探索未至之境'
+    const overlay = document.createElement('div')
+    hero.append(headline, overlay)
+    document.body.append(hero)
+    const bridgeProps = {
+      sessionId: `${TENDER_ENTRY_SESSION_ID_PREFIX}12345678-1234-4234-8234-123456789abc`,
+      t,
+      useSession: (selector: (value: { composerPhase: string }) => unknown) => selector({ composerPhase: 'blank' }),
+      useProjection: vi.fn(),
+      useSessions: vi.fn(),
+      useWorkspaces: vi.fn(),
+    } as unknown as TenderHeroTitleBridgeProps
+    const bridge = render(<TenderHeroTitleBridge {...bridgeProps} />, { container: overlay })
+    expect(headline.textContent).toBe('招投标')
+    headline.textContent = '访前尽调智能体'
+    await waitFor(() => { expect(headline.textContent).toBe('招投标') })
+    bridge.unmount()
+    expect(headline.textContent).toBe('访前尽调智能体')
+
+    headline.textContent = '探索未至之境'
+    const ordinaryOverlay = document.createElement('div')
+    hero.append(ordinaryOverlay)
+    const ordinaryBridge = render(<TenderHeroTitleBridge
+      {...bridgeProps}
+      sessionId="ordinary-session"
+    />, { container: ordinaryOverlay })
+    expect(headline.textContent).toBe('探索未至之境')
+    ordinaryBridge.unmount()
   })
 
   it('keeps the Header reopen status usable when only an optional later node failed', () => {

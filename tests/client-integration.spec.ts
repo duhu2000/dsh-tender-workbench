@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply } from '../src/client/index.tsx'
 import type { TenderClientContext } from '../src/client/client-context.ts'
 import { TENDER_WORKBENCH_TAB_ID } from '../src/client/better-sidebar-adapter.ts'
+import { TENDER_ENTRY_SESSION_ID_PREFIX } from '../src/client/tender-session-entry.ts'
 
 afterEach(() => { cleanup() })
 
@@ -14,14 +15,13 @@ function harness() {
   const disposeEntries: Array<ReturnType<typeof vi.fn>> = []
   const disposeTab = vi.fn()
   const openTab = vi.fn()
-  const startSession = vi.fn()
   let current: string | undefined = 'session-1'
   const sessionState = {
     ids: ['session-1', 'session-2'],
     byId: {
       'session-1': { id: 'session-1', cwd: 'C:\\one' },
       'session-2': { id: 'session-2', cwd: 'C:\\two' },
-    },
+    } as Record<string, { id: string; cwd?: string }>,
     get current() { return current },
   }
   const register = vi.fn((entry: unknown) => {
@@ -37,10 +37,19 @@ function harness() {
     subscribe: vi.fn(() => vi.fn()),
     getSnapshot: vi.fn(() => localeSnapshot),
   }
+  const createSession = vi.fn(async ({ sessionId, workspaceId }: { sessionId: string; workspaceId: string }) => {
+    const cwd = workspaceId === 'workspace-1' ? 'C:\\one' : 'C:\\two'
+    sessionState.ids.unshift(sessionId)
+    sessionState.byId[sessionId] = { id: sessionId, cwd }
+    return sessionId
+  })
+  const openSession = vi.fn((sessionId: string) => { current = sessionId })
   const sessions = {
     list: { getSnapshot: () => sessionState },
     binding: vi.fn(),
     scope: vi.fn(),
+    create: createSession,
+    open: openSession,
   }
   const ctx = {
     effect: vi.fn((factory: () => unknown) => {
@@ -60,7 +69,15 @@ function harness() {
     },
     conversationEvents: { register: vi.fn() },
     sessions,
-    workspaces: { startSession },
+    workspaces: {
+      list: { getSnapshot: () => ({
+        items: [
+          { workspaceId: 'workspace-1', path: 'C:\\one', title: 'one', sessionIds: ['session-1'] },
+          { workspaceId: 'workspace-2', path: 'C:\\two', title: 'two', sessionIds: ['session-2'] },
+        ],
+        recentWorkspaceId: 'workspace-2',
+      }) },
+    },
     betterSidebar: {
       version: '0.17.1',
       features: ['targetedOpen', 'stateSubscription'],
@@ -71,7 +88,7 @@ function harness() {
     },
   } as unknown as TenderClientContext
   return {
-    ctx, entries, effects, disposeEntries, disposeTab, openTab, startSession,
+    ctx, entries, effects, disposeEntries, disposeTab, openTab, createSession, openSession,
     setCurrent(value: string | undefined) { current = value },
   }
 }
@@ -83,7 +100,7 @@ function entryOf<T>(entries: readonly unknown[], name: string): T {
 }
 
 describe('S1a client integration', () => {
-  it('registers one workbench Tab, two launch surfaces, and the Header recovery entry', () => {
+  it('registers one icon-bearing workbench Tab, the dedicated entry, Hero branding, and Header recovery', () => {
     const test = harness()
     apply(test.ctx)
 
@@ -92,48 +109,53 @@ describe('S1a client integration', () => {
     expect(test.ctx.betterSidebar.registerTab).toHaveBeenCalledWith(expect.objectContaining({
       id: TENDER_WORKBENCH_TAB_ID,
       single: true,
+      icon: expect.any(Function),
     }))
-    expect(test.ctx.slots.inject).toHaveBeenCalledWith('sidebar.footer.action', expect.any(Function))
+    expect(test.ctx.slots.inject).toHaveBeenCalledWith('conversation.hero.brand.mark', expect.any(Function))
     expect(test.ctx.slots.inject).toHaveBeenCalledWith('conversation.input.dock', expect.any(Function))
+    expect(test.ctx.slots.inject).toHaveBeenCalledWith('sidebar.footer.action', expect.any(Function))
     expect(test.ctx.slots.inject).toHaveBeenCalledWith('conversation.session.header.actions', expect.any(Function))
-    expect(test.entries).toHaveLength(3)
+    expect(test.entries).toHaveLength(4)
     expect(test.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'conversation.hero.brand.mark', priority: -10 }),
+      expect.objectContaining({ name: 'conversation.input.dock', id: 'dsh-tender-workbench:hero-title' }),
       expect.objectContaining({ name: 'sidebar.footer.action', id: 'dsh-tender-workbench:sidebar' }),
-      expect.objectContaining({ name: 'conversation.input.dock', id: 'dsh-tender-workbench:dock', order: 120 }),
       expect.objectContaining({ name: 'conversation.session.header.actions', id: 'dsh-tender-workbench:reopen' }),
+    ]))
+    expect(test.entries).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'dsh-tender-workbench:dock' }),
     ]))
   })
 
-  it('routes all entries through the same targeted Tab opener and starts the native flow without a Session', () => {
+  it('creates a distinct namespaced Session on every launcher action and targets its workbench', async () => {
     const test = harness()
     apply(test.ctx)
-    const dock = entryOf<{ inject(sessionId: string): { openWorkbench(phase: string): boolean } }>(
-      test.entries, 'conversation.input.dock',
-    ).inject('session-2')
     const header = entryOf<{ inject(sessionId: string): { openWorkbench(): boolean } }>(
       test.entries, 'conversation.session.header.actions',
     ).inject('session-1')
-    const sidebar = entryOf<{ inject(): { openCurrentWorkbench(): boolean } }>(
+    const sidebar = entryOf<{ inject(): { startTenderSession(): Promise<void> } }>(
       test.entries, 'sidebar.footer.action',
     ).inject()
 
-    expect(dock.openWorkbench('delivery')).toBe(true)
     expect(header.openWorkbench()).toBe(true)
-    expect(sidebar.openCurrentWorkbench()).toBe(true)
     expect(test.openTab).toHaveBeenNthCalledWith(1, { type: TENDER_WORKBENCH_TAB_ID }, {
-      sessionId: 'session-2', cwd: 'C:\\two',
-    })
-    expect(test.openTab).toHaveBeenNthCalledWith(2, { type: TENDER_WORKBENCH_TAB_ID }, {
-      sessionId: 'session-1', cwd: 'C:\\one',
-    })
-    expect(test.openTab).toHaveBeenNthCalledWith(3, { type: TENDER_WORKBENCH_TAB_ID }, {
       sessionId: 'session-1', cwd: 'C:\\one',
     })
 
-    test.setCurrent(undefined)
-    expect(sidebar.openCurrentWorkbench()).toBe(false)
-    expect(test.startSession).toHaveBeenCalledTimes(1)
-    expect(test.openTab).toHaveBeenCalledTimes(3)
+    await sidebar.startTenderSession()
+    const first = test.createSession.mock.calls[0]?.[0]
+    expect(first?.workspaceId).toBe('workspace-1')
+    expect(first?.sessionId).toMatch(new RegExp(`^${TENDER_ENTRY_SESSION_ID_PREFIX}`))
+    expect(test.openSession).toHaveBeenLastCalledWith(first?.sessionId)
+    expect(test.openTab).toHaveBeenNthCalledWith(2, { type: TENDER_WORKBENCH_TAB_ID }, {
+      sessionId: first?.sessionId, cwd: 'C:\\one',
+    })
+
+    await sidebar.startTenderSession()
+    const second = test.createSession.mock.calls[1]?.[0]
+    expect(second?.sessionId).toMatch(new RegExp(`^${TENDER_ENTRY_SESSION_ID_PREFIX}`))
+    expect(second?.sessionId).not.toBe(first?.sessionId)
+    expect(test.createSession).toHaveBeenCalledTimes(2)
   })
 
   it('releases the Tab and all Slot entries with the Client Context', () => {
@@ -142,7 +164,7 @@ describe('S1a client integration', () => {
     expect(test.disposeTab).not.toHaveBeenCalled()
     for (const dispose of [...test.effects].reverse()) dispose()
     expect(test.disposeTab).toHaveBeenCalledTimes(1)
-    expect(test.disposeEntries).toHaveLength(3)
+    expect(test.disposeEntries).toHaveLength(4)
     for (const dispose of test.disposeEntries) expect(dispose).toHaveBeenCalledTimes(1)
   })
 

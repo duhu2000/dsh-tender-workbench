@@ -101,11 +101,13 @@ export function registerTenderWorkbenchTab(
   service: BetterSidebarService,
   component: (props: TabComponentProps) => ReactNode,
   title: string | (() => string) = '招投标',
+  icon?: ReactNode | ((size: number) => ReactNode),
 ): () => void {
   assertBetterSidebarContract(service)
   return service.registerTab({
     id: TENDER_WORKBENCH_TAB_ID,
     title,
+    icon,
     order: 40,
     single: true,
     component,

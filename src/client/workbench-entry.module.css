@@ -10,7 +10,6 @@
   padding-right: var(--dsh-sidebar-inline-padding, 12px);
 }
 
-.sidebarButton,
 .headerButton {
   display: inline-flex;
   align-items: center;
@@ -23,112 +22,47 @@
   font: inherit;
 }
 
-.sidebarButton:hover,
-.sidebarButton:focus-visible,
 .headerButton:hover,
 .headerButton:focus-visible {
   color: var(--text-primary, #1f2430);
   background: var(--background-secondary, #f2f4f7);
 }
 
+.sidebarButton:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .sidebarButton {
+  flex: none;
+  box-sizing: border-box;
   width: 100%;
-  min-height: 40px;
-  padding: 8px 12px;
-  border-radius: 6px;
+  height: 42px;
+  min-width: 0;
+  margin: 0 0 8px;
+  gap: 5px;
+  padding: 0 10px;
   justify-content: flex-start;
-  font-size: 13px;
+  overflow: hidden;
+  border-radius: 12px;
+  white-space: nowrap;
 }
 
 .sidebarRail {
-  width: 40px;
-  padding-inline: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   justify-content: center;
+  border-radius: 50%;
 }
 
-.dockHost {
-  order: 120;
-  flex: none;
-  box-sizing: border-box;
-  width: 100%;
-  padding: 0 0 14px;
-}
-
-.dockBar {
-  display: flex;
-  box-sizing: border-box;
-  width: min(calc(var(--dsh-composer-card-max-width, 780px) + 32px), 100%);
-  min-width: 0;
-  min-height: 34px;
-  margin: 0 auto;
-  padding: 0 var(--dsh-composer-side-clearance, 16px);
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: var(--text-secondary, #475467);
-  font: inherit;
-  letter-spacing: 0;
-}
-
-.dockBrand,
-.dockActions,
-.dockButton {
-  display: inline-flex;
-  align-items: center;
-}
-
-.dockBrand {
-  flex: none;
-  gap: 6px;
-  padding-right: 4px;
-  color: var(--text-primary, #1f2430);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.dockActions {
-  min-width: 0;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-}
-
-.dockButton {
-  flex: none;
-  min-height: 32px;
-  gap: 6px;
-  padding: 0 12px;
-  border: 1px solid var(--border-color, #e1e5ea);
-  border-radius: 5px;
-  color: var(--text-secondary, #475467);
-  background: var(--background-primary, #fff);
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  letter-spacing: 0;
-  white-space: nowrap;
-}
-
-.dockButton:hover,
-.dockButton:focus-visible {
-  border-color: var(--text-secondary, #475467);
-  color: var(--text-primary, #1f2430);
-  background: var(--background-secondary, #f2f4f7);
-}
-
-.dockButton[data-phase-status='running'] {
-  border-color: color-mix(in srgb, var(--color-primary, #4f6ef7) 45%, transparent);
-  color: var(--color-primary, #4f6ef7);
-}
-
-.dockButton[data-phase-status='completed'] {
-  color: #217a4b;
-}
-
-.dockButton[data-phase-status='failed'],
-.dockButton[data-phase-status='blocked'] {
+.sidebarError {
+  display: block;
+  padding: 2px 12px 7px;
   color: #b42318;
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
 }
 
 .headerButton {
@@ -150,20 +84,13 @@
   color: #b42318;
 }
 
-@media (max-width: 640px) {
-  .dockBar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .dockActions {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .dockButton {
-    flex: 1 1 calc(50% - 3px);
-    justify-content: center;
-    min-width: 0;
-  }
+.topEntry[data-wide='false'] .sidebarError {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }

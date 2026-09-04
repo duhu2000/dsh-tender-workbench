@@ -1,124 +1,95 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  IconCheckOutline16,
-  IconChecklistOutline14,
-  IconDownloadOutline16,
+  Button,
+  FishLogo,
   IconGoalOutline16,
-  IconSearchOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import type { TenderTranslate } from './fields/field-props.ts'
 import { readTenderProjectionSnapshot } from './tender-projection-port.ts'
-import {
-  TENDER_WORKBENCH_PHASES,
-  tenderWorkbenchPhaseProgress,
-  type WorkbenchPhase,
-  type WorkbenchPhaseIcon,
-} from './workbench/navigation-controller.ts'
+import { isTenderEntrySessionId } from './tender-session-entry.ts'
 import { tenderWorkbenchDisplayStatus } from './workbench/workbench-status.ts'
 import css from './workbench-entry.module.css'
 
 const SIDEBAR_WORKSPACES_SELECTOR = '[data-slot="sidebar.workspaces"]'
-const DATA_CLEANING_TOP_MOUNT_SELECTOR = '[data-data-cleaning-top-mount="true"]'
 const TENDER_TOP_MOUNT_SELECTOR = '[data-dsh-tender-top-mount="true"]'
+const KNOWN_HERO_HEADLINES = new Set([
+  '探索未至之境',
+  'Into the Unknown',
+  '访前尽调智能体',
+])
 
-export interface TenderDockEntryInjected {
-  openWorkbench(phase: WorkbenchPhase): boolean
+export type TenderHeroBrandMarkProps = PropsRuntime<'conversation.hero.brand.mark'>
+
+/** Preserve the native mark everywhere except Sessions created by the tender entry. */
+export function TenderHeroBrandMark({ size, className, useSessions }: TenderHeroBrandMarkProps) {
+  const sessionId = useSessions(snapshot => snapshot.current)
+  return isTenderEntrySessionId(sessionId)
+    ? <IconGoalOutline16 size={size} className={className} />
+    : <FishLogo size={size} className={className} />
 }
 
-export interface TenderDockEntryViewProps extends TenderDockEntryInjected {
-  readonly projection: unknown
-  readonly t: TenderTranslate
+export function rewriteTenderHeroHeadline(
+  anchor: HTMLElement,
+  enabled: boolean,
+  replacement: string,
+): () => void {
+  if (!enabled) return () => {}
+  const hero = anchor.closest<HTMLElement>('[data-phase="hero"]')
+  if (hero === null) return () => {}
+  const title = [...hero.querySelectorAll<HTMLSpanElement>('span')].find(element => (
+    element.dataset.dshTenderHeroHeadline === 'true'
+    || KNOWN_HERO_HEADLINES.has(element.textContent?.trim() ?? '')
+  ))
+  if (title === undefined) return () => {}
+
+  let original = title.dataset.dshTenderOriginalHeadline ?? title.textContent ?? ''
+  title.dataset.dshTenderHeroHeadline = 'true'
+  title.dataset.dshTenderOriginalHeadline = original
+  title.textContent = replacement
+  const Observer = anchor.ownerDocument.defaultView?.MutationObserver
+  const observer = Observer === undefined ? undefined : new Observer(() => {
+    if (title.textContent === replacement) return
+    original = title.textContent ?? original
+    title.dataset.dshTenderOriginalHeadline = original
+    title.textContent = replacement
+  })
+  observer?.observe(title, { childList: true, characterData: true, subtree: true })
+  return () => {
+    observer?.disconnect()
+    if (title.dataset.dshTenderOriginalHeadline !== original) return
+    if (title.textContent === replacement) title.textContent = original
+    delete title.dataset.dshTenderOriginalHeadline
+    delete title.dataset.dshTenderHeroHeadline
+  }
 }
 
-function phaseIcon(icon: WorkbenchPhaseIcon): ReactNode {
-  if (icon === 'search') return <IconSearchOutline16 size={16} />
-  if (icon === 'screening') return <IconChecklistOutline14 size={16} />
-  if (icon === 'decision') return <IconCheckOutline16 size={16} />
-  return <IconDownloadOutline16 size={16} />
-}
-
-/** Four existing workbench phases presented as one compact launcher group. */
-export function TenderDockEntryView({ openWorkbench, projection, t }: TenderDockEntryViewProps) {
-  const read = readTenderProjectionSnapshot(projection)
-  const workflow = read.status === 'ready' ? read.projection : undefined
-  return (
-    <div
-      className={css.dockBar}
-      role="group"
-      aria-label={t('workbench.phases')}
-      data-dsh-plugin="tender-workbench"
-      data-dsh-part="dock-entry"
-    >
-      <span className={css.dockBrand}>
-        <IconGoalOutline16 size={15} />
-        <span>{t('sidebar.label')}</span>
-      </span>
-      <span className={css.dockActions}>
-        {TENDER_WORKBENCH_PHASES.map((phase) => {
-          const progress = tenderWorkbenchPhaseProgress(workflow, phase.id)
-          const label = t(phase.labelKey)
-          return (
-            <button
-              key={phase.id}
-              type="button"
-              className={css.dockButton}
-              data-phase={phase.id}
-              data-phase-status={progress}
-              title={`${label} · ${t(`workbench.phaseStatus.${progress}`)}`}
-              onClick={() => { openWorkbench(phase.id) }}
-            >
-              {phaseIcon(phase.icon)}
-              <span>{label}</span>
-            </button>
-          )
-        })}
-      </span>
-    </div>
-  )
-}
-
-export type TenderDockEntryProps = PropsRuntime<'conversation.input.dock'>
-  & InjectFace<TenderDockEntryInjected>
+export type TenderHeroTitleBridgeProps = PropsRuntime<'conversation.input.dock'>
   & PropsLocale<'tenderFilter'>
 
-/** Session entry hosted after the composer so it remains visible in the hero phase. */
-export function TenderDockEntry({ openWorkbench, sessionId, t, useProjection }: TenderDockEntryProps) {
+/** Narrow, reversible bridge for the headline that DSH does not expose as a Slot. */
+export function TenderHeroTitleBridge({ sessionId, t, useSession }: TenderHeroTitleBridgeProps) {
   const anchorRef = useRef<HTMLSpanElement>(null)
-  const [host, setHost] = useState<HTMLDivElement | null>(null)
-  const projection = useProjection('dshTenderWorkflow')
+  const blank = useSession(snapshot => snapshot.composerPhase === 'blank')
+  const replacement = t('sidebar.label')
 
   useEffect(() => {
     const anchor = anchorRef.current
     if (anchor === null) return
-    const stack = anchor.closest<HTMLElement>('[class*="composerStack"]') ?? anchor.parentElement
-    if (stack === null) return
-    const nextHost = document.createElement('div')
-    nextHost.className = css.dockHost ?? ''
-    nextHost.dataset.dshTenderDockHost = 'true'
-    stack.append(nextHost)
-    setHost(nextHost)
-    return () => {
-      nextHost.remove()
-      setHost(current => current === nextHost ? null : current)
-    }
-  }, [sessionId])
+    return rewriteTenderHeroHeadline(
+      anchor,
+      blank && isTenderEntrySessionId(sessionId),
+      replacement,
+    )
+  }, [blank, replacement, sessionId])
 
-  return (
-    <>
-      <span ref={anchorRef} hidden data-dsh-tender-dock-anchor="true" />
-      {host !== null && createPortal(
-        <TenderDockEntryView openWorkbench={openWorkbench} projection={projection} t={t} />,
-        host,
-      )}
-    </>
-  )
+  return <span ref={anchorRef} hidden data-dsh-tender-hero-anchor="true" />
 }
 
 export interface TenderSidebarEntryInjected {
-  openCurrentWorkbench(): boolean
+  startTenderSession(): Promise<void>
 }
 
 export type TenderSidebarEntryProps = PropsRuntime<'sidebar.footer.action'>
@@ -130,27 +101,28 @@ function ensureTenderTopMount(): HTMLElement | null {
   if (workspaceSlot === null) return null
   const parent = workspaceSlot.parentElement
   if (parent === null) return null
-  let mount = parent.querySelector<HTMLElement>(TENDER_TOP_MOUNT_SELECTOR)
+  let mount = document.querySelector<HTMLElement>(TENDER_TOP_MOUNT_SELECTOR)
   if (mount === null) {
     mount = document.createElement('div')
     mount.dataset.dshTenderTopMount = 'true'
     mount.className = css.topMount ?? ''
   }
-
-  const dataCleaningMount = parent.querySelector<HTMLElement>(DATA_CLEANING_TOP_MOUNT_SELECTOR)
-  if (dataCleaningMount !== null) {
-    if (mount.parentElement !== parent || mount.previousSibling !== dataCleaningMount) {
-      parent.insertBefore(mount, dataCleaningMount.nextSibling)
-    }
-  } else if (mount.parentElement !== parent) {
-    parent.insertBefore(mount, workspaceSlot)
-  }
+  if (mount.parentElement !== parent) parent.prepend(mount)
   return mount
 }
 
-/** Global launcher portalled between the Data Cleaning entry and workspace browser. */
-export function TenderSidebarEntry({ wide, openCurrentWorkbench, t }: TenderSidebarEntryProps) {
+/** Global launcher portalled at the start of the sidebar's primary action region. */
+export function TenderSidebarEntry({ wide, startTenderSession, t }: TenderSidebarEntryProps) {
   const [topMount, setTopMount] = useState<HTMLElement | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string>()
+  const creatingRef = useRef(false)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   useEffect(() => {
     if (typeof document === 'undefined') return
@@ -174,17 +146,37 @@ export function TenderSidebarEntry({ wide, openCurrentWorkbench, t }: TenderSide
   }, [])
 
   if (topMount === null) return null
+  const start = () => {
+    if (creatingRef.current) return
+    creatingRef.current = true
+    setCreating(true)
+    setError(undefined)
+    void startTenderSession().catch((reason: unknown) => {
+      if (mountedRef.current) {
+        setError(reason instanceof Error ? reason.message : t('sidebar.createFailed'))
+      }
+    }).finally(() => {
+      creatingRef.current = false
+      if (mountedRef.current) setCreating(false)
+    })
+  }
   return createPortal(
-    <div className={css.topEntry} data-dsh-plugin="tender-workbench" data-dsh-part="top-entry">
-      <button
+    <div className={css.topEntry} data-wide={wide} data-dsh-plugin="tender-workbench" data-dsh-part="top-entry">
+      <Button
         type="button"
+        variant="ghost"
         className={wide ? css.sidebarButton : `${css.sidebarButton} ${css.sidebarRail}`}
+        data-wide={wide}
         aria-label={t('sidebar.aria')}
-        onClick={openCurrentWorkbench}
+        aria-busy={creating}
+        disabled={creating}
+        title={error}
+        onClick={start}
       >
         <IconGoalOutline16 size={wide ? 16 : 18} />
         {wide && <span>{t('sidebar.label')}</span>}
-      </button>
+      </Button>
+      {error !== undefined && <span className={css.sidebarError} role="alert">{error}</span>}
     </div>,
     topMount,
   )

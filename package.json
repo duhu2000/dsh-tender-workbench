@@ -1,6 +1,6 @@
 {
   "name": "dsh-tender-workbench",
-  "version": "0.2.2-beta.0",
+  "version": "0.2.2-beta.1",
   "description": "Open-source DeepSeek Harness tender Agent workbench with a Session-scoped end-to-end workflow",
   "keywords": [
     "deepseek-harness",

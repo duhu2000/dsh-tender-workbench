@@ -72,10 +72,12 @@ describe('Better Sidebar workbench adapter', () => {
     const dispose = vi.fn()
     const sidebar = service({ registerTab: vi.fn(() => dispose) })
     const component = () => null
-    expect(registerTenderWorkbenchTab(sidebar, component)).toBe(dispose)
+    const icon = (size: number) => `goal-${size}`
+    expect(registerTenderWorkbenchTab(sidebar, component, '招投标', icon)).toBe(dispose)
     expect(sidebar.registerTab).toHaveBeenCalledWith(expect.objectContaining({
       id: TENDER_WORKBENCH_TAB_ID,
       single: true,
+      icon,
       component,
     }))
   })

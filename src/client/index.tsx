@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { IconGoalOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
@@ -7,10 +8,10 @@ import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
 import type { TenderClientContext } from './client-context.ts'
 import type { TenderTranslate } from './fields/field-props.ts'
 import {
-  TenderDockEntry,
+  TenderHeroBrandMark,
+  TenderHeroTitleBridge,
   TenderSessionHeaderEntry,
   TenderSidebarEntry,
-  type TenderDockEntryInjected,
   type TenderHeaderEntryInjected,
   type TenderSidebarEntryInjected,
 } from './TenderEntry.tsx'
@@ -23,6 +24,10 @@ import { sendSessionTenderWorkbenchIntent } from './intents/send-session-intent.
 import { en, zh, type TenderKey } from './locales.ts'
 import { createTenderProjectionPort } from './tender-projection-port.ts'
 import { tenderSearchDefinition } from './tender-search-definition.ts'
+import {
+  TenderSessionEntryError,
+  createTenderEntrySession,
+} from './tender-session-entry.ts'
 import {
   TenderWorkbenchTab,
   type TenderWorkbenchTabProps,
@@ -79,7 +84,7 @@ function RegisteredTenderWorkbenchTab({
   )
 }
 
-/** Register the workbench Tab, two placement bridges, and the Header recovery action. */
+/** Register the dedicated Session entry, workbench Tab, Hero brand, and Header recovery action. */
 export function apply(ctx: TenderClientContext): void {
   ctx.conversationEvents.register(tenderSearchDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-tender-workbench: dictionaries')
@@ -93,6 +98,7 @@ export function apply(ctx: TenderClientContext): void {
   const reveal = createTenderWorkbenchRevealController()
   const navigation = createTenderWorkbenchNavigationController()
   const projectionPort = createTenderProjectionPort(sessions)
+  let active = true
   const sendIntent: TenderWorkbenchTabProps['sendIntent'] = (sessionId, intent) => (
     sendSessionTenderWorkbenchIntent(sessions, sessionId, intent)
   )
@@ -106,13 +112,23 @@ export function apply(ctx: TenderClientContext): void {
     if (opened && phase !== undefined) navigation.request(sessionId, phase)
     return opened
   }
-  const openCurrent = (): boolean => {
-    const current = sessions.list.getSnapshot().current
-    if (current === undefined) {
-      ctx.workspaces.startSession()
-      return false
+  const startTenderSession = async (): Promise<void> => {
+    try {
+      const sessionId = await createTenderEntrySession(sessions, ctx.workspaces)
+      if (!active) return
+      sessions.open(sessionId)
+      if (openSession(sessionId)) reveal.request(sessionId)
+    } catch (error: unknown) {
+      if (error instanceof TenderSessionEntryError) {
+        const key = error.code === 'workspace-unavailable'
+          ? 'sidebar.workspaceRequired'
+          : error.code === 'create-unavailable'
+            ? 'sidebar.createUnavailable'
+            : 'sidebar.createFailed'
+        throw new Error(t(key), { cause: error })
+      }
+      throw new Error(t('sidebar.createFailed'), { cause: error })
     }
-    return openSession(current)
   }
 
   ctx.effect(() => registerTenderWorkbenchTab(
@@ -129,25 +145,28 @@ export function apply(ctx: TenderClientContext): void {
       />
     ),
     () => t('sidebar.label'),
+    size => <IconGoalOutline16 size={size} />,
   ), 'dsh-tender-workbench: Better Sidebar tab')
+
+  ctx.slots.inject('conversation.hero.brand.mark', () => ctx.slots.register({
+    name: 'conversation.hero.brand.mark',
+    priority: -10,
+  }, TenderHeroBrandMark))
+
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
+    id: 'dsh-tender-workbench:hero-title',
+    order: 120,
+    locale: NS,
+  }, TenderHeroTitleBridge))
 
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
     name: 'sidebar.footer.action',
     id: 'dsh-tender-workbench:sidebar',
     order: 40,
     locale: NS,
-    inject: (): TenderSidebarEntryInjected => ({ openCurrentWorkbench: openCurrent }),
+    inject: (): TenderSidebarEntryInjected => ({ startTenderSession }),
   }, TenderSidebarEntry))
-
-  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-    name: 'conversation.input.dock',
-    id: 'dsh-tender-workbench:dock',
-    order: 120,
-    locale: NS,
-    inject: (sessionId): TenderDockEntryInjected => ({
-      openWorkbench: phase => openSession(sessionId, phase),
-    }),
-  }, TenderDockEntry))
 
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register({
     name: 'conversation.session.header.actions',
@@ -158,4 +177,6 @@ export function apply(ctx: TenderClientContext): void {
       openWorkbench: () => openSession(sessionId),
     }),
   }, TenderSessionHeaderEntry))
+
+  ctx.effect(() => () => { active = false }, 'dsh-tender-workbench: Session entry lifetime')
 }

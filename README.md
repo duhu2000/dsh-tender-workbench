@@ -101,7 +101,7 @@ dsh plugin --profile web remove dsh-tender-workbench
 
 ## Using the workbench
 
-The plugin exposes a top-left “招投标” launcher, four phase shortcuts below the conversation composer, and a Session Header recovery action. Every entry focuses the same Better Sidebar tab for the addressed Session. When no Session is selected, the sidebar action starts the native New Session flow.
+The plugin exposes a top-left “招投标” launcher and a Session Header recovery action. Every top-left activation creates a distinct native Session in the current Session's workspace, the recent workspace, or the first available workspace, gives that blank Session the “招投标” hero label and goal icon, and opens its Better Sidebar workbench. Other Sessions keep their existing host/provider hero label and the fish mark. The composer-bottom shortcuts are intentionally absent; the Header action only reopens the workbench for its existing Session.
 
 Navigation only changes the visible workbench phase. It does not mutate business state or run a later action. Criteria are proposed, edited, previewed, and confirmed as distinct steps. Agent recommendations never become user decisions automatically. Report generation always shows the reviewed and pending scope before creating a delivery snapshot.
 
