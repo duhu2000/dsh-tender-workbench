@@ -68,7 +68,7 @@ To install the current exact preview version:
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add dsh-tender-workbench@0.2.1-beta.4
+dsh plugin --profile web add dsh-tender-workbench@0.2.2-beta.0
 ```
 
 To install from an independent checkout, install the required Provider plugins first, then run from this repository:
@@ -87,7 +87,7 @@ To install a packed build:
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add ./dsh-tender-workbench-0.2.1-beta.4.tgz
+dsh plugin --profile web add ./dsh-tender-workbench-0.2.2-beta.0.tgz
 dsh web --no-open
 ```
 
