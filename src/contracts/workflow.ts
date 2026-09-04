@@ -1,4 +1,10 @@
 import { z } from 'zod'
+import {
+  TENDER_TOOLS,
+  TENDER_INTENT_KINDS,
+  TENDER_ACTION_SKILLS,
+} from './orchestration.ts'
+import { TenderToolControlV2Schema } from './tool-results.ts'
 
 export const WORKFLOW_STAGES = [
   'query', 'overview', 'rules', 'classification', 'analysis', 'review', 'report',
@@ -8,20 +14,25 @@ export const STAGE_STATUSES = [
 ] as const
 
 export const TENDER_TOOL_CONTRACTS = {
-  tender_workbench_query: { command: 'tender_workbench_query', stage: 'query' },
-  tender_workbench_preview_rules: { command: 'tender_workbench_preview_rules', stage: 'rules' },
-  tender_workbench_confirm_rules: { command: 'tender_workbench_confirm_rules', stage: 'classification' },
-  tender_workbench_analysis_next: { command: 'tender_workbench_analysis_next', stage: 'analysis' },
-  tender_workbench_analysis_commit: { command: 'tender_workbench_analysis_commit', stage: 'analysis' },
-  tender_workbench_apply_review: { command: 'tender_workbench_apply_review', stage: 'review' },
-  tender_workbench_revert_review: { command: 'tender_workbench_revert_review', stage: 'review' },
-  tender_workbench_generate_report: { command: 'tender_workbench_generate_report', stage: 'report' },
+  tender_workbench_run_query: { stage: 'query', effect: 'mutation' },
+  tender_workbench_preview_rules: { stage: 'rules', effect: 'mutation' },
+  tender_workbench_confirm_rules: { stage: 'classification', effect: 'mutation' },
+  tender_workbench_prepare_analysis_batch: { stage: 'analysis', effect: 'read-only' },
+  tender_workbench_commit_analysis_batch: { stage: 'analysis', effect: 'mutation' },
+  tender_workbench_apply_review: { stage: 'review', effect: 'mutation' },
+  tender_workbench_revert_review: { stage: 'review', effect: 'mutation' },
+  tender_workbench_create_report: { stage: 'report', effect: 'mutation' },
+  tender_workbench_retry_report: { stage: 'report', effect: 'mutation' },
+  tender_workbench_get_workflow_state: { stage: 'overview', effect: 'read-only' },
+  tender_workbench_get_rule_drafting_context: { stage: 'rules', effect: 'read-only' },
+  tender_workbench_get_analysis_record_context: { stage: 'analysis', effect: 'read-only' },
+  tender_workbench_get_report_narrative_context: { stage: 'report', effect: 'read-only' },
 } as const
 
 export type WorkflowStage = typeof WORKFLOW_STAGES[number]
 export type StageStatus = typeof STAGE_STATUSES[number]
 export type TenderToolName = keyof typeof TENDER_TOOL_CONTRACTS
-export type TenderCommandKind = typeof TENDER_TOOL_CONTRACTS[TenderToolName]['command']
+export type TenderToolNameV2 = TenderToolName
 export type RuleAction = 'include' | 'observe' | 'exclude' | 'manual-review'
 /** S3 can execute only against fields retained by NormalizedProjectV1. */
 export type RuleScope = 'title' | 'purchaser' | 'all'
@@ -65,14 +76,29 @@ const stagesSchema = z.object(Object.fromEntries(
   WORKFLOW_STAGES.map(stage => [stage, stageStateSchema]),
 ) as Record<WorkflowStage, typeof stageStateSchema>).strict()
 
-export const TenderWorkflowProjectionV1Schema = z.object({
-  schemaVersion: z.literal(1),
+export const TenderWorkflowProjectionV2Schema = z.object({
+  schemaVersion: z.literal(2),
   revision: z.number().int().nonnegative(),
   currentStage: z.enum(WORKFLOW_STAGES),
+  observedTurn: z.number().int().positive().optional(),
+  pendingIntent: z.object({
+    intentId: idText,
+    kind: z.enum(TENDER_INTENT_KINDS),
+    skill: z.enum(TENDER_ACTION_SKILLS),
+    origin: z.enum(['workbench-intent', 'conversation']),
+    status: z.enum(['waiting-agent', 'running']),
+    turn: z.number().int().positive(),
+    expectedTool: z.enum(TENDER_TOOLS),
+    terminalTools: z.array(z.enum(TENDER_TOOLS)).min(1).max(TENDER_TOOLS.length),
+    intentFingerprint: idText,
+    bindingFingerprint: idText,
+    awaitingTurnEnd: z.boolean().optional(),
+  }).strict().optional(),
   activeOperation: z.object({
     callId: idText,
-    commandId: idText,
-    command: z.enum(Object.keys(TENDER_TOOL_CONTRACTS) as [TenderCommandKind, ...TenderCommandKind[]]),
+    intentId: idText.optional(),
+    tool: z.enum(TENDER_TOOLS),
+    origin: z.enum(['workbench-intent', 'conversation', 'autonomous']),
     stage: z.enum(WORKFLOW_STAGES),
     previousCurrentStage: z.enum(WORKFLOW_STAGES).optional(),
     previousStageState: stageStateSchema.optional(),
@@ -148,6 +174,7 @@ export const TenderWorkflowProjectionV1Schema = z.object({
     watch: z.number().int().nonnegative(),
     exclude: z.number().int().nonnegative(),
     canRevert: z.boolean(),
+    latestOperationRef: idText.optional(),
   }).strict().optional(),
   report: z.object({
     finalSnapshot: ArtifactRefV1Schema.optional(),
@@ -169,23 +196,53 @@ export const TenderWorkflowProjectionV1Schema = z.object({
     pdf: reportFormatStateSchema,
   }).strict().optional(),
   lastFailure: z.object({
-    command: z.enum(Object.keys(TENDER_TOOL_CONTRACTS) as [TenderCommandKind, ...TenderCommandKind[]]),
+    intentId: idText.optional(),
+    tool: z.enum(TENDER_TOOLS),
     code: idText,
     message: errorText,
   }).strict().optional(),
 }).strict()
 
-export type TenderWorkflowProjectionV1 = z.infer<typeof TenderWorkflowProjectionV1Schema>
+export type TenderWorkflowProjectionV2 = z.infer<typeof TenderWorkflowProjectionV2Schema>
 
-export const TenderToolMetaV1Schema = z.object({
+const toolMetaBase = {
   domain: z.literal('dsh-tender-workbench'),
-  schemaVersion: z.literal(1),
-  commandId: idText,
-  command: z.enum(Object.keys(TENDER_TOOL_CONTRACTS) as [TenderCommandKind, ...TenderCommandKind[]]),
-  state: TenderWorkflowProjectionV1Schema,
-}).strict()
+  schemaVersion: z.literal(2),
+  tool: z.enum(TENDER_TOOLS),
+  intentId: idText.optional(),
+  origin: z.enum(['workbench-intent', 'conversation', 'autonomous']),
+}
 
-export type TenderToolMetaV1 = z.infer<typeof TenderToolMetaV1Schema>
+export const TenderToolMetaV2Schema = z.union([
+  z.object({
+    ...toolMetaBase,
+    effect: z.literal('read-only'),
+    observedRevision: z.number().int().nonnegative(),
+    control: z.union([
+      z.object({ status: z.literal('complete') }).strict(),
+      z.object({ status: z.literal('continue'), nextTool: z.enum(TENDER_TOOLS) }).strict(),
+    ]),
+  }).strict(),
+  z.object({
+    ...toolMetaBase,
+    effect: z.literal('mutation'),
+    previousRevision: z.number().int().nonnegative(),
+    state: TenderWorkflowProjectionV2Schema,
+    control: TenderToolControlV2Schema,
+  }).strict(),
+  z.object({
+    ...toolMetaBase,
+    effect: z.literal('failed'),
+    observedRevision: z.number().int().nonnegative(),
+    control: z.object({
+      status: z.literal('failed'),
+      reasonCode: idText,
+      retryable: z.boolean(),
+    }).strict(),
+  }).strict(),
+])
+
+export type TenderToolMetaV2 = z.infer<typeof TenderToolMetaV2Schema>
 
 export const TenderRuleV1Schema = z.object({
   id: idText,
@@ -216,27 +273,27 @@ export const TenderRuleSetV1Schema = z.array(TenderRuleV1Schema).min(1).max(100)
 
 export const MAX_PROJECTION_BYTES = 64 * 1_024
 
-export function projectionSizeBytes(value: TenderWorkflowProjectionV1): number {
+export function projectionSizeBytes(value: TenderWorkflowProjectionV2): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength
 }
 
-export function parseTenderWorkflowProjectionV1(value: unknown): TenderWorkflowProjectionV1 {
-  const parsed = TenderWorkflowProjectionV1Schema.parse(value)
+export function parseTenderWorkflowProjectionV2(value: unknown): TenderWorkflowProjectionV2 {
+  const parsed = TenderWorkflowProjectionV2Schema.parse(value)
   const size = projectionSizeBytes(parsed)
   if (size > MAX_PROJECTION_BYTES) throw new RangeError(`tender workflow projection exceeds ${MAX_PROJECTION_BYTES} bytes`)
   return parsed
 }
 
-export function parseTenderToolMetaV1(value: unknown): TenderToolMetaV1 {
-  const parsed = TenderToolMetaV1Schema.parse(value)
-  parseTenderWorkflowProjectionV1(parsed.state)
+export function parseTenderToolMetaV2(value: unknown): TenderToolMetaV2 {
+  const parsed = TenderToolMetaV2Schema.parse(value)
+  if (parsed.effect === 'mutation') parseTenderWorkflowProjectionV2(parsed.state)
   return parsed
 }
 
-export function createEmptyTenderWorkflowProjection(): TenderWorkflowProjectionV1 {
+export function createEmptyTenderWorkflowProjection(): TenderWorkflowProjectionV2 {
   const stages = Object.fromEntries(WORKFLOW_STAGES.map(stage => [stage, { status: 'not-started' }]))
-  return TenderWorkflowProjectionV1Schema.parse({
-    schemaVersion: 1,
+  return TenderWorkflowProjectionV2Schema.parse({
+    schemaVersion: 2,
     revision: 0,
     currentStage: 'query',
     stages,

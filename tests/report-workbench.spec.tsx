@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReportDeliveryViewV1 } from '../src/contracts/reporting.ts'
-import { createEmptyTenderWorkflowProjection, type TenderWorkflowProjectionV1 } from '../src/contracts/workflow.ts'
+import { createEmptyTenderWorkflowProjection, type TenderWorkflowProjectionV2 } from '../src/contracts/workflow.ts'
 import { zh, type TenderKey } from '../src/client/locales.ts'
 import { TenderReportView, type ReportArtifactDownloader, type ReportDeliveryViewLoader } from '../src/client/workbench/TenderReportView.tsx'
 import type { SessionWriteFlight } from '../src/client/workbench/session-write-flight.ts'
@@ -27,7 +27,7 @@ function artifact(kind: 'query-spec' | 'normalized-data' | 'review-data' | 'fina
   }
 }
 
-function reportState(overrides: Partial<NonNullable<TenderWorkflowProjectionV1['report']>> = {}): NonNullable<TenderWorkflowProjectionV1['report']> {
+function reportState(overrides: Partial<NonNullable<TenderWorkflowProjectionV2['report']>> = {}): NonNullable<TenderWorkflowProjectionV2['report']> {
   return {
     finalSnapshot: artifact('final-snapshot', 'snapshot-artifact'), finalSnapshotId: 'fs-current',
     completeness: 'partial', createdAt: '2026-09-02T00:00:00.000Z',
@@ -39,7 +39,7 @@ function reportState(overrides: Partial<NonNullable<TenderWorkflowProjectionV1['
   }
 }
 
-function workflow(report?: TenderWorkflowProjectionV1['report']): TenderWorkflowProjectionV1 {
+function workflow(report?: TenderWorkflowProjectionV2['report']): TenderWorkflowProjectionV2 {
   const base = createEmptyTenderWorkflowProjection()
   return {
     ...base,
@@ -116,7 +116,7 @@ function footerTarget(): HTMLElement {
 
 function renderReport(options: {
   sessionId?: string
-  workflow: TenderWorkflowProjectionV1
+  workflow: TenderWorkflowProjectionV2
   loadView?: ReportDeliveryViewLoader
   download?: ReportArtifactDownloader
   start?: SessionWriteFlight['start']
@@ -149,15 +149,17 @@ describe('S5.4 delivery workbench', () => {
     const generate = screen.getByRole('button', { name: zh['workbench.report.generatePartial'] })
     expect(footer.contains(generate)).toBe(true)
     expect(generate.hasAttribute('disabled')).toBe(true)
-    fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(zh['workbench.report.includeNarrativeTitle']) }))
     fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(zh['workbench.report.partialConfirmTitle']) }))
     expect(generate.hasAttribute('disabled')).toBe(false)
     fireEvent.click(generate)
     expect(start).toHaveBeenCalledWith('report.create', expect.any(Function))
     expect(sent[0]).toMatchObject({
-      kind: 'report.create', commandId: 'report-command', activeDatasetRef: 'normalized',
-      reviewArtifactRef: 'review', reviewRevision: 2, projectionRevision: 4,
-      confirmPending: true, includeNarrative: false,
+      kind: 'report.create', intentId: 'report-command', skill: 'tender-workbench-report',
+      binding: {
+        activeDatasetRef: 'normalized', basis: { kind: 'dataset-only' },
+        reviewArtifactRef: 'review', reviewRevision: 2, projectionRevision: 4,
+      },
+      payload: { scope: 'current-progress', confirmPending: true, narrativeMode: 'none' },
     })
   })
 
@@ -170,10 +172,17 @@ describe('S5.4 delivery workbench', () => {
     const generate = screen.getByRole('button', { name: zh['workbench.report.generateComplete'] })
     expect(generate.hasAttribute('disabled')).toBe(false)
     fireEvent.click(generate)
-    expect(sent[0]).toMatchObject({ kind: 'report.create', confirmPending: false, includeNarrative: true })
+    expect(sent[0]).toMatchObject({
+      kind: 'report.create', payload: { scope: 'complete', confirmPending: false, narrativeMode: 'none' },
+    })
+    fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(zh['workbench.report.includeNarrativeTitle']) }))
+    fireEvent.click(generate)
+    expect(sent[1]).toMatchObject({
+      kind: 'report.create', payload: { scope: 'complete', confirmPending: false, narrativeMode: 'requested' },
+    })
     initial.unmount()
     const busy: SessionWriteFlight = {
-      state: { sessionId: 'session-1' as never, phase: 'sending', action: 'report.create', commandId: 'in-flight' },
+      state: { sessionId: 'session-1' as never, phase: 'sending', action: 'report.create', intentId: 'in-flight' },
       busy: true, start: vi.fn(() => false), retry: vi.fn(() => false),
     }
     renderReport({ workflow: complete, write: busy })
@@ -272,8 +281,9 @@ describe('S5.4 delivery workbench', () => {
     expect(screen.getByText(zh['workbench.report.fileStatus.succeeded'])).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.report.retry'].replace('{format}', 'Excel') }))
     expect(sent[0]).toEqual({
-      schemaVersion: 1, kind: 'report.retry', commandId: 'retry-command', projectionRevision: 5,
-      finalSnapshotId: 'fs-current', formats: ['excel'],
+      schemaVersion: 2, kind: 'report.retry', intentId: 'retry-command', skill: 'tender-workbench-report',
+      binding: { projectionRevision: 5, finalSnapshotId: 'fs-current' },
+      payload: { formats: ['excel'] },
     })
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.report.download'].replace('{format}', 'PDF') }))
     expect(download).toHaveBeenCalledWith('session-1', pdf)

@@ -113,7 +113,7 @@ export const ConfirmedRuleSetV1Schema = z.object({
   activeDatasetId: idText,
   previewArtifactId: idText,
   confirmedAt: timestamp,
-  commandId: idText,
+  intentId: idText,
   draftFingerprint: idText,
   rules: TenderRuleSetV1Schema,
 }).strict()
@@ -164,33 +164,6 @@ export interface ClassifiedRowsFilterV1 {
   readonly fieldStatus?: 'normalized' | 'missing' | 'unparseable'
 }
 
-const ruleIntentBase = {
-  schemaVersion: z.literal(1),
-  commandId: idText,
-  activeDatasetRef: idText,
-  projectionRevision: z.number().int().nonnegative(),
-}
-
-export const PreviewRulesCommandV1Schema = z.object({
-  ...ruleIntentBase,
-  kind: z.literal('rules.preview'),
-  origin: z.enum(['agent', 'user']),
-  draftFingerprint: idText.optional(),
-  rules: TenderRuleSetV1Schema,
-}).strict()
-
-export type PreviewRulesCommandV1 = z.infer<typeof PreviewRulesCommandV1Schema>
-
-export const ConfirmRulesCommandV1Schema = z.object({
-  ...ruleIntentBase,
-  kind: z.literal('rules.confirm'),
-  draftFingerprint: idText,
-  previewArtifactId: idText,
-  rules: TenderRuleSetV1Schema,
-}).strict()
-
-export type ConfirmRulesCommandV1 = z.infer<typeof ConfirmRulesCommandV1Schema>
-
 export const ScreeningDraftSampleV1Schema = z.object({
   recordId: idText,
   source: z.enum(TENDER_DATA_SOURCES),
@@ -202,6 +175,7 @@ export const ScreeningDraftSampleV1Schema = z.object({
 export const ScreeningDraftContextV1Schema = z.object({
   activeDatasetRef: idText,
   projectionRevision: z.number().int().positive(),
+  contextFingerprint: idText,
   targetSummary: z.string().min(1).max(2_048),
   query: z.object({
     scope: z.enum(['tender', 'proposed', 'combined']),

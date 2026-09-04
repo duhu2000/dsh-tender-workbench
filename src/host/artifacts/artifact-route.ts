@@ -303,13 +303,22 @@ function rowsForReview(kind: ArtifactRefV1['kind'], value: unknown): ReviewRecor
 
 function reviewAudit(kind: ArtifactRefV1['kind'], value: unknown) {
   if (kind !== 'review-data') return []
-  return ReviewDatasetV1Schema.parse(value).operations.slice(-100).reverse().map(operation => ({
-    operationId: operation.operationId,
-    appliedAt: operation.appliedAt,
-    decision: operation.decision,
-    note: operation.note,
-    recordRefs: operation.recordRefs,
-  }))
+  return ReviewDatasetV1Schema.parse(value).operations.slice(-100).reverse().flatMap((operation) => {
+    const groups = new Map<string, { decision: typeof operation.changes[number]['value']['decision']; note: string; recordRefs: string[] }>()
+    for (const change of operation.changes) {
+      const key = JSON.stringify(change.value)
+      const group = groups.get(key) ?? { ...change.value, recordRefs: [] }
+      group.recordRefs.push(change.recordRef)
+      groups.set(key, group)
+    }
+    return [...groups.values()].map(group => ({
+      operationId: operation.operationId,
+      appliedAt: operation.appliedAt,
+      decision: group.decision,
+      note: group.note,
+      recordRefs: group.recordRefs,
+    }))
+  }).slice(0, 100)
 }
 
 function deadlineStatus(row: ReviewRecordV1, now: number): typeof DEADLINE_STATUSES[number] {

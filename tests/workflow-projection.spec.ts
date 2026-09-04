@@ -1,41 +1,68 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
+import type { TenderWorkbenchIntentV2 } from '../src/contracts/intents.ts'
+import type { TenderToolNameV2 } from '../src/contracts/orchestration.ts'
 import {
   createEmptyTenderWorkflowProjection,
-  type TenderCommandKind,
-  type TenderWorkflowProjectionV1,
+  type TenderWorkflowProjectionV2,
 } from '../src/contracts/workflow.ts'
+import { serializeTenderWorkbenchIntent } from '../src/client/intents/screening-intent.ts'
 import { tenderWorkflowProjectionDefinition } from '../src/host/projection.ts'
 
-function call(seq: number, callId: string, name: string, commandId = 'command-1'): SessionEvent {
+const baseTime = Date.UTC(2026, 8, 1)
+
+function turnStart(seq = 1): SessionEvent {
+  return { seq, time: baseTime + seq, type: 'turn/start', data: { turn: 1 } } as unknown as SessionEvent
+}
+
+function userMessage(seq: number, intent: TenderWorkbenchIntentV2): SessionEvent {
   return {
-    seq,
-    time: Date.UTC(2026, 7, 31) + seq,
-    type: 'tool/call',
-    data: { turn: 1, step: 1, callId, name, arguments: JSON.stringify({ commandId }) },
+    seq, time: baseTime + seq, type: 'user/message',
+    data: {
+      turn: 1, source: { kind: 'user' },
+      content: [{ type: 'text', text: serializeTenderWorkbenchIntent(intent) }],
+    },
   } as unknown as SessionEvent
 }
 
-function result(
+function call(seq: number, callId: string, name: TenderToolNameV2, intentId?: string): SessionEvent {
+  return {
+    seq, time: baseTime + seq, type: 'tool/call',
+    data: {
+      turn: 1, step: seq, callId, name,
+      arguments: JSON.stringify({
+        origin: intentId === undefined ? { kind: 'autonomous' } : { kind: 'workbench-intent', intentId },
+      }),
+    },
+  } as unknown as SessionEvent
+}
+
+function conversationCall(
   seq: number,
   callId: string,
-  meta: unknown,
-  options: { readonly error?: boolean; readonly text?: string } = {},
+  name: TenderToolNameV2,
+  args: Record<string, unknown> = {},
 ): SessionEvent {
   return {
-    seq,
-    time: Date.UTC(2026, 7, 31) + seq,
-    type: 'tool/result',
-    surfaceOp: 'append',
+    seq, time: baseTime + seq, type: 'tool/call',
     data: {
-      turn: 1,
-      step: 1,
+      turn: 1, step: seq, callId, name,
+      arguments: JSON.stringify({ origin: { kind: 'conversation' }, ...args }),
+    },
+  } as unknown as SessionEvent
+}
+
+function result(seq: number, callId: string, meta: unknown, error?: string): SessionEvent {
+  return {
+    seq, time: baseTime + seq, type: 'tool/result', surfaceOp: 'append',
+    data: {
+      turn: 1, step: seq,
       message: {
         source: { type: 'tool-result', callId },
         content: [{
           type: 'tool-result',
-          content: [{ type: 'text', text: options.text ?? 'ok' }],
-          ...(options.error === true ? { isError: true } : {}),
+          content: [{ type: 'text', text: error ?? 'ok' }],
+          ...(error === undefined ? {} : { isError: true }),
         }],
       },
       meta,
@@ -45,288 +72,292 @@ function result(
 
 function turnEnd(seq: number): SessionEvent {
   return {
-    seq,
-    time: Date.UTC(2026, 7, 31) + seq,
-    type: 'turn/end',
+    seq, time: baseTime + seq, type: 'turn/end',
     data: { turn: 1, reason: { kind: 'completed' } },
   } as unknown as SessionEvent
 }
 
-function meta(
-  commandId: string,
-  command: TenderCommandKind,
-  state: TenderWorkflowProjectionV1,
-): unknown {
-  return { domain: 'dsh-tender-workbench', schemaVersion: 1, commandId, command, state }
+function mutationMeta(input: {
+  readonly tool: TenderToolNameV2
+  readonly intentId: string
+  readonly previousRevision: number
+  readonly state: TenderWorkflowProjectionV2
+  readonly control: { readonly status: 'complete' } | { readonly status: 'continue'; readonly nextTool: TenderToolNameV2 }
+}) {
+  return {
+    domain: 'dsh-tender-workbench', schemaVersion: 2,
+    tool: input.tool, intentId: input.intentId, origin: 'workbench-intent',
+    effect: 'mutation', previousRevision: input.previousRevision,
+    state: input.state, control: input.control,
+  }
 }
 
-function fold(events: readonly SessionEvent[]): TenderWorkflowProjectionV1 | null {
-  return events.reduce<TenderWorkflowProjectionV1 | null>(
+function readMeta(tool: TenderToolNameV2, intentId: string, revision: number) {
+  return {
+    domain: 'dsh-tender-workbench', schemaVersion: 2,
+    tool, intentId, origin: 'workbench-intent', effect: 'read-only',
+    observedRevision: revision, control: { status: 'complete' },
+  }
+}
+
+function fold(events: readonly SessionEvent[]): TenderWorkflowProjectionV2 | null {
+  return events.reduce<TenderWorkflowProjectionV2 | null>(
     (state, event) => tenderWorkflowProjectionDefinition.apply(state, event),
     tenderWorkflowProjectionDefinition.init(),
   )
 }
 
-describe('tenderWorkflowProjectionDefinition', () => {
-  it('keeps the read-only report-context tool outside the mutating Projection state machine', () => {
-    const current: TenderWorkflowProjectionV1 = {
-      ...createEmptyTenderWorkflowProjection(), revision: 8, currentStage: 'review',
+const queryIntent: TenderWorkbenchIntentV2 = {
+  schemaVersion: 2, intentId: 'query-intent', kind: 'query.run', skill: 'tender-workbench-query',
+  binding: { projectionRevision: 0 },
+  payload: { scope: 'tender', target: '数据项目', tender: { keywords: ['数据'] } },
+}
+
+describe('Tender workflow V2 Projection', () => {
+  it('admits a strict Intent, requires its exact entry Tool, and adopts continuous mutation state', () => {
+    const waiting = fold([turnStart(), userMessage(2, queryIntent)])
+    expect(waiting).toMatchObject({
+      schemaVersion: 2,
+      pendingIntent: {
+        intentId: 'query-intent', status: 'waiting-agent',
+        expectedTool: 'tender_workbench_run_query',
+      },
+      stages: { query: { status: 'waiting-agent' } },
+    })
+    const running = tenderWorkflowProjectionDefinition.apply(
+      waiting, call(3, 'query-call', 'tender_workbench_run_query', 'query-intent'),
+    )
+    expect(running?.activeOperation).toMatchObject({
+      callId: 'query-call', intentId: 'query-intent', tool: 'tender_workbench_run_query',
+      origin: 'workbench-intent', stage: 'query',
+    })
+    const completedState = {
+      ...createEmptyTenderWorkflowProjection(),
+      observedTurn: 1,
+      revision: 1,
+      currentStage: 'overview' as const,
+      stages: {
+        ...createEmptyTenderWorkflowProjection().stages,
+        query: { status: 'succeeded' as const, updatedAt: '2026-09-01T00:00:00.000Z' },
+        overview: { status: 'succeeded' as const, updatedAt: '2026-09-01T00:00:00.000Z' },
+      },
     }
-    expect(tenderWorkflowProjectionDefinition.apply(
-      current,
-      call(1, 'report-context', 'tender_workbench_get_report_context', 'report-command'),
-    )).toBe(current)
+    const completed = tenderWorkflowProjectionDefinition.apply(running, result(4, 'query-call', mutationMeta({
+      tool: 'tender_workbench_run_query', intentId: 'query-intent', previousRevision: 0,
+      state: completedState, control: { status: 'complete' },
+    })))
+    expect(completed).toEqual(completedState)
+    expect(completed?.pendingIntent).toBeUndefined()
   })
 
-  it('settles a read-only analysis batch before adopting the same user command commit', () => {
-    const current: TenderWorkflowProjectionV1 = {
-      ...createEmptyTenderWorkflowProjection(),
-      revision: 4,
-      currentStage: 'classification',
+  it('does not allow an allowed terminal Tool to skip the required first context Tool', () => {
+    const intent: TenderWorkbenchIntentV2 = {
+      schemaVersion: 2, intentId: 'rules-intent', kind: 'rules.propose', skill: 'tender-workbench-screening',
+      binding: { activeDatasetRef: 'data-1', projectionRevision: 1 }, payload: {},
     }
-    const reading = tenderWorkflowProjectionDefinition.apply(
-      current,
-      call(1, 'analysis-next', 'tender_workbench_analysis_next', 'analysis-command'),
-    )
-    expect(reading?.stages.analysis.status).toBe('running')
-    const readSettled = tenderWorkflowProjectionDefinition.apply(
-      reading,
-      result(2, 'analysis-next', meta('analysis-command', 'tender_workbench_analysis_next', current)),
-    )
-    expect(readSettled).toEqual(current)
+    const state = fold([
+      turnStart(), userMessage(2, intent),
+      call(3, 'preview-call', 'tender_workbench_preview_rules', 'rules-intent'),
+      turnEnd(4),
+    ])
+    expect(state).toMatchObject({
+      stages: { rules: { status: 'failed', errorCode: 'intent-incomplete' } },
+      lastFailure: { intentId: 'rules-intent', tool: 'tender_workbench_get_rule_drafting_context' },
+    })
+  })
 
+  it('records a conflicting second Intent without replacing the active Intent', () => {
+    const secondIntent: TenderWorkbenchIntentV2 = {
+      ...queryIntent,
+      intentId: 'query-intent-2',
+      payload: { scope: 'tender', target: '第二次查询', tender: { keywords: ['云'] } },
+    }
+    const state = fold([
+      turnStart(), userMessage(2, queryIntent), userMessage(3, secondIntent),
+    ])
+    expect(state).toMatchObject({
+      pendingIntent: { intentId: 'query-intent', status: 'waiting-agent' },
+      lastFailure: {
+        intentId: 'query-intent-2', tool: 'tender_workbench_run_query', code: 'intent-conflict',
+      },
+    })
+  })
+
+  it('treats an identical Intent event as a replay but rejects same-id content changes', () => {
+    const waiting = fold([
+      turnStart(), userMessage(2, queryIntent), userMessage(2, queryIntent),
+    ])
+    expect(waiting?.pendingIntent?.intentId).toBe('query-intent')
+    expect(waiting?.lastFailure).toBeUndefined()
+
+    const changed: TenderWorkbenchIntentV2 = {
+      ...queryIntent,
+      payload: { scope: 'tender', target: '同 id 的改写查询', tender: { keywords: ['云'] } },
+    }
+    const conflicted = tenderWorkflowProjectionDefinition.apply(waiting, userMessage(3, changed))
+    expect(conflicted).toMatchObject({
+      pendingIntent: { intentId: 'query-intent' },
+      lastFailure: { intentId: 'query-intent', code: 'intent-conflict' },
+    })
+  })
+
+  it('keeps a multi-step analysis pending until control reports complete', () => {
+    const intent: TenderWorkbenchIntentV2 = {
+      schemaVersion: 2, intentId: 'analysis-intent', kind: 'analysis.run', skill: 'tender-workbench-analysis',
+      binding: {
+        activeDatasetRef: 'data-1', classificationArtifactRef: 'class-1',
+        ruleSetVersion: 'rules-1', projectionRevision: 0,
+      },
+      payload: { scope: { kind: 'all-eligible' } },
+    }
+    const waiting = fold([turnStart(), userMessage(2, intent)])
+    const preparing = tenderWorkflowProjectionDefinition.apply(
+      waiting, call(3, 'prepare', 'tender_workbench_prepare_analysis_batch', 'analysis-intent'),
+    )
+    const partialState: TenderWorkflowProjectionV2 = {
+      ...createEmptyTenderWorkflowProjection(),
+      observedTurn: 1,
+      revision: 1,
+      currentStage: 'analysis',
+      stages: { ...createEmptyTenderWorkflowProjection().stages, analysis: { status: 'running' } },
+      analysis: {
+        version: 'analysis-1', activeDatasetId: 'data-1', ruleSetVersion: 'rules-1',
+        eligibleTotal: 2, completed: 0, priorityReview: 0, watch: 0, notRecommended: 0, urgent: 0,
+      },
+    }
+    const prepared = tenderWorkflowProjectionDefinition.apply(preparing, result(4, 'prepare', mutationMeta({
+      tool: 'tender_workbench_prepare_analysis_batch', intentId: 'analysis-intent', previousRevision: 0,
+      state: partialState,
+      control: { status: 'continue', nextTool: 'tender_workbench_commit_analysis_batch' },
+    })))
+    expect(prepared).toMatchObject({
+      revision: 1,
+      pendingIntent: { status: 'running', expectedTool: 'tender_workbench_commit_analysis_batch' },
+    })
     const committing = tenderWorkflowProjectionDefinition.apply(
-      readSettled,
-      call(3, 'analysis-commit', 'tender_workbench_analysis_commit', 'analysis-command'),
+      prepared, call(5, 'commit', 'tender_workbench_commit_analysis_batch', 'analysis-intent'),
     )
-    const completed: TenderWorkflowProjectionV1 = {
-      ...current,
-      revision: 5,
-      currentStage: 'analysis',
-      stages: { ...current.stages, analysis: { status: 'succeeded' } },
-      analysis: {
-        version: 'analysis-v1', activeDatasetId: 'data-v1',
-        eligibleTotal: 2, completed: 1, priorityReview: 1, watch: 0, notRecommended: 0, urgent: 0,
-      },
+    const terminalState: TenderWorkflowProjectionV2 = {
+      ...partialState,
+      revision: 2,
+      stages: { ...partialState.stages, analysis: { status: 'succeeded', updatedAt: '2026-09-01T00:00:00.000Z' } },
+      analysis: { ...partialState.analysis!, completed: 2, priorityReview: 2 },
     }
-    expect(tenderWorkflowProjectionDefinition.apply(
-      committing,
-      result(4, 'analysis-commit', meta('analysis-command', 'tender_workbench_analysis_commit', completed)),
-    )).toEqual(completed)
+    const completed = tenderWorkflowProjectionDefinition.apply(committing, result(6, 'commit', mutationMeta({
+      tool: 'tender_workbench_commit_analysis_batch', intentId: 'analysis-intent', previousRevision: 1,
+      state: terminalState, control: { status: 'complete' },
+    })))
+    expect(completed).toEqual(terminalState)
   })
 
-  it('marks a partial all-eligible analysis as resumable when the Agent turn ends', () => {
-    const empty = createEmptyTenderWorkflowProjection()
-    const partial: TenderWorkflowProjectionV1 = {
-      ...empty,
-      revision: 5,
-      currentStage: 'analysis',
-      stages: { ...empty.stages, analysis: { status: 'running' } },
-      analysis: {
-        version: 'analysis-v1', activeDatasetId: 'data-v1',
-        eligibleTotal: 15, completed: 12, priorityReview: 3, watch: 7, notRecommended: 2, urgent: 1,
+  it('requires a current-record answer turn to end after the read Tool completes', () => {
+    const intent: TenderWorkbenchIntentV2 = {
+      schemaVersion: 2, intentId: 'follow-intent', kind: 'analysis.follow-up', skill: 'tender-workbench-analysis',
+      binding: {
+        activeDatasetRef: 'data-1', classificationArtifactRef: 'class-1',
+        ruleSetVersion: 'rules-1', analysisVersion: 'analysis-1', projectionRevision: 0,
       },
+      payload: { recordRef: 'record-1', question: '当前需要核验什么？' },
     }
-    const interrupted = tenderWorkflowProjectionDefinition.apply(partial, turnEnd(10))
-    expect(interrupted).toMatchObject({
-      revision: 5,
-      stages: { analysis: { status: 'failed', errorCode: 'analysis-incomplete', errorMessage: expect.stringContaining('12/15') } },
-      lastFailure: { command: 'tender_workbench_analysis_commit', code: 'analysis-incomplete', message: expect.stringContaining('12/15') },
-    })
-    expect(tenderWorkflowProjectionDefinition.apply(interrupted, turnEnd(11))).toBe(interrupted)
+    const reading = fold([
+      turnStart(), userMessage(2, intent),
+      call(3, 'record-context', 'tender_workbench_get_analysis_record_context', 'follow-intent'),
+    ])
+    const answered = tenderWorkflowProjectionDefinition.apply(
+      reading, result(4, 'record-context', readMeta('tender_workbench_get_analysis_record_context', 'follow-intent', 0)),
+    )
+    expect(answered?.pendingIntent?.awaitingTurnEnd).toBe(true)
+    expect(tenderWorkflowProjectionDefinition.apply(answered, turnEnd(5))?.pendingIntent).toBeUndefined()
   })
 
-  it('tracks an exact call and adopts only a validated newer whole state', () => {
-    const pending = fold([call(1, 'call-1', 'tender_workbench_query')])
-    expect(pending).toMatchObject({
-      revision: 0,
-      currentStage: 'query',
-      activeOperation: { callId: 'call-1', commandId: 'command-1' },
+  it('keeps a Tool error retryable in the same Intent and fails only when the turn ends incomplete', () => {
+    const running = fold([
+      turnStart(), userMessage(2, queryIntent),
+      call(3, 'query-call', 'tender_workbench_run_query', 'query-intent'),
+    ])
+    const retryable = tenderWorkflowProjectionDefinition.apply(
+      running, result(4, 'query-call', undefined, 'permission denied'),
+    )
+    expect(retryable).toMatchObject({
+      stages: { query: { status: 'running' } },
+      pendingIntent: {
+        intentId: 'query-intent', status: 'running', expectedTool: 'tender_workbench_run_query',
+      },
     })
-    expect(pending?.stages.query.status).toBe('running')
+    expect(retryable?.activeOperation).toBeUndefined()
+    expect(retryable?.lastFailure).toBeUndefined()
+    expect(tenderWorkflowProjectionDefinition.apply(retryable, turnEnd(5))).toMatchObject({
+      stages: { query: { status: 'failed', errorCode: 'intent-incomplete' } },
+      lastFailure: { intentId: 'query-intent', code: 'intent-incomplete' },
+    })
+  })
 
-    const completed: TenderWorkflowProjectionV1 = {
+  it('returns a retrying structured action to running and accepts the corrected Tool result', () => {
+    const running = fold([
+      turnStart(), userMessage(2, queryIntent),
+      call(3, 'query-call', 'tender_workbench_run_query', 'query-intent'),
+    ])
+    const retryable = tenderWorkflowProjectionDefinition.apply(
+      running, result(4, 'query-call', undefined, 'invalid arguments'),
+    )
+    const retried = tenderWorkflowProjectionDefinition.apply(
+      retryable, call(5, 'query-retry', 'tender_workbench_run_query', 'query-intent'),
+    )
+    expect(retried).toMatchObject({
+      stages: { query: { status: 'running' } },
+      activeOperation: { callId: 'query-retry', tool: 'tender_workbench_run_query' },
+    })
+    const completedState: TenderWorkflowProjectionV2 = {
       ...createEmptyTenderWorkflowProjection(),
+      observedTurn: 1,
       revision: 1,
       currentStage: 'overview',
       stages: {
         ...createEmptyTenderWorkflowProjection().stages,
-        query: { status: 'succeeded' as const },
-        overview: { status: 'succeeded' as const },
+        query: { status: 'succeeded' }, overview: { status: 'succeeded' },
       },
     }
-    const final = tenderWorkflowProjectionDefinition.apply(
-      pending,
-      result(2, 'call-1', meta('command-1', 'tender_workbench_query', completed)),
-    )
-    expect(final).toEqual(completed)
+    expect(tenderWorkflowProjectionDefinition.apply(retried, result(6, 'query-retry', mutationMeta({
+      tool: 'tender_workbench_run_query', intentId: 'query-intent', previousRevision: 0,
+      state: completedState, control: { status: 'complete' },
+    })))).toEqual(completedState)
   })
 
-  it('does not regress on a late duplicate and ignores unrelated calls/results by reference', () => {
-    const empty = createEmptyTenderWorkflowProjection()
-    const current = {
-      ...empty,
+  it('creates conversation pending on the first single-step Tool call and keeps validation errors running', () => {
+    const current: TenderWorkflowProjectionV2 = {
+      ...createEmptyTenderWorkflowProjection(),
+      observedTurn: 1,
       revision: 2,
-      currentStage: 'overview' as const,
-      stages: {
-        ...empty.stages,
-        query: { status: 'succeeded' as const },
-        overview: { status: 'succeeded' as const },
+      currentStage: 'rules',
+    }
+    const running = tenderWorkflowProjectionDefinition.apply(
+      current,
+      conversationCall(3, 'confirm-call', 'tender_workbench_confirm_rules'),
+    )
+    expect(running).toMatchObject({
+      stages: { classification: { status: 'running' } },
+      pendingIntent: {
+        kind: 'rules.confirm', origin: 'conversation', status: 'running',
+        expectedTool: 'tender_workbench_confirm_rules',
       },
-    }
-    const pending = tenderWorkflowProjectionDefinition.apply(current, call(1, 'call-1', 'tender_workbench_query'))
-    const stale = { ...createEmptyTenderWorkflowProjection(), revision: 1 }
-    const settled = tenderWorkflowProjectionDefinition.apply(
-      pending,
-      result(2, 'call-1', meta('command-1', 'tender_workbench_query', stale)),
+      activeOperation: { callId: 'confirm-call', origin: 'conversation' },
+    })
+    const retryable = tenderWorkflowProjectionDefinition.apply(
+      running, result(4, 'confirm-call', undefined, 'stale revision'),
     )
-    expect(settled?.revision).toBe(2)
-    expect(settled?.activeOperation).toBeUndefined()
-    expect(settled?.currentStage).toBe('overview')
-    expect(settled?.stages.query.status).toBe('succeeded')
-    expect(tenderWorkflowProjectionDefinition.apply(settled, call(3, 'other', 'search_companies'))).toBe(settled)
-    expect(tenderWorkflowProjectionDefinition.apply(settled, result(4, 'other', undefined))).toBe(settled)
-  })
-
-  it('adopts the first completed state for a same-command idempotent retry', () => {
-    const empty = createEmptyTenderWorkflowProjection()
-    const completed: TenderWorkflowProjectionV1 = {
-      ...empty,
-      revision: 2,
-      currentStage: 'overview',
-      stages: {
-        ...empty.stages,
-        query: { status: 'succeeded' },
-        overview: { status: 'succeeded' },
+    expect(retryable).toMatchObject({
+      stages: { classification: { status: 'running' } },
+      pendingIntent: {
+        kind: 'rules.confirm', status: 'running', expectedTool: 'tender_workbench_confirm_rules',
       },
-    }
-    const retry = tenderWorkflowProjectionDefinition.apply(
-      completed,
-      call(3, 'retry-call', 'tender_workbench_query', 'command-1'),
-    )
-    expect(retry?.stages.query.status).toBe('running')
-
-    const settled = tenderWorkflowProjectionDefinition.apply(
-      retry,
-      result(4, 'retry-call', meta('command-1', 'tender_workbench_query', completed)),
-    )
-    expect(settled).toEqual(completed)
+    })
+    expect(retryable?.activeOperation).toBeUndefined()
   })
 
-  it('preserves prior facts and exposes bounded failure for invalid or failed results', () => {
-    const existing = { ...createEmptyTenderWorkflowProjection(), revision: 3 }
-    const pending = tenderWorkflowProjectionDefinition.apply(existing, call(1, 'call-1', 'tender_workbench_generate_report', 'report-1'))
-    const invalid = tenderWorkflowProjectionDefinition.apply(pending, result(2, 'call-1', { invalid: true }))
-    expect(invalid).toMatchObject({
-      revision: 3,
-      stages: { report: { status: 'failed', errorCode: 'invalid-tool-meta' } },
-    })
-
-    const pendingAgain = tenderWorkflowProjectionDefinition.apply(invalid, call(3, 'call-2', 'tender_workbench_generate_report', 'report-2'))
-    const failed = tenderWorkflowProjectionDefinition.apply(
-      pendingAgain,
-      result(4, 'call-2', undefined, { error: true, text: '\u0000permission denied' }),
-    )
-    expect(failed).toMatchObject({
-      revision: 3,
-      lastFailure: { command: 'tender_workbench_generate_report', code: 'tool-failed', message: 'permission denied' },
-    })
-  })
-
-  it('replays to the same value as an incremental fold', () => {
-    const state = { ...createEmptyTenderWorkflowProjection(), revision: 1, currentStage: 'rules' as const }
-    const events = [
-      call(1, 'call-1', 'tender_workbench_query'),
-      result(2, 'call-1', meta('command-1', 'tender_workbench_query', state)),
-    ]
-    const replay = fold(events)
-    let live: TenderWorkflowProjectionV1 | null = null
-    for (const event of events) live = tenderWorkflowProjectionDefinition.apply(live, event)
-    expect(live).toEqual(replay)
-  })
-
-  it('keeps the newest active dataset across refresh replay, historical prepends, and a late old result', () => {
-    const empty = createEmptyTenderWorkflowProjection()
-    const artifact = (id: string) => ({
-      id,
-      kind: 'normalized-data' as const,
-      fileName: `${id}.json`,
-      mediaType: 'application/json',
-      rowCount: 1,
-      createdAt: '2026-09-01T00:00:00.000Z',
-      accessToken: `${id}-token`,
-    })
-    const querySpec = {
-      id: 'query-spec', kind: 'query-spec' as const, fileName: 'query.json', mediaType: 'application/json',
-      createdAt: '2026-09-01T00:00:00.000Z', accessToken: 'query-token',
-    }
-    const oldState: TenderWorkflowProjectionV1 = {
-      ...empty,
-      revision: 1,
-      currentStage: 'overview',
-      query: { scope: 'tender', targetSummary: 'old', querySpec, sources: { tender: { status: 'succeeded', loaded: 1 } }, normalizedData: artifact('old-data'), total: 1, duplicateCount: 0, invalidCount: 0 },
-    }
-    const newState: TenderWorkflowProjectionV1 = {
-      ...oldState,
-      revision: 2,
-      query: { ...oldState.query!, targetSummary: 'new', normalizedData: artifact('new-data') },
-    }
-    const history = [
-      call(1, 'old-call', 'tender_workbench_query', 'old-command'),
-      result(2, 'old-call', meta('old-command', 'tender_workbench_query', oldState)),
-      call(3, 'new-call', 'tender_workbench_query', 'new-command'),
-      result(4, 'new-call', meta('new-command', 'tender_workbench_query', newState)),
-    ]
-    expect(fold(history)?.query?.normalizedData?.id).toBe('new-data')
-    expect(fold(history)).toEqual(fold([...history]))
-
-    const pendingOld = tenderWorkflowProjectionDefinition.apply(newState, call(5, 'late-old', 'tender_workbench_query', 'old-command'))
-    const afterLate = tenderWorkflowProjectionDefinition.apply(
-      pendingOld,
-      result(6, 'late-old', meta('old-command', 'tender_workbench_query', oldState)),
-    )
-    expect(afterLate?.revision).toBe(2)
-    expect(afterLate?.query?.normalizedData?.id).toBe('new-data')
-  })
-
-  it('does not let a late historical S3 confirmation reactivate old rules or classification after a new query', () => {
-    const empty = createEmptyTenderWorkflowProjection()
-    const now = '2026-09-01T00:00:00.000Z'
-    const artifact = (id: string, kind: 'query-spec' | 'normalized-data' | 'rule-set' | 'classified-data') => ({
-      id, kind, fileName: `${id}.json`, mediaType: 'application/json', createdAt: now, accessToken: `${id}-token`,
-    })
-    const newQuery: TenderWorkflowProjectionV1 = {
-      ...empty,
-      revision: 5,
-      currentStage: 'overview',
-      stages: { ...empty.stages, query: { status: 'succeeded' }, overview: { status: 'succeeded' } },
-      query: {
-        scope: 'tender', targetSummary: 'new', querySpec: artifact('query-new', 'query-spec'),
-        sources: { tender: { status: 'succeeded', loaded: 1 } }, normalizedData: artifact('data-new', 'normalized-data'),
-        total: 1, duplicateCount: 0, invalidCount: 0,
-      },
-    }
-    const oldConfirmed: TenderWorkflowProjectionV1 = {
-      ...newQuery,
-      revision: 4,
-      currentStage: 'classification',
-      rules: { confirmed: artifact('rules-old', 'rule-set'), ruleSetVersion: 'rsv-old', ruleCount: 1, rawMatches: 1, covered: 1, conflicts: 0 },
-      classification: {
-        data: artifact('classified-old', 'classified-data'), include: 1, observe: 0, manualReview: 0, exclude: 0,
-        unmatched: 0, covered: 1, conflicts: 0, ruleSetVersion: 'rsv-old', activeDatasetId: 'data-old',
-      },
-    }
-    const pending = tenderWorkflowProjectionDefinition.apply(
-      newQuery,
-      call(10, 'late-confirm', 'tender_workbench_confirm_rules', 'old-confirm-command'),
-    )
-    const settled = tenderWorkflowProjectionDefinition.apply(
-      pending,
-      result(11, 'late-confirm', meta('old-confirm-command', 'tender_workbench_confirm_rules', oldConfirmed)),
-    )
-    expect(settled?.revision).toBe(5)
-    expect(settled?.query?.normalizedData?.id).toBe('data-new')
-    expect(settled?.rules).toBeUndefined()
-    expect(settled?.classification).toBeUndefined()
+  it('ignores non-V2 protocol events', () => {
+    expect(fold([turnStart(), {
+      seq: 2, time: baseTime + 2, type: 'user/message',
+      data: { turn: 1, source: { kind: 'user' }, content: [{ type: 'text', text: '{"schemaVersion":1,"legacyIdentity":"old"}' }] },
+    } as unknown as SessionEvent])).toEqual({ ...createEmptyTenderWorkflowProjection(), observedTurn: 1 })
   })
 })

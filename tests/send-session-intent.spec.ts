@@ -1,28 +1,52 @@
-import { describe, expect, it, vi } from 'vitest'
 import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client'
-import {
-  createTenderQueryIntent,
-  serializeTenderQueryIntent,
-} from '../src/client/intents/query-intent.ts'
-import { createInitialTenderFilters } from '../src/client/types.ts'
-import {
-  sendSessionTenderQueryIntent,
-  sendSessionTenderWorkbenchIntent,
-  TenderSessionUnavailableError,
-} from '../src/client/intents/send-session-intent.ts'
+import { describe, expect, it, vi } from 'vitest'
+import { TENDER_SKILL_CONTRACT_MARKER } from '../src/contracts/orchestration.ts'
+import { createTenderQueryIntent, serializeTenderQueryIntent } from '../src/client/intents/query-intent.ts'
 import {
   createAdjustRulesIntent,
   createAnalysisFollowUpIntent,
   createContinueScreeningIntent,
-  createPreviewRulesIntent,
   createGenerateReportIntent,
+  createPreviewRulesIntent,
   createRequestAnalysisIntent,
   createRetryReportIntent,
   serializeTenderWorkbenchIntent,
 } from '../src/client/intents/screening-intent.ts'
+import {
+  sendSessionTenderWorkbenchIntent,
+  TenderSessionUnavailableError,
+} from '../src/client/intents/send-session-intent.ts'
+import type { TenderSkillCatalogConnection } from '../src/client/skill-catalog.ts'
+import { createInitialTenderFilters } from '../src/client/types.ts'
 
-describe('typed Session Intent', () => {
-  it('uses one validated object for branches, visible JSON, and exact source plan', () => {
+function connection(skills = ['tender-workbench-query']): TenderSkillCatalogConnection {
+  return {
+    api: { skills: { list: vi.fn(async () => ({
+      result: {
+        ok: true as const,
+        value: { skills: skills.map(name => ({
+          name, description: `[${TENDER_SKILL_CONTRACT_MARKER}] test`, modelInvocable: true,
+        })) },
+      },
+    })) } },
+  }
+}
+
+function sessions(send = vi.fn(async (_text: string) => {})) {
+  return {
+    value: { scope: vi.fn(() => ({ get: (name: string) => name === 'conversation' ? { send } : undefined })) } as unknown as Pick<ISessions, 'scope'>,
+    send,
+  }
+}
+
+const rules = [{
+  id: 'r1', name: '数据方向', enabled: true, action: 'include' as const,
+  sources: ['tender' as const], scope: 'title' as const, keywords: ['数据'],
+  priority: 100, exceptions: [], reason: '当前目标',
+}]
+
+describe('typed V2 Session Intent', () => {
+  it('maps UI query state once into binding/payload and a minimal visible Prompt', () => {
     const intent = createTenderQueryIntent({
       scope: 'combined',
       target: '查找数据治理项目',
@@ -31,155 +55,109 @@ describe('typed Session Intent', () => {
         noticeType: 'ifb', tenderStages: ['变更'], procurementMethods: ['竞磋'], tenderAmountMin: '300',
         proposedStages: ['项目备案'], approvalProgress: ['审批通过'], proposedInvestmentMin: '1000',
       },
-    }, 'command-1', new Date('2026-08-30T12:00:00+08:00'))
+    }, 'intent-1', 4, new Date('2026-08-30T12:00:00+08:00'))
     expect(intent).toMatchObject({
-      commandId: 'command-1',
-      scope: 'combined',
-      tender: {
-        keywords: ['数据治理', 'AI'], beginDate: '2026-05-30', regions: ['上海市'],
-        infoTypes: ['招标公告'], bidStatuses: ['招标变更'], procurementMethods: ['竞争性磋商'], budgetMin: 3_000_000,
-      },
-      proposed: {
-        keywords: ['数据治理', 'AI'], beginDate: '2026-05-30', regions: ['上海市'],
-        projectStages: ['项目备案'], approvalStatuses: ['审批通过'], investmentMin: 10_000_000,
+      schemaVersion: 2, intentId: 'intent-1', kind: 'query.run', skill: 'tender-workbench-query',
+      binding: { projectionRevision: 4 },
+      payload: {
+        scope: 'combined', target: '查找数据治理项目',
+        tender: { keywords: ['数据治理', 'AI'], regions: ['上海市'], budgetMin: 3_000_000 },
+        proposed: { keywords: ['数据治理', 'AI'], regions: ['上海市'], investmentMin: 10_000_000 },
       },
     })
     const message = serializeTenderQueryIntent(intent)
-    expect(message).toContain(JSON.stringify(intent, null, 2))
-    expect(message).toContain('tender_workbench_query')
-    expect(message).toContain('mcp__qcc-tender__search_tenders')
-    expect(message).toContain('mcp__qcc-tender__search_proposed_projects')
-    expect(message).toContain('不使用 Web 搜索替代')
-    expect(message).toContain('查询工具返回后本轮立即结束')
-    expect(message).toContain('不得猜测 activeDatasetRef')
+    expect(message).toBe([
+      '执行招投标工作台查询。',
+      '/tender-workbench-query',
+      '',
+      '<dsh_tender_workbench_intent>',
+      JSON.stringify(intent, null, 2),
+      '</dsh_tender_workbench_intent>',
+    ].join('\n'))
+    expect(message.match(/查找数据治理项目/gu)).toHaveLength(1)
+    expect(message).not.toContain('mcp__qcc-tender')
+    expect(message).not.toContain('tender_workbench_run_query')
   })
 
-  it('addresses only the supplied Session and calls its public conversation.send()', async () => {
-    const sendOne = vi.fn(async (_text: string) => {})
-    const sendTwo = vi.fn(async (_text: string) => {})
-    const getConversation = vi.fn((sessionId: string) => vi.fn((name: string) => (
-      name === 'conversation' ? { send: sessionId === 'one' ? sendOne : sendTwo } : undefined
-    )))
-    const scope = vi.fn((sessionId: string) => ({ get: getConversation(sessionId) }))
-    const sessions = { scope } as unknown as Pick<ISessions, 'scope'>
-    const intent = createTenderQueryIntent({ scope: 'tender', target: '目标', filters: { ...createInitialTenderFilters(), keywords: '云平台' } }, 'command-2')
-    await sendSessionTenderQueryIntent(sessions, 'two' as never, intent)
-    expect(scope).toHaveBeenCalledWith('two')
-    expect(getConversation).toHaveBeenCalledWith('two')
-    expect(sendOne).not.toHaveBeenCalled()
-    expect(sendTwo).toHaveBeenCalledTimes(1)
-    expect(sendTwo.mock.calls[0]?.[0]).toContain('"commandId": "command-2"')
-  })
-
-  it('fails explicitly when the addressed Session is unavailable', async () => {
-    const sessions = { scope: () => undefined } as unknown as Pick<ISessions, 'scope'>
-    const intent = createTenderQueryIntent({ scope: 'tender', target: '目标', filters: createInitialTenderFilters() }, 'command-3')
-    await expect(sendSessionTenderQueryIntent(sessions, 'missing' as never, intent))
-      .rejects.toBeInstanceOf(TenderSessionUnavailableError)
-  })
-
-  it('fails explicitly when the scoped conversation Service is unavailable', async () => {
-    const sessions = {
-      scope: () => ({ get: () => undefined }),
-    } as unknown as Pick<ISessions, 'scope'>
-    const intent = createTenderQueryIntent({ scope: 'tender', target: '目标', filters: createInitialTenderFilters() }, 'command-4')
-    await expect(sendSessionTenderQueryIntent(sessions, 'missing-conversation' as never, intent))
-      .rejects.toThrow('Tender conversation is unavailable')
-  })
-
-  it('serializes visible S3 Intents and sends adjustments through the same scoped public service', async () => {
-    const rules = [{
-      id: 'r1', name: '数据方向', enabled: true, action: 'include' as const, sources: ['tender' as const],
-      scope: 'title' as const, keywords: ['数据'], priority: 100, exceptions: [], reason: '当前目标',
-    }]
-    const continuation = createContinueScreeningIntent({ commandId: 'continue-1', activeDatasetRef: 'data-1', projectionRevision: 1 })
-    const continuationMessage = serializeTenderWorkbenchIntent(continuation)
-    expect(continuationMessage).toContain('不使用任何默认行业规则')
-    expect(continuationMessage).toContain('tender_workbench_get_screening_context')
-    expect(continuationMessage).toContain('不得重新调用任何 qcc/MCP 搜索或详情工具')
-    expect(continuationMessage).toContain('Agent 草案不要传 draftFingerprint，由 Host 计算并绑定')
-    expect(continuationMessage).toContain('准确调用一次 tender_workbench_preview_rules')
-    expect(continuationMessage).toContain('不得根据预览结果自行改稿、第二次预览')
-    const preview = createPreviewRulesIntent({ commandId: 'preview-1', activeDatasetRef: 'data-1', projectionRevision: 1, rules })
-    expect(serializeTenderWorkbenchIntent(preview)).toContain('tender_workbench_preview_rules')
+  it('builds all action families with one strict envelope and no embedded Tool tutorial', () => {
+    const screening = createContinueScreeningIntent({ intentId: 'rules-1', activeDatasetRef: 'data-1', projectionRevision: 2 })
     const adjustment = createAdjustRulesIntent({
-      commandId: 'adjust-1', activeDatasetRef: 'data-1', projectionRevision: 1,
-      instruction: '加入例外词', rules,
+      intentId: 'rules-2', activeDatasetRef: 'data-1', projectionRevision: 2,
+      instruction: '增加云项目', rules,
     })
-    const message = serializeTenderWorkbenchIntent(adjustment)
-    expect(message).toContain(JSON.stringify(adjustment, null, 2))
-    expect(message).toContain('作为当前 Session 规则工作区的可编辑草案载入')
-    expect(message).toContain('不会自动确认或分类')
-
-    const send = vi.fn(async (_text: string) => {})
-    const sessions = { scope: () => ({ get: () => ({ send }) }) } as unknown as Pick<ISessions, 'scope'>
-    await sendSessionTenderWorkbenchIntent(sessions, 'session-s3' as never, adjustment)
-    expect(send).toHaveBeenCalledOnce()
-    expect(send.mock.calls[0]?.[0]).toContain('"kind": "rules.adjust"')
-  })
-
-  it('serializes S5 optional narrative and same-snapshot retry without giving Agent layout or calculation control', () => {
-    const withNarrative = createGenerateReportIntent({
-      commandId: 'report-1', activeDatasetRef: 'data-1', reviewArtifactRef: 'review-1',
-      reviewRevision: 3, projectionRevision: 8, confirmPending: true, includeNarrative: true,
+    const preview = createPreviewRulesIntent({ intentId: 'rules-3', activeDatasetRef: 'data-1', projectionRevision: 2, rules })
+    const analysis = createRequestAnalysisIntent({
+      intentId: 'analysis-1', activeDatasetRef: 'data-1', classificationArtifactRef: 'class-1',
+      ruleSetVersion: 'rules-v1', projectionRevision: 3,
     })
-    const narrativeMessage = serializeTenderWorkbenchIntent(withNarrative)
-    expect(narrativeMessage).toContain('tender_workbench_get_report_context')
-    expect(narrativeMessage).toContain('contextFingerprint')
-    expect(narrativeMessage).toContain('不得生成脚本、HTML/CSS、公式')
-    expect(narrativeMessage).toContain('自由文本不得写数字、比例、金额或日期')
-    expect(narrativeMessage).toContain('priorityVerification')
-    expect(narrativeMessage).toContain('risksAndLimitations')
-    expect(narrativeMessage).toContain('title、statement、metricRefs、recordRefs、distributionRefs、limitations')
-    expect(narrativeMessage).toContain('不得使用 item、refs、verificationPriorities')
-
-    const deterministic = createGenerateReportIntent({ ...withNarrative, commandId: 'report-2', includeNarrative: false })
-    const deterministicMessage = serializeTenderWorkbenchIntent(deterministic)
-    expect(deterministicMessage).not.toContain('tender_workbench_get_report_context')
-    expect(deterministicMessage).toContain('省略 contextFingerprint 和 narrative')
-
-    const retry = createRetryReportIntent({
-      commandId: 'report-retry', projectionRevision: 9, finalSnapshotId: 'fs-1', formats: ['excel'],
-    })
-    const retryMessage = serializeTenderWorkbenchIntent(retry)
-    expect(retryMessage).toContain('mode 设为 retry')
-    expect(retryMessage).toContain('不得调用报告上下文工具')
-    expect(retryMessage).toContain('不得请求或改写 Agent 叙述')
-  })
-
-  it('serializes the exact analysis recommendation field contract', () => {
-    const intent = createRequestAnalysisIntent({
-      commandId: 'analysis-1', activeDatasetRef: 'data-1', classificationArtifactRef: 'classification-1',
-      ruleSetVersion: 'rules-1', projectionRevision: 3,
-    })
-    const message = serializeTenderWorkbenchIntent(intent)
-    expect(intent.scope).toEqual({ kind: 'all-eligible' })
-    expect(message).toContain('规则排除与未匹配不进入分析')
-    expect(message).toContain('循环直到 remaining 为 0')
-    expect(message).toContain('recordRef、recommendation、evidenceRefs、reason、verificationItems、limitations')
-    expect(message).toContain('不得使用 decision、verification 等近义字段')
-    expect(message).toContain('不得把 limitations 写成字符串')
-
     const followUp = createAnalysisFollowUpIntent({
-      commandId: 'follow-up-1',
-      activeDatasetRef: 'data-1',
-      classificationArtifactRef: 'classification-1',
-      ruleSetVersion: 'rules-1',
-      analysisVersion: 'analysis-1',
-      projectionRevision: 4,
-      recordRef: 'record-1',
-      question: '还需要核验什么？',
-      context: {
-        title: '数据治理平台', source: 'tender', region: '江苏省', amount: '860万元',
-        stage: '招标公告', timing: '7 天内截止', classification: 'include', recommendation: 'priority-review',
-        reason: '方向相关。',
-        evidence: [{ ref: 'ev:record-1:title', kind: 'source-field', label: '项目名称', value: '数据治理平台' }],
-        verificationItems: ['核验资格要求'], limitations: ['没有企业画像'],
-      },
+      intentId: 'follow-1', activeDatasetRef: 'data-1', classificationArtifactRef: 'class-1',
+      ruleSetVersion: 'rules-v1', analysisVersion: 'analysis-v1', projectionRevision: 5,
+      recordRef: 'record-1', question: '当前需要核验什么？',
     })
-    const followUpMessage = serializeTenderWorkbenchIntent(followUp)
-    expect(followUpMessage).toContain('只使用意图 context')
-    expect(followUpMessage).toContain('不得调用 qcc、Web、Shell')
-    expect(followUpMessage).toContain('还需要核验什么？')
+    const report = createGenerateReportIntent({
+      intentId: 'report-1', activeDatasetRef: 'data-1', projectionRevision: 6,
+      classificationArtifactRef: 'class-1', ruleSetVersion: 'rules-v1', analysisVersion: 'analysis-v1',
+      reviewArtifactRef: 'review-1', reviewRevision: 2, confirmPending: true, includeNarrative: true,
+    })
+    const retry = createRetryReportIntent({
+      intentId: 'retry-1', projectionRevision: 7, finalSnapshotId: 'snapshot-1', formats: ['excel'],
+    })
+    for (const intent of [screening, adjustment, preview, analysis, followUp, report, retry]) {
+      const message = serializeTenderWorkbenchIntent(intent)
+      expect(message.split('\n')).toContain(`/${intent.skill}`)
+      expect(message).toContain(JSON.stringify(intent, null, 2))
+      expect(message.endsWith('</dsh_tender_workbench_intent>')).toBe(true)
+      expect(message).not.toMatch(/调用流程|Tool Schema|mcp__/u)
+    }
+    expect(analysis).toMatchObject({ payload: { scope: { kind: 'all-eligible' } } })
+    expect(followUp).toMatchObject({ payload: { recordRef: 'record-1', question: '当前需要核验什么？' } })
+    expect(report).toMatchObject({ payload: { narrativeMode: 'requested' } })
+  })
+
+  it('preflights the exact winning action Skill before sending to the addressed Session', async () => {
+    const scoped = sessions()
+    const catalog = connection(['tender-workbench-query'])
+    const intent = createTenderQueryIntent({
+      scope: 'tender', target: '目标',
+      filters: { ...createInitialTenderFilters(), keywords: '云平台' },
+    }, 'intent-send', 0)
+    await sendSessionTenderWorkbenchIntent(scoped.value, catalog, 'session-2' as never, intent)
+    expect(scoped.value.scope).toHaveBeenCalledWith('session-2')
+    expect(catalog.api.skills.list).toHaveBeenCalledWith({ sessionId: 'session-2' }, undefined)
+    expect(scoped.send).toHaveBeenCalledOnce()
+  })
+
+  it('fails before send when the action Skill is missing or marker-incompatible', async () => {
+    const scoped = sessions()
+    const intent = createTenderQueryIntent({
+      scope: 'tender', target: '目标',
+      filters: { ...createInitialTenderFilters(), keywords: '云平台' },
+    }, 'intent-send', 0)
+    await expect(sendSessionTenderWorkbenchIntent(scoped.value, connection([]), 'session-1' as never, intent))
+      .rejects.toMatchObject({ code: 'skill-missing' })
+    const incompatible = {
+      api: { skills: { list: vi.fn(async () => ({
+        result: { ok: true as const, value: { skills: [{ name: intent.skill, description: 'other provider', modelInvocable: true }] } },
+      })) } },
+    }
+    await expect(sendSessionTenderWorkbenchIntent(scoped.value, incompatible, 'session-1' as never, intent))
+      .rejects.toMatchObject({ code: 'skill-incompatible' })
+    expect(scoped.send).not.toHaveBeenCalled()
+  })
+
+  it('fails explicitly when the addressed Session or conversation is unavailable', async () => {
+    const intent = createTenderQueryIntent({
+      scope: 'tender', target: '目标',
+      filters: { ...createInitialTenderFilters(), keywords: '数据' },
+    }, 'intent-missing', 0)
+    await expect(sendSessionTenderWorkbenchIntent(
+      { scope: () => undefined } as unknown as Pick<ISessions, 'scope'>,
+      connection(), 'missing' as never, intent,
+    )).rejects.toBeInstanceOf(TenderSessionUnavailableError)
+    await expect(sendSessionTenderWorkbenchIntent(
+      { scope: () => ({ get: () => undefined }) } as unknown as Pick<ISessions, 'scope'>,
+      connection(), 'missing-conversation' as never, intent,
+    )).rejects.toThrow('Tender conversation is unavailable')
   })
 })

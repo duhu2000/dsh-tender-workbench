@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReviewRecordV1 } from '../src/contracts/analysis-review.ts'
 import {
   createEmptyTenderWorkflowProjection,
-  type TenderWorkflowProjectionV1,
+  type TenderWorkflowProjectionV2,
 } from '../src/contracts/workflow.ts'
 import { zh, type TenderKey } from '../src/client/locales.ts'
 import {
@@ -85,7 +85,7 @@ function rows(): ReviewRecordV1[] {
   ]
 }
 
-function projection(analysisComplete = false): TenderWorkflowProjectionV1 {
+function projection(analysisComplete = false): TenderWorkflowProjectionV2 {
   const base = createEmptyTenderWorkflowProjection()
   const normalized = { id: 'normalized-data', kind: 'normalized-data' as const, fileName: 'normalized.json', mediaType: 'application/json', rowCount: 2, createdAt, accessToken: 'normalized-token' }
   const classified = { id: 'classified-data', kind: 'classified-data' as const, fileName: 'classified.json', mediaType: 'application/json', rowCount: 2, createdAt, accessToken: 'classified-token' }
@@ -137,7 +137,7 @@ function renderS4(sendIntent = vi.fn(async (_intent: unknown) => {}), analysisCo
     projection={{ status: 'ready', projection: projection(analysisComplete) }}
     navigation={createTenderWorkbenchNavigationController()}
     sendIntent={sendIntent}
-    createCommandId={() => 'command-s4'}
+    createIntentId={() => 'intent-s4'}
     loadReviewRows={loadReviewRows}
     t={t}
   />)
@@ -229,12 +229,14 @@ describe('S4 analysis and review workbench', () => {
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
     expect(analyze).toHaveProperty('disabled', true)
     expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({
-      kind: 'analysis.request',
-      activeDatasetRef: 'normalized-data',
-      classificationArtifactRef: 'classified-data',
-      ruleSetVersion: 'rules-v1',
-      projectionRevision: 4,
-      scope: { kind: 'all-eligible' },
+      kind: 'analysis.run',
+      binding: {
+        activeDatasetRef: 'normalized-data',
+        classificationArtifactRef: 'classified-data',
+        ruleSetVersion: 'rules-v1',
+        projectionRevision: 4,
+      },
+      payload: { scope: { kind: 'all-eligible' } },
     })
   })
 
@@ -258,10 +260,10 @@ describe('S4 analysis and review workbench', () => {
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
     expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({
       kind: 'review.apply',
-      recordRefs: ['row-proposed'],
-      decision: 'confirmed-candidate',
-      note: '作为重点前期线索，等待采购计划。',
-      analysisVersion: 'analysis-v1',
+      binding: { basis: { kind: 'classified', analysisVersion: 'analysis-v1' } },
+      payload: { decisions: [{
+        recordRef: 'row-proposed', decision: 'confirmed-candidate', note: '作为重点前期线索，等待采购计划。',
+      }] },
     })
   })
 
@@ -289,9 +291,9 @@ describe('S4 analysis and review workbench', () => {
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
     expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({
       kind: 'review.apply',
-      recordRefs: ['row-proposed'],
-      decision: 'confirmed-candidate',
-      note: '逐条决定，不应污染批量输入。',
+      payload: { decisions: [{
+        recordRef: 'row-proposed', decision: 'confirmed-candidate', note: '逐条决定，不应污染批量输入。',
+      }] },
     })
   })
 
@@ -312,12 +314,12 @@ describe('S4 analysis and review workbench', () => {
     }))
     const navigation = createTenderWorkbenchNavigationController()
     const sendIntent = vi.fn(async (_intent: unknown) => {})
-    const renderView = (workflow: TenderWorkflowProjectionV1) => <TenderWorkbenchView
+    const renderView = (workflow: TenderWorkflowProjectionV2) => <TenderWorkbenchView
       sessionId={'session-s4' as never}
       projection={{ status: 'ready', projection: workflow }}
       navigation={navigation}
       sendIntent={sendIntent}
-      createCommandId={() => 'command-s4'}
+      createIntentId={() => 'intent-s4'}
       loadReviewRows={loadReviewRows}
       t={t}
     />

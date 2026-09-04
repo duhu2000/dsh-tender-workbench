@@ -148,6 +148,26 @@ function Get-ContentAddressedName {
   return "$Name-$Version-$($Sha256.Substring(0, 12).ToLowerInvariant()).tgz"
 }
 
+function Test-ContentAddressedTarball {
+  param(
+    [AllowNull()] [string]$Path,
+    [string]$StableDirectory,
+    [string]$Version
+  )
+  if (-not $Path -or -not [IO.File]::Exists($Path)) { return $false }
+  $fullPath = [IO.Path]::GetFullPath($Path)
+  $fullDirectory = [IO.Path]::GetFullPath($StableDirectory).TrimEnd([IO.Path]::DirectorySeparatorChar)
+  if (-not $fullPath.StartsWith(
+    $fullDirectory + [IO.Path]::DirectorySeparatorChar,
+    [StringComparison]::OrdinalIgnoreCase
+  )) {
+    return $false
+  }
+  $sha256 = Get-Sha256 $fullPath
+  $expectedName = Get-ContentAddressedName $PluginName $Version $sha256
+  return [IO.Path]::GetFileName($fullPath).Equals($expectedName, [StringComparison]::OrdinalIgnoreCase)
+}
+
 function Assert-Tarball {
   param([string]$Tarball, [string]$RepositoryRoot, [string]$Version)
   $listParameters = @{
@@ -360,6 +380,21 @@ function Invoke-SelfTest {
     Enter-MountLock $lockPath
     Assert-True ([IO.File]::Exists((Join-Path $lockPath 'owner.json'))) 'Mount lock acquisition failed.'
     Exit-MountLock $lockPath
+    $firstSource = Join-Path $testRoot 'first.tgz'
+    $secondSource = Join-Path $testRoot 'second.tgz'
+    [IO.File]::WriteAllText($firstSource, 'first bundle')
+    [IO.File]::WriteAllText($secondSource, 'second bundle')
+    $firstName = Get-ContentAddressedName $PluginName '0.2.1-beta.2' (Get-Sha256 $firstSource)
+    $secondName = Get-ContentAddressedName $PluginName '0.2.1-beta.2' (Get-Sha256 $secondSource)
+    Assert-True ($firstName -ne $secondName) 'Changed bytes reused a tarball filename.'
+    $firstStable = Join-Path $testRoot $firstName
+    [IO.File]::Copy($firstSource, $firstStable)
+    Assert-True (
+      Test-ContentAddressedTarball $firstStable $testRoot '0.2.1-beta.2'
+    ) 'Content-addressed tarball validation failed.'
+    Assert-True (
+      -not (Test-ContentAddressedTarball $firstSource $testRoot '0.2.1-beta.2')
+    ) 'A fixed tarball filename passed content-address validation.'
   } finally {
     if ([IO.Directory]::Exists($testRoot)) { [IO.Directory]::Delete($testRoot, $true) }
   }
@@ -391,9 +426,18 @@ if (-not [IO.File]::Exists($profileManifestPath)) { throw "Missing web Profile: 
 $modules = Read-ModulesMetadata (Join-Path $profileDirectory 'node_modules\.modules.yaml')
 $profilePnpm = Get-PnpmVersion $modules.PackageManager
 $corepack = Resolve-Corepack
+$stableDirectory = Join-Path $profileDirectory "tarballs\$PluginName"
 
 if ($CheckOnly) {
   $profileManifest = Get-Content -LiteralPath $profileManifestPath -Raw | ConvertFrom-Json
+  $currentDependency = [string]$profileManifest.dependencies.$PluginName
+  $currentTarball = Resolve-FileSpecifier $currentDependency $profileDirectory
+  $installedManifestPath = Join-Path $profileDirectory "node_modules\$PluginName\package.json"
+  $currentVersion = if ([IO.File]::Exists($installedManifestPath)) {
+    [string](Get-Content -LiteralPath $installedManifestPath -Raw | ConvertFrom-Json).version
+  } else {
+    [string]$repositoryManifest.version
+  }
   $repositoryVersionCheck = @{
     Corepack = $corepack
     Version = $repositoryPnpm
@@ -428,7 +472,8 @@ if ($CheckOnly) {
       repositoryPnpm = $actualRepositoryPnpm
       profilePnpm = $actualPnpm
       profileStore = $actualStore
-      currentDependency = [string]$profileManifest.dependencies.$PluginName
+      currentDependency = $currentDependency
+      dependencyIsContentAddressed = Test-ContentAddressedTarball $currentTarball $stableDirectory $currentVersion
       dshReferenceVersion = $DshReferenceVersion
       corepack = $corepack
     } | ConvertTo-Json
@@ -438,39 +483,41 @@ if ($CheckOnly) {
   return
 }
 
-Write-Output "Building and packing with pnpm@$repositoryPnpm..."
-$repositoryEnvironment = @{ pnpm_config_verify_deps_before_run = 'false' }
-$buildParameters = @{
-  Corepack = $corepack
-  Version = $repositoryPnpm
-  Arguments = @('run', 'build')
-  WorkingDirectory = $repositoryRoot
-  Environment = $repositoryEnvironment
-}
-Invoke-Pnpm @buildParameters
-$packageDirectory = Join-Path $repositoryRoot 'artifacts\packages'
-[IO.Directory]::CreateDirectory($packageDirectory) | Out-Null
-$packParameters = @{
-  Corepack = $corepack
-  Version = $repositoryPnpm
-  Arguments = @('--config.ignore-scripts=true', 'pack', '--json', '--pack-destination', $packageDirectory)
-  WorkingDirectory = $repositoryRoot
-  Environment = $repositoryEnvironment
-  Capture = $true
-}
-$null = Invoke-Pnpm @packParameters
-$version = [string]$repositoryManifest.version
-$packageTarball = Join-Path $packageDirectory "$PluginName-$version.tgz"
-Assert-True ([IO.File]::Exists($packageTarball)) "Pack did not create $packageTarball."
-Assert-Tarball $packageTarball $repositoryRoot $version
-$sha256 = Get-Sha256 $packageTarball
-
-$stableDirectory = Join-Path $profileDirectory "tarballs\$PluginName"
-[IO.Directory]::CreateDirectory($stableDirectory) | Out-Null
-$lockDirectory = Join-Path $stableDirectory '.mount.lock'
-Enter-MountLock $lockDirectory
-$shimDirectory = $null
+$packageDirectory = $null
 try {
+  Write-Output "Building and packing with pnpm@$repositoryPnpm..."
+  $repositoryEnvironment = @{ pnpm_config_verify_deps_before_run = 'false' }
+  $buildParameters = @{
+    Corepack = $corepack
+    Version = $repositoryPnpm
+    Arguments = @('run', 'build')
+    WorkingDirectory = $repositoryRoot
+    Environment = $repositoryEnvironment
+  }
+  Invoke-Pnpm @buildParameters
+  # pnpm may reuse a same-version local tarball when its specifier path is unchanged.
+  $packageDirectory = Join-Path ([IO.Path]::GetTempPath()) "dsh-tender-pack-$([guid]::NewGuid().ToString('N'))"
+  [IO.Directory]::CreateDirectory($packageDirectory) | Out-Null
+  $packParameters = @{
+    Corepack = $corepack
+    Version = $repositoryPnpm
+    Arguments = @('--config.ignore-scripts=true', 'pack', '--json', '--pack-destination', $packageDirectory)
+    WorkingDirectory = $repositoryRoot
+    Environment = $repositoryEnvironment
+    Capture = $true
+  }
+  $null = Invoke-Pnpm @packParameters
+  $version = [string]$repositoryManifest.version
+  $packageTarball = Join-Path $packageDirectory "$PluginName-$version.tgz"
+  Assert-True ([IO.File]::Exists($packageTarball)) "Pack did not create $packageTarball."
+  Assert-Tarball $packageTarball $repositoryRoot $version
+  $sha256 = Get-Sha256 $packageTarball
+
+  [IO.Directory]::CreateDirectory($stableDirectory) | Out-Null
+  $lockDirectory = Join-Path $stableDirectory '.mount.lock'
+  Enter-MountLock $lockDirectory
+  $shimDirectory = $null
+  try {
   $profileBefore = [IO.File]::ReadAllText($profileManifestPath)
   $profileBeforeHash = [Convert]::ToHexString(
     [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($profileBefore))
@@ -497,6 +544,9 @@ try {
   } else {
     [IO.File]::Copy($packageTarball, $stableTarball, $false)
   }
+  Assert-True (
+    Test-ContentAddressedTarball $stableTarball $stableDirectory $version
+  ) 'The DSH install candidate is not a verified content-addressed tarball.'
 
   $shimDirectory = New-PnpmShim $corepack $profilePnpm
   $pinnedEnvironment = @{ PATH = "$shimDirectory$([IO.Path]::PathSeparator)$env:PATH" }
@@ -520,6 +570,9 @@ try {
   Assert-True (Test-EqualPath $actualStore $modules.StoreDir) "Profile store mismatch: $actualStore."
 
   $currentTarball = Resolve-FileSpecifier $currentDependency $profileDirectory
+  if ($currentTarball -and -not (Test-ContentAddressedTarball $currentTarball $stableDirectory $version)) {
+    Write-Warning "Replacing non-content-addressed Profile dependency: $currentDependency"
+  }
   $installedRoot = Join-Path $profileDirectory "node_modules\$PluginName"
   $alreadyMounted = $currentTarball -and (Test-EqualPath $currentTarball $stableTarball) -and
     [IO.File]::Exists((Join-Path $installedRoot 'lib\index.js')) -and
@@ -594,9 +647,14 @@ try {
     installed = -not $alreadyMounted
     url = "http://127.0.0.1:$WebPort/"
   } | ConvertTo-Json
-} finally {
-  if ($shimDirectory -and [IO.Directory]::Exists($shimDirectory)) {
-    [IO.Directory]::Delete($shimDirectory, $true)
+  } finally {
+    if ($shimDirectory -and [IO.Directory]::Exists($shimDirectory)) {
+      [IO.Directory]::Delete($shimDirectory, $true)
+    }
+    Exit-MountLock $lockDirectory
   }
-  Exit-MountLock $lockDirectory
+} finally {
+  if ($packageDirectory -and [IO.Directory]::Exists($packageDirectory)) {
+    [IO.Directory]::Delete($packageDirectory, $true)
+  }
 }

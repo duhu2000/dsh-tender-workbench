@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { createArtifactRouteHandler } from './host/artifacts/artifact-route.ts'
-import { CommandReceiptCoordinator } from './host/artifacts/command-receipts.ts'
+import { IntentReceiptCoordinator } from './host/artifacts/intent-receipts.ts'
 import { registerArtifactRoute } from './host/artifacts/register-route.ts'
 import type { SessionPersistenceLocator } from './host/artifacts/store.ts'
 import { tenderWorkflowProjectionDefinition } from './host/projection.ts'
@@ -11,18 +11,21 @@ import {
   createTenderWorkbenchConfirmRulesTool,
   createTenderWorkbenchPreviewRulesTool,
 } from './host/tools/rule-tools.ts'
-import { createTenderWorkbenchScreeningContextTool } from './host/tools/screening-context-tool.ts'
-import { registerTenderAgentSkill } from './host/skill.ts'
+import { createTenderWorkbenchRuleDraftingContextTool } from './host/tools/screening-context-tool.ts'
+import { registerTenderWorkflowSkills } from './host/skills/index.ts'
 import {
-  createTenderWorkbenchAnalysisCommitTool,
-  createTenderWorkbenchAnalysisNextTool,
+  createTenderWorkbenchAnalysisRecordContextTool,
   createTenderWorkbenchApplyReviewTool,
+  createTenderWorkbenchCommitAnalysisBatchTool,
+  createTenderWorkbenchPrepareAnalysisBatchTool,
   createTenderWorkbenchRevertReviewTool,
 } from './host/tools/analysis-review-tools.ts'
 import {
-  createTenderWorkbenchGenerateReportTool,
-  createTenderWorkbenchReportContextTool,
+  createTenderWorkbenchCreateReportTool,
+  createTenderWorkbenchReportNarrativeContextTool,
+  createTenderWorkbenchRetryReportTool,
 } from './host/tools/report-tools.ts'
+import { createTenderWorkbenchWorkflowStateTool } from './host/tools/workflow-state-tool.ts'
 
 /** Public Host services required by the S2/S3 workflow and Session-private Artifact seam. */
 export const inject = ['sessionProjections', 'tools', 'sessionPersistence', 'webServer', 'sessions', 'skills']
@@ -40,7 +43,7 @@ function sessionPersistenceLocator(ctx: Context): SessionPersistenceLocator {
 export function apply(ctx: Context): void {
   ctx.sessionProjections.register(tenderWorkflowProjectionDefinition)
   const persistence = sessionPersistenceLocator(ctx)
-  const receipts = new CommandReceiptCoordinator()
+  const receipts = new IntentReceiptCoordinator()
   ctx.effect(() => ctx.tools.register(createTenderWorkbenchQueryTool({
     tools: ctx.tools,
     sessionProjections: ctx.sessionProjections,
@@ -53,12 +56,6 @@ export function apply(ctx: Context): void {
     receipts,
   }
   ctx.effect(() => ctx.tools.register(
-    createTenderWorkbenchScreeningContextTool({
-      sessionProjections: ctx.sessionProjections,
-      sessionPersistence: persistence,
-    }),
-  ), 'dsh-tender-workbench: screening context tool')
-  ctx.effect(() => ctx.tools.register(
     createTenderWorkbenchPreviewRulesTool(ruleDependencies),
   ), 'dsh-tender-workbench: preview rules tool')
   ctx.effect(() => ctx.tools.register(
@@ -70,11 +67,11 @@ export function apply(ctx: Context): void {
     receipts,
   }
   ctx.effect(() => ctx.tools.register(
-    createTenderWorkbenchAnalysisNextTool(analysisReviewDependencies),
-  ), 'dsh-tender-workbench: analysis next tool')
+    createTenderWorkbenchPrepareAnalysisBatchTool(analysisReviewDependencies),
+  ), 'dsh-tender-workbench: prepare analysis batch tool')
   ctx.effect(() => ctx.tools.register(
-    createTenderWorkbenchAnalysisCommitTool(analysisReviewDependencies),
-  ), 'dsh-tender-workbench: analysis commit tool')
+    createTenderWorkbenchCommitAnalysisBatchTool(analysisReviewDependencies),
+  ), 'dsh-tender-workbench: commit analysis batch tool')
   ctx.effect(() => ctx.tools.register(
     createTenderWorkbenchApplyReviewTool(analysisReviewDependencies),
   ), 'dsh-tender-workbench: apply review tool')
@@ -82,12 +79,27 @@ export function apply(ctx: Context): void {
     createTenderWorkbenchRevertReviewTool(analysisReviewDependencies),
   ), 'dsh-tender-workbench: revert review tool')
   ctx.effect(() => ctx.tools.register(
-    createTenderWorkbenchReportContextTool(analysisReviewDependencies),
-  ), 'dsh-tender-workbench: report context tool')
+    createTenderWorkbenchCreateReportTool(analysisReviewDependencies),
+  ), 'dsh-tender-workbench: create report tool')
   ctx.effect(() => ctx.tools.register(
-    createTenderWorkbenchGenerateReportTool(analysisReviewDependencies),
-  ), 'dsh-tender-workbench: generate report tool')
-  ctx.effect(() => registerTenderAgentSkill(ctx.skills), 'dsh-tender-workbench: Agent skill')
+    createTenderWorkbenchRetryReportTool(analysisReviewDependencies),
+  ), 'dsh-tender-workbench: retry report tool')
+  ctx.effect(() => ctx.tools.register(
+    createTenderWorkbenchWorkflowStateTool({ sessionProjections: ctx.sessionProjections }),
+  ), 'dsh-tender-workbench: workflow state tool')
+  ctx.effect(() => ctx.tools.register(
+    createTenderWorkbenchRuleDraftingContextTool({
+      sessionProjections: ctx.sessionProjections,
+      sessionPersistence: persistence,
+    }),
+  ), 'dsh-tender-workbench: rule drafting context tool')
+  ctx.effect(() => ctx.tools.register(
+    createTenderWorkbenchAnalysisRecordContextTool(analysisReviewDependencies),
+  ), 'dsh-tender-workbench: analysis record context tool')
+  ctx.effect(() => ctx.tools.register(
+    createTenderWorkbenchReportNarrativeContextTool(analysisReviewDependencies),
+  ), 'dsh-tender-workbench: report narrative context tool')
+  ctx.effect(() => registerTenderWorkflowSkills(ctx.skills), 'dsh-tender-workbench: workflow skills')
   ctx.effect(() => registerArtifactRoute(
     ctx.webServer,
     createArtifactRouteHandler({ sessions: ctx.sessions, sessionPersistence: persistence }),

@@ -1,58 +1,31 @@
 import {
-  TenderQueryIntentV1Schema,
-  type TenderQueryIntentV1,
-} from '../../contracts/query-schema.ts'
-import {
-  QCC_PROPOSED_SEARCH_TOOL,
-  QCC_TENDER_SEARCH_TOOL,
-} from '../../contracts/query.ts'
+  TenderWorkbenchIntentV2Schema,
+  type TenderWorkbenchIntentV2,
+} from '../../contracts/intents.ts'
 import { toQccQueryBranches } from '../qcc-request.ts'
 import type { TenderFilters } from '../types.ts'
 
 export interface TenderQueryDraft {
-  readonly scope: TenderQueryIntentV1['scope']
+  readonly scope: 'tender' | 'proposed' | 'combined'
   readonly target: string
   readonly filters: TenderFilters
 }
 
-/** Build the one validated object shared by the form, visible message, and future Host tool. */
 export function createTenderQueryIntent(
   draft: TenderQueryDraft,
-  commandId: string,
+  intentId: string,
+  projectionRevision: number,
   now = new Date(),
-): TenderQueryIntentV1 {
+): TenderWorkbenchIntentV2 {
   const branches = toQccQueryBranches(draft.filters, draft.scope, now)
-  return TenderQueryIntentV1Schema.parse({
-    schemaVersion: 1,
-    commandId,
-    kind: 'query.start',
-    scope: draft.scope,
-    target: draft.target,
-    ...branches,
+  return TenderWorkbenchIntentV2Schema.parse({
+    schemaVersion: 2,
+    intentId,
+    kind: 'query.run',
+    skill: 'tender-workbench-query',
+    binding: { projectionRevision },
+    payload: { scope: draft.scope, target: draft.target, ...branches },
   })
 }
 
-function sourcePlan(intent: TenderQueryIntentV1): readonly string[] {
-  return [
-    ...(intent.tender === undefined ? [] : [QCC_TENDER_SEARCH_TOOL]),
-    ...(intent.proposed === undefined ? [] : [QCC_PROPOSED_SEARCH_TOOL]),
-  ]
-}
-
-/** Serialize a visible, auditable user message without a hidden Intent channel. */
-export function serializeTenderQueryIntent(intent: TenderQueryIntentV1): string {
-  const parsed = TenderQueryIntentV1Schema.parse(intent)
-  return [
-    '请执行招投标工作台查询。',
-    `查询目标：${parsed.target}`,
-    '',
-    '类型化查询意图（schemaVersion 1）：',
-    '```json',
-    JSON.stringify(parsed, null, 2),
-    '```',
-    '',
-    `请调用高层工作流工具 tender_workbench_query，并原样传递 commandId。计划数据源：${sourcePlan(parsed).join('、')}。`,
-    '仅使用已安装并获授权的 qcc-tender 能力；能力缺失时明确失败，不使用 Web 搜索替代。',
-    '查询工具返回后本轮立即结束；不得自动进入规则、分类、分析、复核或报告，不得猜测 activeDatasetRef、Artifact 引用或 Projection revision。后续动作只能由用户在工作台显式触发的新 Intent 启动。',
-  ].join('\n')
-}
+export { serializeTenderWorkbenchIntent as serializeTenderQueryIntent } from './screening-intent.ts'

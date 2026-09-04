@@ -10,16 +10,15 @@ import {
   IconWarningOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
-  type AnalysisFollowUpIntentV1,
   type ReviewRecordV1,
   type ReviewRowsFilterV1,
   type ReviewRowsPageV1,
 } from '../../contracts/analysis-review.ts'
-import type { TenderWorkbenchIntentV1 } from '../../contracts/screening-intents.ts'
+import type { TenderWorkbenchIntentV2 } from '../../contracts/intents.ts'
 import type {
   ArtifactRefV1,
   TenderRuleV1,
-  TenderWorkflowProjectionV1,
+  TenderWorkflowProjectionV2,
   UserDecision,
 } from '../../contracts/workflow.ts'
 import type { TenderTranslate } from '../fields/field-props.ts'
@@ -48,7 +47,7 @@ export type ReviewRowsLoader = (
   signal?: AbortSignal,
 ) => Promise<ReviewRowsPageV1>
 
-function currentRowsArtifact(workflow: TenderWorkflowProjectionV1): ArtifactRefV1 | undefined {
+function currentRowsArtifact(workflow: TenderWorkflowProjectionV2): ArtifactRefV1 | undefined {
   return workflow.review?.data
     ?? workflow.analysis?.data
     ?? workflow.classification?.data
@@ -162,11 +161,11 @@ function decisionLabel(t: TenderTranslate, decision: UserDecision, source: 'tend
 
 interface AnalysisViewProps {
   readonly sessionId: SessionId
-  readonly workflow: TenderWorkflowProjectionV1
+  readonly workflow: TenderWorkflowProjectionV2
   readonly loadRows: ReviewRowsLoader
   readonly write: SessionWriteFlight
-  readonly sendIntent: (intent: TenderWorkbenchIntentV1) => Promise<void>
-  readonly createCommandId: () => string
+  readonly sendIntent: (intent: TenderWorkbenchIntentV2) => Promise<void>
+  readonly createIntentId: () => string
   readonly onRunAnalysis: () => void
   readonly onOpenReview: () => void
   readonly footerTarget: HTMLElement | null
@@ -179,7 +178,7 @@ export function TenderAnalysisView({
   loadRows,
   write,
   sendIntent,
-  createCommandId,
+  createIntentId,
   onRunAnalysis,
   onOpenReview,
   footerTarget,
@@ -225,10 +224,10 @@ export function TenderAnalysisView({
     const recommendationValue = focused?.recommendation
     if (active === undefined || classification === undefined || analysis === undefined
       || focused?.classification === undefined || recommendationValue === undefined || question.trim() === '') return
-    let intent: AnalysisFollowUpIntentV1
+    let intent: TenderWorkbenchIntentV2
     try {
       intent = createAnalysisFollowUpIntent({
-        commandId: createCommandId(),
+        intentId: createIntentId(),
         activeDatasetRef: active.id,
         classificationArtifactRef: classification.data.id,
         ruleSetVersion: classification.ruleSetVersion,
@@ -236,20 +235,6 @@ export function TenderAnalysisView({
         projectionRevision: workflow.revision,
         recordRef: focused.project.recordId,
         question: question.trim(),
-        context: {
-          title: focused.project.title,
-          source: focused.project.source,
-          region: visibleRegion(focused, t),
-          amount: focused.project.amount.display,
-          stage: focused.project.stage.value ?? focused.project.stage.original,
-          timing: timingLabel(focused, t),
-          classification: focused.classification,
-          recommendation: recommendationValue.recommendation,
-          reason: recommendationValue.reason,
-          evidence: recommendationValue.evidence.slice(0, 12),
-          verificationItems: recommendationValue.verificationItems,
-          limitations: recommendationValue.limitations,
-        },
       })
     } catch {
       setQuestionState('failed')
@@ -329,7 +314,7 @@ export function TenderAnalysisView({
         <div className={css.footerCopy}><span className={css.footerHint}>{t(complete ? 'workbench.analysis.footerNote' : 'workbench.analysis.footerWaiting', { completed, total: eligibleTotal })}</span></div>
         <div className={css.footerActions}>
           {!complete && <button type="button" className={css.secondary} disabled={write.busy} onClick={onOpenReview}>{t('workbench.analysis.skip')}</button>}
-          <button type="button" className={css.primary} disabled={write.busy} onClick={complete ? onOpenReview : onRunAnalysis}>{complete ? t('workbench.analysis.openReview') : <SessionWriteButtonLabel action="analysis.request" idle={t(workflow.analysis === undefined ? 'workbench.classification.openAnalysis' : 'workbench.analysis.resume')} t={t} write={write} />}</button>
+          <button type="button" className={css.primary} disabled={write.busy} onClick={complete ? onOpenReview : onRunAnalysis}>{complete ? t('workbench.analysis.openReview') : <SessionWriteButtonLabel action="analysis.run" idle={t(workflow.analysis === undefined ? 'workbench.classification.openAnalysis' : 'workbench.analysis.resume')} t={t} write={write} />}</button>
         </div>
       </>, footerTarget)}
     </section>
@@ -338,7 +323,7 @@ export function TenderAnalysisView({
 
 interface ReviewViewProps {
   readonly sessionId: SessionId
-  readonly workflow: TenderWorkflowProjectionV1
+  readonly workflow: TenderWorkflowProjectionV2
   readonly loadRows: ReviewRowsLoader
   readonly loadRuleContent: RuleContentLoader
   readonly write: SessionWriteFlight
@@ -378,7 +363,7 @@ export function TenderReviewView({ sessionId, workflow, loadRows, loadRuleConten
   const reviewDetailRef = useRef<HTMLElement>(null)
   const queueTabs = useRef<Array<HTMLButtonElement | null>>([])
   const previousPageIds = useRef<readonly string[]>([])
-  const submitted = useRef<{ commandId: string, refs: readonly string[] }>()
+  const submitted = useRef<{ intentId: string, refs: readonly string[] }>()
   const queryRuleIds = useMemo(() => query.trim() === '' ? [] : rules
     .filter(rule => rule.name.toLocaleLowerCase('zh-CN').includes(query.trim().toLocaleLowerCase('zh-CN')))
     .map(rule => rule.id), [query, rules])
@@ -427,33 +412,39 @@ export function TenderReviewView({ sessionId, workflow, loadRows, loadRuleConten
   }, [focusedId, page, rows.data])
   useEffect(() => {
     const mutation = submitted.current
-    if (mutation === undefined || write.state.phase !== 'succeeded' || write.state.commandId !== mutation.commandId) return
+    if (mutation === undefined || write.state.phase !== 'succeeded' || write.state.intentId !== mutation.intentId) return
     setSelected(previous => new Set([...previous].filter(recordId => !mutation.refs.includes(recordId))))
     submitted.current = undefined
-  }, [write.state.commandId, write.state.phase])
-  const binding = (commandId: string) => {
+  }, [write.state.intentId, write.state.phase])
+  const binding = (intentId: string) => {
     const active = workflow.query?.normalizedData
     if (active === undefined) throw new Error('missing active dataset')
     return {
-      commandId,
+      intentId,
       activeDatasetRef: active.id,
       ...(workflow.classification === undefined ? {} : {
         classificationArtifactRef: workflow.classification.data.id,
         ruleSetVersion: workflow.classification.ruleSetVersion,
       }),
       ...(workflow.analysis === undefined ? {} : { analysisVersion: workflow.analysis.version }),
+      ...(workflow.review === undefined ? {} : { reviewArtifactRef: workflow.review.data.id }),
+      reviewRevision: workflow.review?.revision ?? 0,
       projectionRevision: workflow.revision,
     }
   }
   const apply = (recordRefs: readonly string[], decision: UserDecision, note: string): void => {
-    let commandId = ''
+    let intentId = ''
     const started = write.start('review.apply', value => {
-      commandId = value
+      intentId = value
       return createApplyReviewIntent({ ...binding(value), recordRefs: [...recordRefs], decision, note })
     })
-    if (started) submitted.current = { commandId, refs: recordRefs }
+    if (started) submitted.current = { intentId, refs: recordRefs }
   }
-  const revert = (): void => { write.start('review.revert', commandId => createRevertReviewIntent(binding(commandId))) }
+  const revert = (): void => {
+    const latestOperationRef = workflow.review?.latestOperationRef
+    if (latestOperationRef === undefined) return
+    write.start('review.revert', intentId => createRevertReviewIntent({ ...binding(intentId), latestOperationRef }))
+  }
   const resetView = (): void => { setPage(1); setSelected(new Set()); setFocusedId(undefined) }
   const toggle = (recordId: string): void => {
     setSelected((previous) => {
@@ -591,7 +582,7 @@ export function TenderReviewView({ sessionId, workflow, loadRows, loadRuleConten
             <label><span>{t('workbench.review.currentNote')}</span><textarea disabled={write.busy} maxLength={2048} value={currentNote} placeholder={t('workbench.review.notePlaceholder')} onChange={(event) => { setCurrentNote(event.target.value) }} /></label>
             <div className={css.decisionSaveRow}><span>{t('workbench.review.savedDecision', { decision: decisionLabel(t, focused.review.decision, focused.project.source) })}</span><button type="button" className={css.secondary} disabled={write.busy || currentDecision === 'pending'} onClick={() => { setCurrentDecision('pending') }}>{t('workbench.review.clearDecision')}</button><button type="button" className={css.primary} disabled={write.busy || !currentDirty} onClick={() => { apply([focused.project.recordId], currentDecision, currentNote) }}><SessionWriteButtonLabel action="review.apply" idle={t('workbench.review.saveCurrent')} t={t} write={write} /></button></div>
           </section>
-          <section className={css.reviewAudit}><h4>{t('workbench.review.auditTitle')}</h4>{audit.length === 0 && focused.recommendation === undefined ? <p>{t('workbench.review.auditEmpty')}</p> : <ol>{audit.map(entry => <li key={entry.operationId}><div><strong>{decisionLabel(t, entry.decision, focused.project.source)}</strong><span>{entry.appliedAt} · {entry.recordRefs.length > 1 ? t('workbench.review.auditBatch', { count: entry.recordRefs.length }) : t('workbench.review.auditSingle')}</span></div>{rows.data?.audit[0]?.operationId === entry.operationId && workflow.review?.canRevert === true ? <button type="button" className={css.ghostButton} disabled={write.busy} onClick={revert}>{t('workbench.review.auditRevert')}</button> : null}{entry.note === '' ? null : <p>{entry.note}</p>}</li>)}{focused.recommendation === undefined ? null : <li data-audit-kind="agent"><div><strong>{t('workbench.review.agentHistory', { recommendation: recommendationLabel(t, focused.recommendation.recommendation) })}</strong><span>{workflow.analysis?.version ?? focused.recommendation.batchId}</span></div></li>}</ol>}</section>
+          <section className={css.reviewAudit}><h4>{t('workbench.review.auditTitle')}</h4>{audit.length === 0 && focused.recommendation === undefined ? <p>{t('workbench.review.auditEmpty')}</p> : <ol>{audit.map(entry => <li key={`${entry.operationId}:${entry.decision}:${entry.note}`}><div><strong>{decisionLabel(t, entry.decision, focused.project.source)}</strong><span>{entry.appliedAt} · {entry.recordRefs.length > 1 ? t('workbench.review.auditBatch', { count: entry.recordRefs.length }) : t('workbench.review.auditSingle')}</span></div>{workflow.review?.latestOperationRef === entry.operationId && workflow.review.canRevert ? <button type="button" className={css.ghostButton} disabled={write.busy} onClick={revert}>{t('workbench.review.auditRevert')}</button> : null}{entry.note === '' ? null : <p>{entry.note}</p>}</li>)}{focused.recommendation === undefined ? null : <li data-audit-kind="agent"><div><strong>{t('workbench.review.agentHistory', { recommendation: recommendationLabel(t, focused.recommendation.recommendation) })}</strong><span>{workflow.analysis?.version ?? focused.recommendation.batchId}</span></div></li>}</ol>}</section>
           <div className={css.reviewSnapshotHint}><strong>{pending === 0 ? t('workbench.review.snapshotComplete') : t('workbench.review.snapshotPartial')}</strong><p>{pending === 0 ? t('workbench.review.snapshotCompleteDescription') : t('workbench.review.snapshotPartialDescription', { count: pending })}</p></div>
         </aside>}
       </div>

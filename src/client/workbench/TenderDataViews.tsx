@@ -7,7 +7,7 @@ import type {
 } from '../../contracts/dataset.ts'
 import type {
   ArtifactRefV1,
-  TenderWorkflowProjectionV1,
+  TenderWorkflowProjectionV2,
 } from '../../contracts/workflow.ts'
 import type { TenderTranslate } from '../fields/field-props.ts'
 import type { SessionWriteFlight } from './session-write-flight.ts'
@@ -34,7 +34,7 @@ export type TenderRowsLoader = (
 ) => Promise<ArtifactRowsPageV1>
 
 interface TenderDataOverviewProps {
-  readonly workflow: TenderWorkflowProjectionV1
+  readonly workflow: TenderWorkflowProjectionV2
   readonly onOpenDetails: () => void
   readonly onRequery: () => void
   readonly onContinue: () => void
@@ -42,7 +42,7 @@ interface TenderDataOverviewProps {
   readonly t: TenderTranslate
 }
 
-function sourceLoaded(workflow: TenderWorkflowProjectionV1, source: 'tender' | 'proposed'): number {
+function sourceLoaded(workflow: TenderWorkflowProjectionV2, source: 'tender' | 'proposed'): number {
   return workflow.query?.sources[source]?.loaded ?? 0
 }
 

@@ -1,15 +1,15 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import type { ISessions, ObservableSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  TenderWorkflowProjectionV1Schema,
-  type TenderWorkflowProjectionV1,
+  TenderWorkflowProjectionV2Schema,
+  type TenderWorkflowProjectionV2,
 } from '../contracts/workflow.ts'
 
 export type TenderProjectionRead =
   | { readonly status: 'unavailable' }
   | { readonly status: 'empty' }
   | { readonly status: 'invalid' }
-  | { readonly status: 'ready'; readonly projection: TenderWorkflowProjectionV1 }
+  | { readonly status: 'ready'; readonly projection: TenderWorkflowProjectionV2 }
 
 export interface TenderProjectionSource extends ObservableSnapshot<TenderProjectionRead> {}
 
@@ -25,7 +25,7 @@ const INVALID: TenderProjectionRead = Object.freeze({ status: 'invalid' })
 export function readTenderProjectionSnapshot(raw: unknown): TenderProjectionRead {
   if (raw === undefined) return UNAVAILABLE
   if (raw === null) return EMPTY
-  const parsed = TenderWorkflowProjectionV1Schema.safeParse(raw)
+  const parsed = TenderWorkflowProjectionV2Schema.safeParse(raw)
   return parsed.success
     ? { status: 'ready', projection: parsed.data }
     : INVALID

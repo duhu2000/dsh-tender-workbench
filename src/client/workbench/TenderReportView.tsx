@@ -9,7 +9,7 @@ import type {
   ReportDistributionV2,
   ReportNarrativeV1,
 } from '../../contracts/reporting.ts'
-import type { ArtifactRefV1, TenderWorkflowProjectionV1 } from '../../contracts/workflow.ts'
+import type { ArtifactRefV1, TenderWorkflowProjectionV2 } from '../../contracts/workflow.ts'
 import type { TenderTranslate } from '../fields/field-props.ts'
 import { createGenerateReportIntent, createRetryReportIntent } from '../intents/screening-intent.ts'
 import type { SessionWriteFlight } from './session-write-flight.ts'
@@ -26,7 +26,7 @@ export type ReportDeliveryViewLoader = (
 
 interface TenderReportViewProps {
   readonly sessionId: SessionId
-  readonly workflow: TenderWorkflowProjectionV1
+  readonly workflow: TenderWorkflowProjectionV2
   readonly write: SessionWriteFlight
   readonly loadView: ReportDeliveryViewLoader
   readonly download: ReportArtifactDownloader
@@ -48,7 +48,7 @@ function ReportIcon({ name }: { readonly name: 'chart' | 'file' | 'info' | 'chec
   return <svg className={css.icon} viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>
 }
 
-function reportBinding(workflow: TenderWorkflowProjectionV1) {
+function reportBinding(workflow: TenderWorkflowProjectionV2) {
   const active = workflow.query?.normalizedData
   if (active === undefined) throw new Error('missing active dataset')
   const review = workflow.review
@@ -99,7 +99,7 @@ function formatTimestamp(value: string): string {
   }).format(date).replaceAll('/', '-')
 }
 
-function fileStatusLabel(t: TenderTranslate, status: NonNullable<TenderWorkflowProjectionV1['report']>['excel']['status']): string {
+function fileStatusLabel(t: TenderTranslate, status: NonNullable<TenderWorkflowProjectionV2['report']>['excel']['status']): string {
   return t(`workbench.report.fileStatus.${status}`)
 }
 
@@ -108,7 +108,7 @@ function ReportFooter({ target, children }: { readonly target: HTMLElement | nul
 }
 
 function ReportHero({ workflow, t }: {
-  readonly workflow: TenderWorkflowProjectionV1
+  readonly workflow: TenderWorkflowProjectionV2
   readonly t: TenderTranslate
 }) {
   const report = workflow.report
@@ -319,7 +319,7 @@ function OpportunitiesPane({ view, excel, downloadExcel, t }: {
 
 function FileCard({ format, state, retry, download, write, t }: {
   readonly format: 'excel' | 'pdf'
-  readonly state: NonNullable<TenderWorkflowProjectionV1['report']>['excel']
+  readonly state: NonNullable<TenderWorkflowProjectionV2['report']>['excel']
   readonly retry: () => void
   readonly download: () => void
   readonly write: SessionWriteFlight
@@ -341,7 +341,7 @@ function FileCard({ format, state, retry, download, write, t }: {
 }
 
 function FilesPane({ workflow, retry, download, write, downloadError, t }: {
-  readonly workflow: TenderWorkflowProjectionV1
+  readonly workflow: TenderWorkflowProjectionV2
   readonly retry: (format: 'excel' | 'pdf') => void
   readonly download: (artifact: ArtifactRefV1) => void
   readonly write: SessionWriteFlight
@@ -353,7 +353,7 @@ function FilesPane({ workflow, retry, download, write, downloadError, t }: {
   return <div className={css.reportFilesPane}><div className={css.reportNotice}><ReportIcon name="info" /><p><strong>{t('workbench.report.filesIndependent')}</strong> {t('workbench.report.filesDescription')}</p></div><div className={css.deliveryFileGrid}><FileCard format="excel" state={report.excel} retry={() => { retry('excel') }} download={() => { if (report.excel.artifact !== undefined) download(report.excel.artifact) }} write={write} t={t} /><FileCard format="pdf" state={report.pdf} retry={() => { retry('pdf') }} download={() => { if (report.pdf.artifact !== undefined) download(report.pdf.artifact) }} write={write} t={t} /></div>{downloadError === undefined ? null : <p className={css.inlineError} role="alert">{downloadError}</p>}<SessionWriteProgress t={t} write={write} /></div>
 }
 
-function ProvenancePane({ view, workflow, t }: { readonly view: ReportDeliveryViewV1, readonly workflow: TenderWorkflowProjectionV1, readonly t: TenderTranslate }) {
+function ProvenancePane({ view, workflow, t }: { readonly view: ReportDeliveryViewV1, readonly workflow: TenderWorkflowProjectionV2, readonly t: TenderTranslate }) {
   const sourceText = (source: 'tender' | 'proposed') => {
     const state = view.query.sources[source]
     if (state === undefined) return t('workbench.report.provenance.notRequested')
@@ -368,7 +368,7 @@ export function TenderReportView({ sessionId, workflow, write, loadView, downloa
   const report = workflow.report
   const pending = workflow.review?.pending ?? workflow.query?.total ?? 0
   const [confirmPending, setConfirmPending] = useState(false)
-  const [includeNarrative, setIncludeNarrative] = useState(true)
+  const [includeNarrative, setIncludeNarrative] = useState(false)
   const [downloadError, setDownloadError] = useState<string>()
   const [selectedTab, setSelectedTab] = useState<ReportTab>('summary')
   const [loadRevision, setLoadRevision] = useState(0)
@@ -400,8 +400,8 @@ export function TenderReportView({ sessionId, workflow, write, loadView, downloa
   }, [sessionId, report?.finalSnapshot?.id, report?.finalSnapshotId, loadRevision, loadView])
 
   const startCreate = (): void => {
-    write.start('report.create', commandId => createGenerateReportIntent({
-      commandId,
+    write.start('report.create', intentId => createGenerateReportIntent({
+      intentId,
       ...reportBinding(workflow),
       confirmPending,
       includeNarrative,
@@ -409,7 +409,7 @@ export function TenderReportView({ sessionId, workflow, write, loadView, downloa
   }
   const retry = (format: 'excel' | 'pdf'): void => {
     if (report?.finalSnapshotId === undefined) return
-    write.start('report.retry', commandId => createRetryReportIntent({ commandId, projectionRevision: workflow.revision, finalSnapshotId: report.finalSnapshotId ?? '', formats: [format] }))
+    write.start('report.retry', intentId => createRetryReportIntent({ intentId, projectionRevision: workflow.revision, finalSnapshotId: report.finalSnapshotId ?? '', formats: [format] }))
   }
   const downloadFile = (artifact: ArtifactRefV1): void => {
     setDownloadError(undefined)

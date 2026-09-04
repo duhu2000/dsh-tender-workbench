@@ -1,4 +1,4 @@
-import type { TenderWorkflowProjectionV1 } from '../../contracts/workflow.ts'
+import type { TenderWorkflowProjectionV2 } from '../../contracts/workflow.ts'
 import type { TenderProjectionRead } from '../tender-projection-port.ts'
 
 export type TenderWorkbenchDisplayStatus =
@@ -10,13 +10,13 @@ export type TenderWorkbenchDisplayStatus =
   | 'ready'
 
 export interface PendingTenderIntent {
-  readonly commandId: string
+  readonly intentId: string
   readonly revision: number
   readonly stage?: 'query' | 'rules' | 'classification' | 'analysis' | 'review' | 'report'
 }
 
 export function hasCompletedLightweightQuery(
-  projection: TenderWorkflowProjectionV1 | undefined,
+  projection: TenderWorkflowProjectionV2 | undefined,
 ): boolean {
   return projection?.stages.query.status === 'succeeded'
     && projection.stages.overview.status === 'succeeded'

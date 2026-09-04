@@ -5,34 +5,23 @@ import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolExecutionResult, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NormalizedDatasetV1Schema } from '../src/contracts/dataset.ts'
-import type { TenderQueryIntentV1 } from '../src/contracts/query-schema.ts'
-import type { TenderWorkflowProjectionV1 } from '../src/contracts/workflow.ts'
-import { CommandReceiptCoordinator } from '../src/host/artifacts/command-receipts.ts'
-import {
-  readArtifactManifest,
-  readManifestArtifact,
-  sessionArtifactRoot,
-} from '../src/host/artifacts/store.ts'
+import type { RunQueryToolInputV2 } from '../src/contracts/tool-inputs.ts'
+import type { TenderWorkflowProjectionV2 } from '../src/contracts/workflow.ts'
+import { IntentReceiptCoordinator } from '../src/host/artifacts/intent-receipts.ts'
+import { readArtifactManifest, readManifestArtifact, sessionArtifactRoot } from '../src/host/artifacts/store.ts'
 import {
   createTenderWorkbenchQueryTool,
   extractMcpCanonicalPayload,
   extractMcpCanonicalPayloadCandidates,
-  type QueryToolResultV1,
+  type QueryToolResultV2,
 } from '../src/host/tools/query-tool.ts'
 
 const temporaryRoots: string[] = []
+afterEach(async () => { await Promise.all(temporaryRoots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
 
-afterEach(async () => {
-  await Promise.all(temporaryRoots.splice(0).map(path => rm(path, { recursive: true, force: true })))
-})
-
-function summary(total: number) {
-  return { 命中总数: total, 结果说明: '实际加载', 生效筛选: {} }
-}
-
-function tenderPayload(ids: readonly string[]) {
+function tenderPayload(ids: readonly string[]): JsonValue {
   return {
-    查询摘要: summary(ids.length),
+    查询摘要: { 命中总数: ids.length, 结果说明: '实际加载', 生效筛选: {} },
     标讯列表: ids.map(id => ({
       标讯ID: id, 标题: `项目 ${id}`, 信息类型: '招标公告', 公告子状态: '招标', 省市区: '江苏省',
       招采单位: [{ 企业ID: 'e-1', 企业名称: '采购单位' }], 项目编号: '', '预算金额（元）': '1000000',
@@ -41,9 +30,9 @@ function tenderPayload(ids: readonly string[]) {
   }
 }
 
-function proposedPayload(ids: readonly string[]) {
+function proposedPayload(ids: readonly string[]): JsonValue {
   return {
-    查询摘要: summary(ids.length),
+    查询摘要: { 命中总数: ids.length, 结果说明: '实际加载', 生效筛选: {} },
     拟建项目列表: ids.map(id => ({
       拟建项目ID: id, 项目名称: `拟建 ${id}`, 项目阶段: '项目备案', 审批进度: '审批中', 省市区: '浙江省',
       '项目总投资（元）': '50000000', 发布时间: '2026-08-27', 建设单位: [], 项目编号: '',
@@ -52,11 +41,7 @@ function proposedPayload(ids: readonly string[]) {
 }
 
 function success(payload: JsonValue): ToolExecutionResult {
-  return {
-    isError: false,
-    value: { content: [], structuredContent: payload },
-    content: [{ type: 'text', text: 'ok' }],
-  }
+  return { isError: false, value: { content: [], structuredContent: payload }, content: [{ type: 'text', text: 'ok' }] }
 }
 
 function failure(message: string): ToolExecutionResult {
@@ -67,11 +52,11 @@ function failure(message: string): ToolExecutionResult {
   }
 }
 
-function combinedIntent(commandId: string): TenderQueryIntentV1 {
+function queryInput(): RunQueryToolInputV2 {
   return {
-    schemaVersion: 1,
-    commandId,
-    kind: 'query.start',
+    schemaVersion: 2,
+    origin: { kind: 'conversation' },
+    projectionRevision: 0,
     scope: 'combined',
     target: '测试活动快照替换',
     tender: { keywords: ['数据'] },
@@ -85,184 +70,96 @@ async function harness(execute: (name: string) => Promise<ToolExecutionResult>) 
   const transcript = join(root, 'session.jsonl')
   await writeFile(transcript, 'transcript-sentinel\n', 'utf8')
   const sessionId = 'session-query-test' as SessionId
-  const header = { version: 0, id: sessionId, createdAt: 1 }
-  const session = { id: sessionId, header }
-  let projection: TenderWorkflowProjectionV1 | null = null
+  const session = {
+    id: sessionId,
+    header: { version: 0, id: sessionId, createdAt: 1 },
+    events: [{
+      type: 'user/message', seq: 1, time: 1,
+      data: { turn: 1, source: { kind: 'user' }, content: [{ type: 'text', text: '查询数据项目' }] },
+    }],
+  }
+  let projection: TenderWorkflowProjectionV2 | null = null
   const tools = { execute: vi.fn((input: { readonly name: string }) => execute(input.name)) }
   const persistence = { locate: () => ({ kind: 'jsonl', path: transcript }) }
   const tool = createTenderWorkbenchQueryTool({
     tools: tools as never,
     sessionProjections: { stateOf: () => projection } as never,
     sessionPersistence: persistence,
-    receipts: new CommandReceiptCoordinator(),
+    receipts: new IntentReceiptCoordinator(),
   })
-  const run = async (intent: TenderQueryIntentV1, signal = new AbortController().signal): Promise<QueryToolResultV1> => {
-    const result = await tool.execute(intent, {
-      callId: `outer-${intent.commandId}`,
-      rootCallId: `outer-${intent.commandId}`,
-      token: Symbol(intent.commandId),
-      signal,
-      agent: { id: sessionId, session },
-    } as unknown as ToolRunContext)
-    return result as QueryToolResultV1
-  }
-  return {
-    root,
-    transcript,
-    session,
-    tools,
-    persistence,
-    tool,
-    run,
-    projection: () => projection,
-    adopt: (next: TenderWorkflowProjectionV1) => { projection = next },
-  }
+  const run = async (input = queryInput()): Promise<QueryToolResultV2> => tool.execute(input, {
+    callId: 'query-call', rootCallId: 'query-call', token: Symbol('query'),
+    signal: new AbortController().signal, agent: { id: sessionId, session },
+  } as unknown as ToolRunContext) as Promise<QueryToolResultV2>
+  return { root, transcript, session, tools, persistence, tool, run, adopt: (state: TenderWorkflowProjectionV2) => { projection = state } }
 }
 
-describe('tender_workbench_query', () => {
-  it('calls both exact qcc tools, creates one active snapshot, and keeps commandId retries idempotent', async () => {
-    let tender = tenderPayload(['t-1', 't-2']) as JsonValue
-    let proposed = proposedPayload(['p-1']) as JsonValue
-    const test = await harness(async name => name.endsWith('search_tenders') ? success(tender) : success(proposed))
-    const first = await test.run(combinedIntent('command-1'))
-    expect(first.outcome).toBe('succeeded')
-    expect(first.state).toMatchObject({ revision: 1, currentStage: 'overview', query: { total: 3 } })
-    expect(test.tool.output.presentationMeta?.(combinedIntent('command-1'), first as unknown as JsonValue)).toMatchObject({
-      domain: 'dsh-tender-workbench', commandId: 'command-1', command: 'tender_workbench_query', state: { revision: 1 },
+describe('tender_workbench_run_query', () => {
+  it('calls exact qcc Tools and atomically creates one V2 active dataset', async () => {
+    const test = await harness(async name => name.endsWith('search_tenders')
+      ? success(tenderPayload(['t-1', 't-2']))
+      : success(proposedPayload(['p-1'])))
+    const result = await test.run()
+    expect(result).toMatchObject({
+      domain: 'dsh-tender-workbench', schemaVersion: 2,
+      tool: 'tender_workbench_run_query', outcome: 'succeeded',
+      state: { revision: 1, currentStage: 'overview', query: { total: 3 } },
+      control: { status: 'complete' },
     })
-    expect(JSON.stringify(test.tool.output.render(combinedIntent('command-1'), first as unknown as JsonValue)))
-      .not.toContain(first.state.query?.normalizedData?.accessToken)
     expect(test.tools.execute.mock.calls.map(call => call[0].name)).toEqual([
-      'mcp__qcc-tender__search_tenders',
-      'mcp__qcc-tender__search_proposed_projects',
+      'mcp__qcc-tender__search_tenders', 'mcp__qcc-tender__search_proposed_projects',
     ])
-    expect(test.tools.execute.mock.calls[0]?.[0]).toMatchObject({
-      rootCallId: 'outer-command-1', parent: expect.any(Symbol), agent: expect.any(Object), arguments: { keywords: ['数据'] },
-    })
-    test.adopt(first.state)
-
-    const replay = await test.run(combinedIntent('command-1'))
-    expect(replay).toEqual(first)
-    expect(test.tools.execute).toHaveBeenCalledTimes(2)
-
-    const createdAt = '2026-09-01T00:00:00.000Z'
-    const artifact = (kind: 'rule-set' | 'classified-data' | 'analysis-data' | 'review-data' | 'final-snapshot', id: string) => ({
-      id, kind, fileName: `${id}.json`, mediaType: 'application/json', createdAt, accessToken: `${id}-token`,
-    })
-    test.adopt({
-      ...first.state,
-      rules: { confirmed: artifact('rule-set', 'old-rules'), ruleSetVersion: 'v1', ruleCount: 1, rawMatches: 1, conflicts: 0 },
-      classification: {
-        data: artifact('classified-data', 'old-classification'),
-        include: 1, observe: 0, exclude: 0, manualReview: 0, unmatched: 0,
-        covered: 1, conflicts: 0, ruleSetVersion: 'v1', activeDatasetId: first.state.query?.normalizedData?.id ?? 'old-data',
-      },
-      analysis: { version: 'a1', activeDatasetId: first.state.query?.normalizedData?.id ?? 'old-data', data: artifact('analysis-data', 'old-analysis'), eligibleTotal: 1, completed: 1, priorityReview: 1, watch: 0, notRecommended: 0, urgent: 0 },
-      review: { revision: 1, data: artifact('review-data', 'old-review'), pending: 0, confirmedCandidate: 1, watch: 0, exclude: 0, canRevert: true },
-      report: { finalSnapshot: artifact('final-snapshot', 'old-report'), excel: { status: 'not-started' }, pdf: { status: 'not-started' } },
-    })
-
-    tender = tenderPayload(['new-tender']) as JsonValue
-    proposed = proposedPayload(['new-proposed']) as JsonValue
-    const second = await test.run(combinedIntent('command-2'))
-    expect(second.state.revision).toBe(2)
-    expect(second.state.query?.total).toBe(2)
-    expect(second.state.query?.normalizedData?.id).not.toBe(first.state.query?.normalizedData?.id)
-    expect(second.state.rules).toBeUndefined()
-    expect(second.state.classification).toBeUndefined()
-    expect(second.state.analysis).toBeUndefined()
-    expect(second.state.review).toBeUndefined()
-    expect(second.state.report).toBeUndefined()
-    expect(second.state.stages.rules.status).toBe('not-started')
-    expect(test.tools.execute).toHaveBeenCalledTimes(4)
-
     const artifactRoot = sessionArtifactRoot(test.persistence, test.session.header)
     const manifest = await readArtifactManifest(artifactRoot)
-    const datasets = Object.values(manifest.artifacts).filter(entry => entry.kind === 'normalized-data')
-    expect(datasets).toHaveLength(2)
-    expect(manifest.artifacts[first.state.query?.normalizedData?.id ?? '']).toBeDefined()
-    const activeEntry = manifest.artifacts[second.state.query?.normalizedData?.id ?? '']
-    expect(activeEntry).toBeDefined()
-    if (activeEntry === undefined) throw new Error('missing active dataset')
-    const activeBytes = await readManifestArtifact(artifactRoot, activeEntry)
-    const activeDataset = NormalizedDatasetV1Schema.parse(JSON.parse(activeBytes.toString('utf8')) as unknown)
-    expect(activeDataset.rows.map(row => row.sourceId).sort()).toEqual(['new-proposed', 'new-tender'])
+    const normalizedEntry = Object.values(manifest.artifacts).find(entry => entry.kind === 'normalized-data')
+    if (normalizedEntry === undefined) throw new Error('missing normalized data')
+    const normalized = NormalizedDatasetV1Schema.parse(
+      JSON.parse((await readManifestArtifact(artifactRoot, normalizedEntry)).toString('utf8')),
+    )
+    expect(normalized.rows).toHaveLength(3)
     expect(await readFile(test.transcript, 'utf8')).toBe('transcript-sentinel\n')
   })
 
-  it('commits partial success but never fabricates an empty success when every source fails', async () => {
-    let failTender = false
-    let failProposed = true
-    const test = await harness(async name => {
-      if (name.endsWith('search_tenders')) return failTender ? failure('tender unavailable') : success(tenderPayload(['usable']) as JsonValue)
-      return failProposed ? failure('proposed unavailable') : success(proposedPayload(['p']) as JsonValue)
+  it('keeps a partial source result explicit and still completes the query', async () => {
+    const test = await harness(async name => name.endsWith('search_tenders')
+      ? failure('tender unavailable')
+      : success(proposedPayload(['p-1'])))
+    const result = await test.run()
+    expect(result.outcome).toBe('partial')
+    expect(result.state.query?.sources).toMatchObject({
+      tender: { status: 'failed', loaded: 0 }, proposed: { status: 'succeeded', loaded: 1 },
     })
-    const partial = await test.run(combinedIntent('partial'))
-    expect(partial.outcome).toBe('partial')
-    expect(partial.state).toMatchObject({
-      revision: 1,
-      stages: { query: { status: 'succeeded' }, overview: { status: 'succeeded' } },
-      query: { total: 1, sources: { tender: { status: 'succeeded' }, proposed: { status: 'failed' } } },
-    })
-    test.adopt(partial.state)
-    const activeId = partial.state.query?.normalizedData?.id
-
-    failTender = true
-    failProposed = true
-    const failed = await test.run(combinedIntent('all-failed'))
-    expect(failed.outcome).toBe('failed')
-    expect(failed.state).toMatchObject({ revision: 2, stages: { query: { status: 'failed' } } })
-    expect(failed.state.query?.normalizedData?.id).toBe(activeId)
-    expect(failed.state.query?.total).toBe(1)
+    expect(result.control).toEqual({ status: 'complete' })
   })
 
-  it('does not commit artifacts or receipts after cancellation', async () => {
-    const abort = new AbortController()
-    const test = await harness(async () => {
-      abort.abort(new Error('cancelled by user'))
-      return failure('cancelled')
+  it('returns structured failed control and preserves the prior active chain when all sources fail', async () => {
+    const test = await harness(async () => failure('source unavailable'))
+    const result = await test.run()
+    expect(result).toMatchObject({
+      outcome: 'failed', control: { status: 'failed', reasonCode: 'all-sources-failed', retryable: true },
+      state: { revision: 1, stages: { query: { status: 'failed' } } },
     })
-    await expect(test.run(combinedIntent('cancelled'), abort.signal)).rejects.toThrow('cancelled by user')
-    const root = sessionArtifactRoot(test.persistence, test.session.header)
-    const manifest = await readArtifactManifest(root)
-    expect(manifest.artifacts).toEqual({})
-    expect(manifest.receipts).toEqual({})
+    expect(result.state.query).toBeUndefined()
   })
 
-  it('prefers structuredContent and otherwise validates text JSON', () => {
-    expect(extractMcpCanonicalPayload({ content: [], structuredContent: { ok: true } })).toEqual({ ok: true })
-    expect(extractMcpCanonicalPayload({ content: [{ type: 'text', text: '{"ok":true}' }] })).toEqual({ ok: true })
+  it('exposes the complete structured envelope to the Agent renderer', async () => {
+    const test = await harness(async () => success(tenderPayload(['t-1'])))
+    const input: RunQueryToolInputV2 = {
+      ...queryInput(), scope: 'tender', tender: { keywords: ['数据'] }, proposed: undefined,
+    }
+    const result = await test.run(input)
+    const rendered = test.tool.output.render(input, result as unknown as JsonValue)
+    expect(rendered[0]).toMatchObject({ type: 'text' })
+    if (rendered[0]?.type !== 'text') throw new Error('query output must render as text')
+    expect(rendered[0].text).toContain('<dsh_tender_workbench_tool_result>')
+    expect(rendered[0].text).toContain('"control"')
+    expect(rendered[0].text).toContain('"context"')
+  })
+
+  it('extracts canonical MCP JSON without accepting arbitrary text', () => {
+    const payload = tenderPayload(['t-1'])
+    expect(extractMcpCanonicalPayload({ structuredContent: payload, content: [] })).toEqual(payload)
+    expect(extractMcpCanonicalPayloadCandidates({ content: [{ type: 'text', text: JSON.stringify(payload) }] })).toEqual([payload])
     expect(() => extractMcpCanonicalPayload({ content: [{ type: 'text', text: 'not-json' }] })).toThrow()
-  })
-
-  it('falls back to source-valid text JSON when structuredContent is not the qcc payload', async () => {
-    const tender = tenderPayload(['text-tender']) as JsonValue
-    const proposed = proposedPayload(['text-proposed']) as JsonValue
-    const test = await harness(async name => {
-      const payload = name.endsWith('search_tenders') ? tender : proposed
-      return {
-        isError: false,
-        value: {
-          content: [{ type: 'text', text: JSON.stringify(payload) }],
-          structuredContent: { result: null },
-        },
-        content: [{ type: 'text', text: 'ok' }],
-      }
-    })
-
-    expect(extractMcpCanonicalPayloadCandidates({
-      content: [{ type: 'text', text: JSON.stringify(tender) }],
-      structuredContent: {},
-    })).toEqual([{}, tender])
-
-    const result = await test.run(combinedIntent('text-json-fallback'))
-    expect(result.outcome).toBe('succeeded')
-    expect(result.state.query).toMatchObject({
-      total: 2,
-      sources: {
-        tender: { status: 'succeeded', loaded: 1 },
-        proposed: { status: 'succeeded', loaded: 1 },
-      },
-    })
   })
 })

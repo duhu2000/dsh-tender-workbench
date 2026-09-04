@@ -33,7 +33,7 @@ function renderWorkbench(
   projection: TenderProjectionRead = { status: 'empty' },
   sendIntent = vi.fn(async (_intent: unknown) => {}),
   loadRows?: TenderRowsLoader,
-  createCommandId = () => 'command-1',
+  createIntentId = () => 'intent-1',
 ) {
   const navigation = createTenderWorkbenchNavigationController()
   const result = render(
@@ -42,7 +42,7 @@ function renderWorkbench(
       projection={projection}
       navigation={navigation}
       sendIntent={sendIntent}
-      createCommandId={createCommandId}
+      createIntentId={createIntentId}
       {...(loadRows === undefined ? {} : { loadRows })}
       t={t}
     />,
@@ -106,7 +106,7 @@ describe('TenderWorkbench S1a shell', () => {
     expect(screen.getByText(zh['workbench.query.eyebrow'])).toBeTruthy()
     expect(screen.getByRole('form', { name: zh['workbench.query.formTitle'] })).toBeTruthy()
     expect(screen.getAllByText(zh['workbench.query.editHint'])).toHaveLength(1)
-    expect(screen.queryByText('query.start')).toBeNull()
+    expect(screen.queryByText('query.run')).toBeNull()
     expect(screen.getByText(zh['workbench.query.combinedPlan'])).toBeTruthy()
     expect(screen.getByText(zh['workbench.query.planTitle'])).toBeTruthy()
 
@@ -172,7 +172,7 @@ describe('TenderWorkbench S1a shell', () => {
       { status: 'empty' },
       sendIntent,
       undefined,
-      () => `command-${++commandCount}`,
+      () => `intent-${++commandCount}`,
     )
     expect(sendIntent).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
@@ -196,17 +196,20 @@ describe('TenderWorkbench S1a shell', () => {
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
     expect(commandCount).toBe(1)
     expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({
-      schemaVersion: 1,
-      commandId: 'command-1',
-      kind: 'query.start',
-      scope: 'combined',
-      tender: { keywords: ['云平台', '数据治理'] },
-      proposed: { keywords: ['云平台', '数据治理'] },
+      schemaVersion: 2,
+      intentId: 'intent-1',
+      kind: 'query.run',
+      binding: { projectionRevision: 0 },
+      payload: {
+        scope: 'combined',
+        tender: { keywords: ['云平台', '数据治理'] },
+        proposed: { keywords: ['云平台', '数据治理'] },
+      },
     })
     const currentButton = container.querySelector('[data-write-button="query"]')
     expect(currentButton?.hasAttribute('disabled')).toBe(true)
     expect(currentButton?.getAttribute('aria-busy')).toBe('true')
-    expect(container.querySelector('[data-write-action="query"][data-write-phase="sending"]')).toBeTruthy()
+    expect(container.querySelector('[data-write-action="query.run"][data-write-phase="sending"]')).toBeTruthy()
     expect(container.querySelector('[data-write-button="query"] span[aria-hidden="true"]')).toBeTruthy()
     expect((screen.getByLabelText(zh['workbench.query.target']) as HTMLTextAreaElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
@@ -214,7 +217,7 @@ describe('TenderWorkbench S1a shell', () => {
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.opportunity'] }))
     releaseSend?.()
     await waitFor(() => {
-      expectWriteProgress('query', 'waiting-agent', zh['workbench.write.query.waiting'])
+      expectWriteProgress('query.run', 'waiting-agent', zh['workbench.write.query.waiting'])
     })
     fireEvent.submit(screen.getByRole('form', { name: zh['workbench.query.formTitle'] }))
     expect(sendIntent).toHaveBeenCalledTimes(1)
@@ -248,22 +251,24 @@ describe('TenderWorkbench S1a shell', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.submit'] }))
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
     expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({
-      kind: 'query.start', scope: 'combined', target: '识别华东数字化项目并核验公开证据',
-      tender: { keywords: ['数据治理', '信创'], infoTypes: ['中标公告'], bidStatuses: ['中标成交'] },
-      proposed: { keywords: ['数据治理', '信创'], projectStages: ['项目备案'], approvalStatuses: ['审批通过'] },
+      kind: 'query.run', payload: {
+        scope: 'combined', target: '识别华东数字化项目并核验公开证据',
+        tender: { keywords: ['数据治理', '信创'], infoTypes: ['中标公告'], bidStatuses: ['中标成交'] },
+        proposed: { keywords: ['数据治理', '信创'], projectStages: ['项目备案'], approvalStatuses: ['审批通过'] },
+      },
     })
     expect(sendIntent.mock.calls[0]?.[0]).not.toHaveProperty('smartSort')
-    expect((sendIntent.mock.calls[0]?.[0] as { tender: object }).tender).not.toHaveProperty('budgetMin')
+    expect((sendIntent.mock.calls[0]?.[0] as { payload: { tender: object } }).payload.tender).not.toHaveProperty('budgetMin')
   })
 
-  it('retries a transport failure with the original command id', async () => {
+  it('retries a transport failure with the original intent id', async () => {
     let commandCount = 0
     let attempt = 0
     const sendIntent = vi.fn(async (_intent: unknown) => {
       attempt += 1
       if (attempt === 1) throw new Error('transport unavailable')
     })
-    renderWorkbench({ status: 'empty' }, sendIntent, undefined, () => `command-${++commandCount}`)
+    renderWorkbench({ status: 'empty' }, sendIntent, undefined, () => `intent-${++commandCount}`)
     fireEvent.change(screen.getByLabelText(zh['workbench.query.target']), { target: { value: '查找数据项目' } })
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.query.submit'] }))
     expect(await screen.findByText(zh['workbench.write.query.failed'])).toBeTruthy()
@@ -271,10 +276,10 @@ describe('TenderWorkbench S1a shell', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.write.retry'] }))
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(2) })
     expect(commandCount).toBe(1)
-    expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({ commandId: 'command-1' })
-    expect(sendIntent.mock.calls[1]?.[0]).toMatchObject({ commandId: 'command-1' })
+    expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({ intentId: 'intent-1' })
+    expect(sendIntent.mock.calls[1]?.[0]).toMatchObject({ intentId: 'intent-1' })
     await waitFor(() => {
-      expectWriteProgress('query', 'waiting-agent', zh['workbench.write.query.waiting'])
+      expectWriteProgress('query.run', 'waiting-agent', zh['workbench.write.query.waiting'])
     })
   })
 
@@ -287,7 +292,7 @@ describe('TenderWorkbench S1a shell', () => {
       projection: { status: 'empty' } as TenderProjectionRead,
       navigation,
       sendIntent,
-      createCommandId: () => `command-${++commandCount}`,
+      createIntentId: () => `intent-${++commandCount}`,
       t,
     }
     const view = render(<TenderWorkbenchView {...props} sessionId={'session-1' as never} />)
@@ -300,7 +305,7 @@ describe('TenderWorkbench S1a shell', () => {
     expect(secondSessionButton.hasAttribute('disabled')).toBe(false)
     fireEvent.click(secondSessionButton)
     expect(sendIntent).toHaveBeenCalledTimes(2)
-    expect(sendIntent.mock.calls.map(call => (call[0] as { commandId: string }).commandId)).toEqual(['command-1', 'command-2'])
+    expect(sendIntent.mock.calls.map(call => (call[0] as { intentId: string }).intentId)).toEqual(['intent-1', 'intent-2'])
     releases[0]?.()
     await waitFor(() => {
       expect((document.querySelector('[data-write-button="query"]') as HTMLButtonElement).disabled).toBe(true)
@@ -340,12 +345,20 @@ describe('TenderWorkbench S1a shell', () => {
     const running = {
       ...base,
       activeOperation: {
-        callId: 'call-1', commandId: 'command-1', command: 'tender_workbench_query' as const, stage: 'query' as const,
+        callId: 'call-1', intentId: 'intent-1', tool: 'tender_workbench_run_query' as const,
+        origin: 'workbench-intent' as const, stage: 'query' as const,
+      },
+      pendingIntent: {
+        intentId: 'intent-1', kind: 'query.run' as const, skill: 'tender-workbench-query' as const,
+        origin: 'workbench-intent' as const, status: 'running' as const, turn: 1,
+        expectedTool: 'tender_workbench_run_query' as const,
+        terminalTools: ['tender_workbench_run_query' as const],
+        intentFingerprint: 'intent-query', bindingFingerprint: 'binding-query',
       },
       stages: { ...base.stages, query: { status: 'running' as const } },
     }
     const { rerender, navigation, sendIntent } = renderWorkbench({ status: 'ready', projection: running })
-    expectWriteProgress('query', 'running', zh['workbench.write.query.running'])
+    expectWriteProgress('query.run', 'running', zh['workbench.write.query.running'])
     expect(tenderWorkbenchDisplayStatus({ status: 'ready', projection: running })).toBe('running')
 
     const failed = {
@@ -361,7 +374,7 @@ describe('TenderWorkbench S1a shell', () => {
         projection={{ status: 'ready', projection: failed }}
         navigation={navigation}
         sendIntent={sendIntent}
-        createCommandId={() => 'command-1'}
+        createIntentId={() => 'intent-1'}
         t={t}
       />,
     )
@@ -375,9 +388,16 @@ describe('TenderWorkbench S1a shell', () => {
     const waiting = {
       ...base,
       stages: { ...base.stages, query: { status: 'waiting-agent' as const } },
+      pendingIntent: {
+        intentId: 'intent-1', kind: 'query.run' as const, skill: 'tender-workbench-query' as const,
+        origin: 'workbench-intent' as const, status: 'waiting-agent' as const, turn: 1,
+        expectedTool: 'tender_workbench_run_query' as const,
+        terminalTools: ['tender_workbench_run_query' as const],
+        intentFingerprint: 'intent-query', bindingFingerprint: 'binding-query',
+      },
     }
     renderWorkbench({ status: 'ready', projection: waiting })
-    expectWriteProgress('query', 'waiting-agent', zh['workbench.write.query.waiting'])
+    expectWriteProgress('query.run', 'waiting-agent', zh['workbench.write.query.waiting'])
     expect(tenderWorkbenchDisplayStatus({ status: 'ready', projection: waiting })).toBe('waiting-agent')
   })
 

@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import type { NormalizedDatasetV1 } from '../../contracts/dataset.ts'
-import type { TenderQueryIntentV1 } from '../../contracts/query-schema.ts'
+import type { RunQueryToolInputV2 } from '../../contracts/tool-inputs.ts'
 import {
   ScreeningDraftContextV1Schema,
   type ScreeningDraftContextV1,
@@ -9,13 +10,13 @@ import {
 export function createScreeningDraftContext(input: {
   readonly activeDatasetRef: string
   readonly projectionRevision: number
-  readonly intent: TenderQueryIntentV1
+  readonly intent: RunQueryToolInputV2
   readonly dataset: NormalizedDatasetV1
 }): ScreeningDraftContextV1 {
   const ordered = [...input.dataset.rows].sort((left, right) => (
     left.source.localeCompare(right.source) || left.recordId.localeCompare(right.recordId)
   ))
-  return ScreeningDraftContextV1Schema.parse({
+  const content = {
     activeDatasetRef: input.activeDatasetRef,
     projectionRevision: input.projectionRevision,
     targetSummary: input.intent.target,
@@ -43,5 +44,7 @@ export function createScreeningDraftContext(input: {
         ? 'unparseable'
         : row.disclosure.missingFields.length > 0 ? 'missing' : 'normalized',
     })),
-  })
+  }
+  const contextFingerprint = `sc_${createHash('sha256').update(JSON.stringify(content), 'utf8').digest('hex')}`
+  return ScreeningDraftContextV1Schema.parse({ ...content, contextFingerprint })
 }

@@ -1,131 +1,118 @@
 import { describe, expect, it } from 'vitest'
-import { TenderQueryIntentV1Schema } from '../src/contracts/query-schema.ts'
+import { TenderWorkbenchIntentV2Schema } from '../src/contracts/intents.ts'
+import {
+  TENDER_ACTION_SKILLS,
+  TENDER_TOOLS,
+  expectedEntryTool,
+  orchestrationFor,
+} from '../src/contracts/orchestration.ts'
+import {
+  CreateReportToolInputV2Schema,
+  GetWorkflowStateInputV2Schema,
+  RunQueryToolInputV2Schema,
+  TENDER_TOOL_INPUT_SCHEMAS,
+} from '../src/contracts/tool-inputs.ts'
 import {
   MAX_PROJECTION_BYTES,
   TenderRuleV1Schema,
   createEmptyTenderWorkflowProjection,
-  parseTenderWorkflowProjectionV1,
+  parseTenderWorkflowProjectionV2,
   projectionSizeBytes,
 } from '../src/contracts/workflow.ts'
 
-describe('V1 workflow contracts', () => {
-  it('accepts exact query branches and rejects Session identity or branch drift', () => {
+describe('S5.6 workflow contracts', () => {
+  it('accepts only the strict V2 Intent envelope and exact action Skill', () => {
     const valid = {
-      schemaVersion: 1,
-      commandId: 'command-1',
-      kind: 'query.start',
-      scope: 'combined',
-      target: '查找北京大数据相关项目',
-      tender: { keywords: ['大数据'], regions: ['北京市'] },
-      proposed: { keywords: ['大数据'], regions: ['北京市'] },
+      schemaVersion: 2,
+      intentId: 'intent-1',
+      kind: 'query.run',
+      skill: 'tender-workbench-query',
+      binding: { projectionRevision: 0 },
+      payload: {
+        scope: 'combined', target: '查找北京大数据相关项目',
+        tender: { keywords: ['大数据'], regions: ['北京市'] },
+        proposed: { keywords: ['大数据'], regions: ['北京市'] },
+      },
     }
-    expect(TenderQueryIntentV1Schema.parse(valid)).toEqual(valid)
-    expect(() => TenderQueryIntentV1Schema.parse({ ...valid, sessionId: 'must-not-cross-the-tool-boundary' })).toThrow()
-    expect(() => TenderQueryIntentV1Schema.parse({ ...valid, scope: 'tender' })).toThrow()
-  })
-
-  it('enforces the UI keyword limit and a real filter in every Host query branch', () => {
-    const base = {
-      schemaVersion: 1, commandId: 'command-limits', kind: 'query.start', scope: 'tender', target: '目标',
-    } as const
-    expect(() => TenderQueryIntentV1Schema.parse({ ...base, tender: {} })).toThrow()
-    expect(() => TenderQueryIntentV1Schema.parse({ ...base, tender: { smartSort: true } })).toThrow()
-    expect(() => TenderQueryIntentV1Schema.parse({
-      ...base,
-      tender: { keywords: Array.from({ length: 11 }, (_, index) => `关键词${index}`) },
+    expect(TenderWorkbenchIntentV2Schema.parse(valid)).toEqual(valid)
+    expect(() => TenderWorkbenchIntentV2Schema.parse({ ...valid, sessionId: 'forbidden' })).toThrow()
+    expect(() => TenderWorkbenchIntentV2Schema.parse({ ...valid, skill: 'tender-workbench-review' })).toThrow()
+    expect(() => TenderWorkbenchIntentV2Schema.parse({
+      ...valid, schemaVersion: 1, legacyIdentity: 'legacy',
     })).toThrow()
   })
 
-  it('fixes the flat OR-keyword rule shape without a generic expression tree', () => {
+  it('rejects empty source branches and action origins that could authorize autonomous mutation', () => {
+    const base = {
+      schemaVersion: 2,
+      origin: { kind: 'workbench-intent', intentId: 'intent-query' },
+      projectionRevision: 0,
+      scope: 'tender',
+      target: '目标',
+    }
+    expect(() => RunQueryToolInputV2Schema.parse({ ...base, tender: {} })).toThrow()
+    expect(() => RunQueryToolInputV2Schema.parse({ ...base, tender: { smartSort: true } })).toThrow()
+    expect(() => RunQueryToolInputV2Schema.parse({
+      ...base, origin: { kind: 'autonomous' }, tender: { keywords: ['数据'] },
+    })).toThrow()
+  })
+
+  it('uses closed report narrative branches and rejects the former parameter superset', () => {
+    const base = {
+      schemaVersion: 2,
+      origin: { kind: 'workbench-intent', intentId: 'report-1' },
+      activeDatasetRef: 'data-1',
+      projectionRevision: 4,
+      basis: { kind: 'dataset-only' },
+      reviewRevision: 0,
+      scope: 'complete',
+      confirmPending: false,
+    }
+    expect(CreateReportToolInputV2Schema.parse({ ...base, narrative: { kind: 'none' } })).toEqual({
+      ...base, narrative: { kind: 'none' },
+    })
+    expect(() => CreateReportToolInputV2Schema.parse({
+      ...base, mode: 'create', contextFingerprint: 'legacy', narrative: undefined,
+    })).toThrow()
+  })
+
+  it('defines one explicit orchestration entry and bounded Tool set for every Intent', () => {
+    expect(TENDER_ACTION_SKILLS).toHaveLength(5)
+    expect(TENDER_TOOLS).toHaveLength(13)
+    expect(orchestrationFor('rules.propose')).toMatchObject({
+      actionSkill: 'tender-workbench-screening',
+      allowedTools: ['tender_workbench_get_rule_drafting_context', 'tender_workbench_preview_rules'],
+    })
+    expect(expectedEntryTool('report.create', { narrativeMode: 'none' })).toBe('tender_workbench_create_report')
+    expect(expectedEntryTool('report.create', { narrativeMode: 'requested' })).toBe('tender_workbench_get_report_narrative_context')
+    expect(Object.keys(TENDER_TOOL_INPUT_SCHEMAS).sort()).toEqual([...TENDER_TOOLS].sort())
+    expect(GetWorkflowStateInputV2Schema.parse({})).toEqual({})
+    expect(() => GetWorkflowStateInputV2Schema.parse({ sessionId: 'forbidden' })).toThrow()
+  })
+
+  it('keeps flat deterministic rules without a generic expression tree', () => {
     const rule = {
-      id: 'rule-1',
-      name: '大数据项目',
-      enabled: true,
-      action: 'include',
-      sources: ['tender'],
-      scope: 'all',
-      keywords: ['大数据', '数据平台'],
-      priority: 10,
-      exceptions: ['培训'],
-      reason: '优先识别目标项目',
+      id: 'rule-1', name: '大数据项目', enabled: true, action: 'include',
+      sources: ['tender'], scope: 'all', keywords: ['大数据'], priority: 10,
+      exceptions: ['培训'], reason: '优先识别目标项目',
     }
     expect(TenderRuleV1Schema.parse(rule)).toEqual(rule)
-    expect(() => TenderRuleV1Schema.parse({ ...rule, keywords: [] })).toThrow()
     expect(() => TenderRuleV1Schema.parse({ ...rule, condition: { any: ['大数据'] } })).toThrow()
   })
 
-  it('keeps the complete legal projection below the 64 KiB wire guard', () => {
+  it('keeps the V2 Projection bounded and rejects old metadata fields', () => {
     const empty = createEmptyTenderWorkflowProjection()
-    const error = '错'.repeat(512)
-    const stages = Object.fromEntries(Object.keys(empty.stages).map(stage => [stage, {
-      status: 'failed',
-      errorCode: 'E'.repeat(128),
-      errorMessage: error,
-    }]))
-    const largestCore = parseTenderWorkflowProjectionV1({
+    const state = parseTenderWorkflowProjectionV2({
       ...empty,
-      currentStage: 'report',
-      stages,
       lastFailure: {
-        command: 'tender_workbench_generate_report',
-        code: 'E'.repeat(128),
-        message: error,
+        intentId: 'intent-1', tool: 'tender_workbench_create_report',
+        code: 'renderers-failed', message: '文件生成失败。',
       },
     })
-    expect(projectionSizeBytes(largestCore)).toBeLessThan(MAX_PROJECTION_BYTES)
-    expect(() => parseTenderWorkflowProjectionV1({ ...largestCore, unownedRecords: [] })).toThrow()
-  })
-
-  it('keeps S3 rules/classification as summaries and Artifact refs rather than record arrays', () => {
-    const empty = createEmptyTenderWorkflowProjection()
-    const ref = (kind: 'rule-draft' | 'rule-preview' | 'rule-set' | 'classified-data', suffix: string) => ({
-      id: `artifact-${suffix}`, kind, fileName: `${suffix}.json`, mediaType: 'application/json', rowCount: 20_000,
-      createdAt: '2026-09-01T00:00:00.000Z', accessToken: `token-${suffix}`,
-    })
-    const projection = parseTenderWorkflowProjectionV1({
+    expect(projectionSizeBytes(state)).toBeLessThan(MAX_PROJECTION_BYTES)
+    expect(() => parseTenderWorkflowProjectionV2({
       ...empty,
-      revision: 3,
-      currentStage: 'classification',
-      rules: {
-        draft: ref('rule-draft', 'draft'), draftOrigin: 'user', draftFingerprint: 'r_0123456789abcdef',
-        preview: ref('rule-preview', 'preview'), previewRevision: 2, activeDatasetId: 'active-data',
-        confirmed: ref('rule-set', 'confirmed'), ruleSetVersion: 'rsv-3', ruleCount: 100,
-        rawMatches: 2_000_000, covered: 20_000, conflicts: 20_000,
-      },
-      classification: {
-        data: ref('classified-data', 'classified'), include: 4_000, observe: 4_000, manualReview: 4_000,
-        exclude: 4_000, unmatched: 4_000, covered: 16_000, conflicts: 2_000,
-        ruleSetVersion: 'rsv-3', activeDatasetId: 'active-data',
-      },
-    })
-    expect(projectionSizeBytes(projection)).toBeLessThan(MAX_PROJECTION_BYTES)
-    expect(JSON.stringify(projection)).not.toContain('rawMatches":[')
-    expect(JSON.stringify(projection)).not.toContain('"rows"')
-  })
-
-  it('keeps S5 Projection bounded to delivery summaries and opaque Artifact refs', () => {
-    const empty = createEmptyTenderWorkflowProjection()
-    const ref = (kind: 'final-snapshot' | 'excel' | 'pdf', suffix: string) => ({
-      id: `artifact-${suffix}`, kind, fileName: `${suffix}.${kind === 'excel' ? 'xlsx' : kind === 'pdf' ? 'pdf' : 'json'}`,
-      mediaType: kind === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : kind === 'pdf' ? 'application/pdf' : 'application/json',
-      createdAt: '2026-09-02T00:00:00.000Z', accessToken: `token-${suffix}`,
-    })
-    const projection = parseTenderWorkflowProjectionV1({
-      ...empty,
-      revision: 9,
-      currentStage: 'report',
-      stages: { ...empty.stages, report: { status: 'succeeded', updatedAt: '2026-09-02T00:00:00.000Z' } },
-      report: {
-        finalSnapshot: ref('final-snapshot', 'snapshot'), finalSnapshotId: 'fs-1', completeness: 'partial',
-        createdAt: '2026-09-02T00:00:00.000Z', rawRecords: 20_000, normalizedProjects: 18_000,
-        reviewed: 12_000, confirmedTender: 1_000, priorityProposed: 500, watch: 3_000, pending: 6_000,
-        exclude: 7_500, analysisCompleted: 4_000, analysisTotal: 18_000, narrativeIncluded: true,
-        excel: { status: 'succeeded', artifact: ref('excel', 'excel') },
-        pdf: { status: 'failed', errorMessage: 'renderer failed' },
-      },
-    })
-    expect(projectionSizeBytes(projection)).toBeLessThan(MAX_PROJECTION_BYTES)
-    expect(JSON.stringify(projection)).not.toContain('keyFindings')
-    expect(JSON.stringify(projection)).not.toContain('rows')
+      lastFailure: { tool: 'tender_workbench_create_report', legacyIdentity: 'legacy', code: 'legacy', message: 'legacy' },
+    })).toThrow()
   })
 })

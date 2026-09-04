@@ -14,22 +14,23 @@ import {
   type QccTenderSearchArgs,
 } from '../../contracts/query.ts'
 import {
-  TenderQueryIntentV1Schema,
-  type TenderQueryIntentV1,
-} from '../../contracts/query-schema.ts'
+  RunQueryToolInputV2Schema,
+  type RunQueryToolInputV2,
+} from '../../contracts/tool-inputs.ts'
+import { renderTenderToolResult } from '../../contracts/tool-results.ts'
 import {
-  TenderWorkflowProjectionV1Schema,
+  TenderWorkflowProjectionV2Schema,
   createEmptyTenderWorkflowProjection,
   type ArtifactRefV1,
-  type TenderWorkflowProjectionV1,
+  type TenderWorkflowProjectionV2,
 } from '../../contracts/workflow.ts'
 import {
   ScreeningDraftContextV1Schema,
 } from '../../contracts/screening.ts'
 import {
-  CommandReceiptCoordinator,
+  IntentReceiptCoordinator,
   type JsonValue as ReceiptJsonValue,
-} from '../artifacts/command-receipts.ts'
+} from '../artifacts/intent-receipts.ts'
 import {
   createArtifactTransaction,
   type SessionPersistenceLocator,
@@ -44,21 +45,30 @@ import {
 } from '../pipeline/qcc-adapters.ts'
 import { normalizeQccSources } from '../pipeline/normalize.ts'
 import { createScreeningDraftContext } from '../pipeline/screening-context.ts'
+import { resolveToolInvocation, toolOriginParameter } from '../tool-contract.ts'
 
-const QueryToolResultV1Schema = z.object({
+const QueryToolResultV2Schema = z.object({
+  domain: z.literal('dsh-tender-workbench'),
+  schemaVersion: z.literal(2),
+  tool: z.literal('tender_workbench_run_query'),
+  intentId: z.string().min(1).max(128),
   outcome: z.enum(['succeeded', 'partial', 'failed']),
   message: z.string().min(1).max(512),
-  state: TenderWorkflowProjectionV1Schema,
-  screeningContext: ScreeningDraftContextV1Schema.optional(),
+  state: TenderWorkflowProjectionV2Schema,
+  context: ScreeningDraftContextV1Schema.optional(),
+  control: z.union([
+    z.object({ status: z.literal('complete') }).strict(),
+    z.object({ status: z.literal('failed'), reasonCode: z.string().min(1).max(128), retryable: z.boolean() }).strict(),
+  ]),
 }).strict()
 
-export type QueryToolResultV1 = z.infer<typeof QueryToolResultV1Schema>
+export type QueryToolResultV2 = z.infer<typeof QueryToolResultV2Schema>
 
 interface QueryToolDependencies {
   readonly tools: Pick<ToolRuntime, 'execute'>
   readonly sessionProjections: Pick<SessionProjectionRegistry, 'stateOf'>
   readonly sessionPersistence: SessionPersistenceLocator
-  readonly receipts: CommandReceiptCoordinator
+  readonly receipts: IntentReceiptCoordinator
 }
 
 type SourceKey = 'tender' | 'proposed'
@@ -178,35 +188,37 @@ async function executeSource(
 }
 
 function failedState(
-  previous: TenderWorkflowProjectionV1 | null,
+  previous: TenderWorkflowProjectionV2 | null,
   revision: number,
+  intentId: string,
   message: string,
   now: string,
-): TenderWorkflowProjectionV1 {
+): TenderWorkflowProjectionV2 {
   const base = previous ?? createEmptyTenderWorkflowProjection()
-  return TenderWorkflowProjectionV1Schema.parse({
+  return TenderWorkflowProjectionV2Schema.parse({
     ...base,
     revision,
     currentStage: 'query',
     activeOperation: undefined,
+    pendingIntent: undefined,
     stages: {
       ...base.stages,
       query: { status: 'failed', updatedAt: now, errorCode: 'all-sources-failed', errorMessage: message },
     },
-    lastFailure: { command: 'tender_workbench_query', code: 'all-sources-failed', message },
+    lastFailure: { intentId, tool: 'tender_workbench_run_query', code: 'all-sources-failed', message },
   })
 }
 
 function succeededState(
   revision: number,
-  intent: TenderQueryIntentV1,
+  intent: RunQueryToolInputV2,
   now: string,
   querySpec: ArtifactRefV1,
   normalizedData: ArtifactRefV1,
   sourceArtifacts: Readonly<Partial<Record<SourceKey, ArtifactRefV1>>>,
   executions: readonly SourceExecution[],
   summary: ReturnType<typeof normalizeQccSources>['summary'],
-): TenderWorkflowProjectionV1 {
+): TenderWorkflowProjectionV2 {
   const stages = createEmptyTenderWorkflowProjection().stages
   const sourceState = Object.fromEntries(executions.map(execution => [execution.source, execution.status === 'succeeded'
     ? {
@@ -215,8 +227,8 @@ function succeededState(
       sourceData: sourceArtifacts[execution.source],
     }
     : { status: 'failed' as const, loaded: 0, errorMessage: execution.message }]))
-  return TenderWorkflowProjectionV1Schema.parse({
-    schemaVersion: 1,
+  return TenderWorkflowProjectionV2Schema.parse({
+    schemaVersion: 2,
     revision,
     currentStage: 'overview',
     stages: {
@@ -248,13 +260,13 @@ function toolArgumentsSchema() {
     additionalProperties: false,
     properties: {
       keywords: textArray,
-      infoTypes: textArray,
+      infoTypes: { type: 'array' as const, items: { type: 'string' as const, enum: ['招标公告', '中标公告'] as const } },
       bidStatuses: textArray,
       beginDate: { type: 'string' as const },
       endDate: { type: 'string' as const },
       regions: textArray,
       procurementMethods: textArray,
-      procurementTypes: textArray,
+      procurementTypes: { type: 'array' as const, items: { type: 'string' as const, enum: ['货物', '工程', '服务'] as const } },
       TenderIndustries: textArray,
       budgetMin: amount,
       budgetMax: amount,
@@ -278,9 +290,9 @@ function toolArgumentsSchema() {
     },
   }
   return {
-    schemaVersion: { type: 'integer' as const, const: 1, required: true as const },
-    commandId: { type: 'string' as const, required: true as const },
-    kind: { type: 'string' as const, const: 'query.start', required: true as const },
+    schemaVersion: { type: 'integer' as const, const: 2, required: true as const },
+    origin: { ...toolOriginParameter({ autonomous: false }), required: true as const },
+    projectionRevision: { type: 'integer' as const, required: true as const },
     scope: { type: 'string' as const, enum: ['tender', 'proposed', 'combined'] as const, required: true as const },
     target: { type: 'string' as const, required: true as const },
     tender,
@@ -290,8 +302,8 @@ function toolArgumentsSchema() {
 
 export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependencies) {
   return defineTool({
-    name: 'tender_workbench_query',
-    description: 'Execute one Session-scoped tender/proposed-project query, normalize the actual qcc results, and atomically replace the active dataset snapshot.',
+    name: 'tender_workbench_run_query',
+    description: 'Execute one validated Session-scoped tender/proposed query and atomically replace the active normalized dataset.',
     parameters: toolArgumentsSchema(),
     output: {
       schema: {
@@ -301,36 +313,58 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
           outcome: { type: 'string', enum: ['succeeded', 'partial', 'failed'], required: true },
           message: { type: 'string', required: true },
           state: { type: 'json', required: true },
-          screeningContext: { type: 'json' },
+          domain: { type: 'string', const: 'dsh-tender-workbench', required: true },
+          schemaVersion: { type: 'integer', const: 2, required: true },
+          tool: { type: 'string', const: 'tender_workbench_run_query', required: true },
+          intentId: { type: 'string', required: true },
+          context: { type: 'json' },
+          control: { type: 'json', required: true },
         },
       },
       render(_args, value) {
-        const parsed = QueryToolResultV1Schema.parse(value)
-        return [{ type: 'text', text: parsed.message }]
+        return [{ type: 'text', text: renderTenderToolResult(QueryToolResultV2Schema.parse(value)) }]
       },
       presentationMeta(args, value) {
-        const parsed = QueryToolResultV1Schema.parse(value)
+        const parsed = QueryToolResultV2Schema.parse(value)
+        const origin = RunQueryToolInputV2Schema.parse(args).origin.kind
         return jsonValue({
           domain: 'dsh-tender-workbench',
-          schemaVersion: 1,
-          commandId: args.commandId,
-          command: 'tender_workbench_query',
+          schemaVersion: 2,
+          tool: 'tender_workbench_run_query',
+          intentId: parsed.intentId,
+          origin,
+          effect: 'mutation',
+          previousRevision: parsed.state.revision - 1,
+          control: parsed.control,
           state: parsed.state,
         })
       },
     },
     async execute(args, exec) {
       if (exec.agent === undefined) throw new Error('tender workbench tools require an Agent-owned Session')
-      const intent = TenderQueryIntentV1Schema.parse(args)
+      const intent = RunQueryToolInputV2Schema.parse(args)
       const previous = dependencies.sessionProjections.stateOf(exec.agent.session, 'dshTenderWorkflow') ?? null
-      const observedRevision = previous?.revision ?? 0
+      const current = previous ?? createEmptyTenderWorkflowProjection()
+      if (current.revision !== intent.projectionRevision) throw new Error('Projection revision 已变化；请重新提交查询。')
+      const invocation = resolveToolInvocation({
+        rawOrigin: intent.origin,
+        rawArgs: intent,
+        exec,
+        state: current,
+        tool: 'tender_workbench_run_query',
+        intentKind: 'query.run',
+        mutation: true,
+      })
+      if (invocation.intentId === undefined) throw new Error('查询动作缺少 intentId。')
+      const intentId = invocation.intentId
       const transaction = createArtifactTransaction(dependencies.sessionPersistence, exec.agent.session.header)
       const command = await dependencies.receipts.run(String(exec.agent.session.id), {
-        commandId: intent.commandId,
+        intentId,
+        tool: 'tender_workbench_run_query',
         arguments: jsonValue(intent) as ReceiptJsonValue,
-        observedProjectionRevision: observedRevision,
+        observedProjectionRevision: intent.projectionRevision,
         store: transaction,
-        revisionOf: result => QueryToolResultV1Schema.parse(result).state.revision,
+        revisionOf: result => QueryToolResultV2Schema.parse(result).state.revision,
         execute: async (nextRevision) => {
           const executions: SourceExecution[] = []
           if (intent.tender !== undefined) executions.push(await executeSource(dependencies, exec, 'tender', intent.tender))
@@ -340,10 +374,13 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
           const now = new Date().toISOString()
           if (successes.length === 0) {
             const message = sanitizeMessage(executions.map(execution => execution.status === 'failed' ? `${execution.source}: ${execution.message}` : '').filter(Boolean).join('；'))
-            return jsonValue(QueryToolResultV1Schema.parse({
+            return jsonValue(QueryToolResultV2Schema.parse({
+              domain: 'dsh-tender-workbench', schemaVersion: 2, tool: 'tender_workbench_run_query',
+              intentId,
               outcome: 'failed',
               message: `查询失败：${message}`.slice(0, 512),
-              state: failedState(previous, nextRevision, message, now),
+              state: failedState(previous, nextRevision, intentId, message, now),
+              control: { status: 'failed', reasonCode: 'all-sources-failed', retryable: true },
             })) as ReceiptJsonValue
           }
 
@@ -351,7 +388,7 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
           for (const success of successes) {
             sourceArtifacts[success.source] = await transaction.stageJson(
               'source-data',
-              `qcc-${success.source}-${intent.commandId}.json`,
+              `qcc-${success.source}-${intentId}.json`,
               success.payload,
               success.adapted.rawRecordCount,
             )
@@ -367,10 +404,10 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
             sources: sourceSummary,
             createdAt: now,
           })
-          const querySpec = await transaction.stageJson('query-spec', `query-${intent.commandId}.json`, jsonValue(intent))
+          const querySpec = await transaction.stageJson('query-spec', `query-${intentId}.json`, jsonValue(intent))
           const normalizedData = await transaction.stageJson(
             'normalized-data',
-            `dataset-${intent.commandId}.json`,
+            `dataset-${intentId}.json`,
             jsonValue(dataset),
             dataset.rows.length,
           )
@@ -388,20 +425,23 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
           const message = outcome === 'partial'
             ? `查询部分完成：已保留 ${successes.length} 个可用来源，失败来源已明确记录。`
             : `查询完成：已生成包含 ${dataset.rows.length} 个规范化项目的新活动快照。`
-          return jsonValue(QueryToolResultV1Schema.parse({
+          return jsonValue(QueryToolResultV2Schema.parse({
+            domain: 'dsh-tender-workbench', schemaVersion: 2, tool: 'tender_workbench_run_query',
+            intentId,
             outcome,
             message,
             state,
-            screeningContext: createScreeningDraftContext({
+            context: createScreeningDraftContext({
               activeDatasetRef: normalizedData.id,
               projectionRevision: state.revision,
               intent,
               dataset,
             }),
+            control: { status: 'complete' },
           })) as ReceiptJsonValue
         },
       })
-      return QueryToolResultV1Schema.parse(command.result)
+      return QueryToolResultV2Schema.parse(command.result)
     },
   })
 }

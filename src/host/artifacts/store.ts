@@ -8,27 +8,27 @@ import {
   type ArtifactRefV1,
 } from '../../contracts/workflow.ts'
 import {
-  type CommandReceiptManifestV1,
-  type CommandReceiptStore,
-} from './command-receipts.ts'
+  type IntentReceiptManifestV2,
+  type IntentReceiptStore,
+} from './intent-receipts.ts'
 
 export const ARTIFACT_PLUGIN_DIRECTORY = 'dsh-tender-workbench'
-export const ARTIFACT_LAYOUT_VERSION = 'v1'
+export const ARTIFACT_LAYOUT_VERSION = 'v2'
 
 export interface SessionPersistenceLocator {
   locate(header: SessionHeader): { readonly kind: string; readonly path: string } | undefined
 }
 
-export interface ArtifactManifestEntryV1 extends ArtifactRefV1 {
+export interface ArtifactManifestEntryV2 extends ArtifactRefV1 {
   readonly relativePath: string
   readonly size: number
   readonly sha256: string
 }
 
-export interface ArtifactManifestV1 {
-  readonly schemaVersion: 1
-  readonly artifacts: Readonly<Record<string, ArtifactManifestEntryV1>>
-  readonly receipts: CommandReceiptManifestV1<JsonValue>['receipts']
+export interface ArtifactManifestV2 {
+  readonly schemaVersion: 2
+  readonly artifacts: Readonly<Record<string, ArtifactManifestEntryV2>>
+  readonly receipts: IntentReceiptManifestV2<JsonValue>['receipts']
 }
 
 const manifestEntrySchema = ArtifactRefV1Schema.extend({
@@ -38,7 +38,20 @@ const manifestEntrySchema = ArtifactRefV1Schema.extend({
 }).strict()
 
 const receiptSchema = z.object({
-  commandId: z.string().min(1).max(128),
+  receiptId: z.string().min(1).max(128),
+  intentId: z.string().min(1).max(128),
+  tool: z.enum([
+    'tender_workbench_run_query',
+    'tender_workbench_preview_rules',
+    'tender_workbench_confirm_rules',
+    'tender_workbench_prepare_analysis_batch',
+    'tender_workbench_commit_analysis_batch',
+    'tender_workbench_apply_review',
+    'tender_workbench_revert_review',
+    'tender_workbench_create_report',
+    'tender_workbench_retry_report',
+  ]),
+  batchId: z.string().min(1).max(128).optional(),
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
   previousRevision: z.number().int().nonnegative(),
   resultRevision: z.number().int().positive(),
@@ -46,7 +59,7 @@ const receiptSchema = z.object({
 }).strict()
 
 const artifactManifestSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   artifacts: z.record(z.string(), manifestEntrySchema),
   receipts: z.record(z.string(), receiptSchema),
 }).strict()
@@ -90,15 +103,15 @@ export function resolveArtifactPath(root: string, relativePath: string): string 
   return target
 }
 
-function emptyManifest(): ArtifactManifestV1 {
-  return { schemaVersion: 1, artifacts: {}, receipts: {} }
+function emptyManifest(): ArtifactManifestV2 {
+  return { schemaVersion: 2, artifacts: {}, receipts: {} }
 }
 
 function manifestPath(root: string): string {
   return resolve(root, 'manifest.json')
 }
 
-export async function readArtifactManifest(root: string): Promise<ArtifactManifestV1> {
+export async function readArtifactManifest(root: string): Promise<ArtifactManifestV2> {
   let raw: string
   try {
     raw = await readFile(manifestPath(root), 'utf8')
@@ -114,7 +127,7 @@ export async function readArtifactManifest(root: string): Promise<ArtifactManife
   }
   const parsed = artifactManifestSchema.safeParse(value)
   if (!parsed.success) throw new ArtifactManifestError()
-  return parsed.data as ArtifactManifestV1
+  return parsed.data as ArtifactManifestV2
 }
 
 async function atomicWrite(path: string, bytes: Uint8Array): Promise<void> {
@@ -129,7 +142,7 @@ async function atomicWrite(path: string, bytes: Uint8Array): Promise<void> {
   }
 }
 
-async function writeManifest(root: string, manifest: ArtifactManifestV1): Promise<void> {
+async function writeManifest(root: string, manifest: ArtifactManifestV2): Promise<void> {
   const parsed = artifactManifestSchema.parse(manifest)
   await atomicWrite(manifestPath(root), Buffer.from(`${JSON.stringify(parsed, null, 2)}\n`, 'utf8'))
 }
@@ -142,21 +155,21 @@ function artifactDirectory(kind: ArtifactRefV1['kind']): 'source' | 'datasets' |
 }
 
 /** One serialized command transaction. Files become reachable only with the atomic manifest commit. */
-export class ArtifactTransaction implements CommandReceiptStore<JsonValue> {
-  private base?: ArtifactManifestV1
-  private readonly staged = new Map<string, ArtifactManifestEntryV1>()
+export class ArtifactTransaction implements IntentReceiptStore<JsonValue> {
+  private base?: ArtifactManifestV2
+  private readonly staged = new Map<string, ArtifactManifestEntryV2>()
 
   constructor(readonly root: string) {}
 
-  async load(): Promise<CommandReceiptManifestV1<JsonValue>> {
+  async load(): Promise<IntentReceiptManifestV2<JsonValue>> {
     this.base = await readArtifactManifest(this.root)
-    return { schemaVersion: 1, receipts: structuredClone(this.base.receipts) }
+    return { schemaVersion: 2, receipts: structuredClone(this.base.receipts) }
   }
 
-  async save(receipts: CommandReceiptManifestV1<JsonValue>): Promise<void> {
+  async save(receipts: IntentReceiptManifestV2<JsonValue>): Promise<void> {
     if (this.base === undefined) throw new ArtifactManifestError('Artifact 事务尚未加载 manifest。')
     await writeManifest(this.root, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       artifacts: {
         ...this.base.artifacts,
         ...Object.fromEntries(this.staged),
@@ -179,7 +192,7 @@ export class ArtifactTransaction implements CommandReceiptStore<JsonValue> {
     const path = resolveArtifactPath(this.root, relativePath)
     const bytes = Buffer.from(`${JSON.stringify(value)}\n`, 'utf8')
     await atomicWrite(path, bytes)
-    const entry: ArtifactManifestEntryV1 = {
+    const entry: ArtifactManifestEntryV2 = {
       id,
       kind,
       fileName,
@@ -218,7 +231,7 @@ export class ArtifactTransaction implements CommandReceiptStore<JsonValue> {
     const path = resolveArtifactPath(this.root, relativePath)
     const content = Buffer.from(bytes)
     await atomicWrite(path, content)
-    const entry: ArtifactManifestEntryV1 = {
+    const entry: ArtifactManifestEntryV2 = {
       id,
       kind,
       fileName,
@@ -264,7 +277,7 @@ export function createArtifactTransaction(
 
 export async function readManifestArtifact(
   root: string,
-  entry: ArtifactManifestEntryV1,
+  entry: ArtifactManifestEntryV2,
   signal?: AbortSignal,
 ): Promise<Buffer> {
   signal?.throwIfAborted()

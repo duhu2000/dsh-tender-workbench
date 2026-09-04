@@ -37,6 +37,9 @@ function harness() {
     subscribe: vi.fn(() => vi.fn()),
     getSnapshot: vi.fn(() => localeSnapshot),
   }
+  const connection = {
+    api: { skills: { list: vi.fn(async () => ({ result: { ok: true, value: { skills: [] } } })) } },
+  }
   const createSession = vi.fn(async ({ sessionId, workspaceId }: { sessionId: string; workspaceId: string }) => {
     const cwd = workspaceId === 'workspace-1' ? 'C:\\one' : 'C:\\two'
     sessionState.ids.unshift(sessionId)
@@ -57,7 +60,9 @@ function harness() {
       if (typeof dispose === 'function') effects.push(dispose as () => void)
       return dispose
     }),
-    get: vi.fn((name: string) => name === 'sessions' ? sessions : name === 'locale' ? locale : undefined),
+    get: vi.fn((name: string) => name === 'sessions'
+      ? sessions
+      : name === 'locale' ? locale : name === 'connection' ? connection : undefined),
     locale,
     slots: {
       inject: vi.fn((_name: string, callback: () => unknown) => {

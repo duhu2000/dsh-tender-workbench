@@ -9,8 +9,8 @@ import {
   type RuleArtifactContentV1,
   type RulePreviewArtifactV1,
 } from '../src/contracts/screening.ts'
-import type { TenderRuleV1, TenderWorkflowProjectionV1 } from '../src/contracts/workflow.ts'
-import type { TenderWorkbenchIntentV1 } from '../src/contracts/screening-intents.ts'
+import type { TenderRuleV1, TenderWorkflowProjectionV2 } from '../src/contracts/workflow.ts'
+import type { TenderWorkbenchIntentV2 } from '../src/contracts/intents.ts'
 import { createEmptyTenderWorkflowProjection } from '../src/contracts/workflow.ts'
 import { zh, type TenderKey } from '../src/client/locales.ts'
 import type { TenderProjectionRead } from '../src/client/tender-projection-port.ts'
@@ -38,7 +38,7 @@ const draftRules: readonly TenderRuleV1[] = [{
 }]
 const fingerprint = ruleDraftFingerprint(draftRules)
 
-function queryProjection(revision = 1): TenderWorkflowProjectionV1 {
+function queryProjection(revision = 1): TenderWorkflowProjectionV2 {
   const base = createEmptyTenderWorkflowProjection()
   return {
     ...base,
@@ -68,7 +68,7 @@ function previewArtifact(origin: 'agent' | 'user' = 'agent', revision = 2, rules
   }
 }
 
-function draftProjection(origin: 'agent' | 'user' = 'agent', rules = draftRules, revision = 2): TenderWorkflowProjectionV1 {
+function draftProjection(origin: 'agent' | 'user' = 'agent', rules = draftRules, revision = 2): TenderWorkflowProjectionV2 {
   const base = queryProjection(revision)
   return {
     ...base,
@@ -84,24 +84,24 @@ function draftProjection(origin: 'agent' | 'user' = 'agent', rules = draftRules,
 
 function renderWorkbench(input: {
   readonly projection?: TenderProjectionRead
-  readonly sendIntent?: ReturnType<typeof vi.fn<(intent: TenderWorkbenchIntentV1) => Promise<void>>>
+  readonly sendIntent?: ReturnType<typeof vi.fn<(intent: TenderWorkbenchIntentV2) => Promise<void>>>
   readonly loadContent?: RuleContentLoader
   readonly loadClassifiedRows?: ClassifiedRowsLoader
   readonly sessionId?: string
 }) {
   let sequence = 0
-  const sendIntent = input.sendIntent ?? vi.fn(async (_intent: TenderWorkbenchIntentV1) => {})
+  const sendIntent = input.sendIntent ?? vi.fn(async (_intent: TenderWorkbenchIntentV2) => {})
   const result = render(<TenderWorkbenchView
     sessionId={(input.sessionId ?? 'session-1') as never}
     projection={input.projection ?? { status: 'ready', projection: queryProjection() }}
     navigation={createTenderWorkbenchNavigationController()}
     sendIntent={sendIntent}
-    createCommandId={() => `command-${++sequence}`}
+    createIntentId={() => `intent-${++sequence}`}
     {...(input.loadContent === undefined ? {} : { loadRuleContent: input.loadContent })}
     {...(input.loadClassifiedRows === undefined ? {} : { loadClassifiedRows: input.loadClassifiedRows })}
     t={t}
   />)
-  return { ...result, sendIntent, getCommandCount: () => sequence }
+  return { ...result, sendIntent, getIntentCount: () => sequence }
 }
 
 function expectWriteProgress(action: string, phase: string, label: string): HTMLElement {
@@ -116,7 +116,7 @@ function expectWriteProgress(action: string, phase: string, label: string): HTML
 describe('S3 screening workbench', () => {
   it('does not enter S3 after query completion and sends rules.propose only after explicit continue', async () => {
     let releaseSend: (() => void) | undefined
-    const sendIntent = vi.fn((_intent: TenderWorkbenchIntentV1) => new Promise<void>((resolve) => { releaseSend = resolve }))
+    const sendIntent = vi.fn((_intent: TenderWorkbenchIntentV2) => new Promise<void>((resolve) => { releaseSend = resolve }))
     const view = renderWorkbench({ sendIntent })
     expect(sendIntent).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
@@ -134,9 +134,10 @@ describe('S3 screening workbench', () => {
       fireEvent.submit(continueForm)
     }
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
-    expect(view.getCommandCount()).toBe(1)
+    expect(view.getIntentCount()).toBe(1)
     expect(sendIntent.mock.calls[0]?.[0]).toEqual({
-      schemaVersion: 1, commandId: 'command-1', kind: 'rules.propose', activeDatasetRef: dataset.id, projectionRevision: 1,
+      schemaVersion: 2, intentId: 'intent-1', kind: 'rules.propose', skill: 'tender-workbench-screening',
+      binding: { activeDatasetRef: dataset.id, projectionRevision: 1 }, payload: {},
     })
     expectWriteProgress('rules.propose', 'sending', zh['workbench.write.propose.sending'])
     releaseSend?.()
@@ -152,7 +153,7 @@ describe('S3 screening workbench', () => {
       if (artifact.kind === 'rule-preview') return previewArtifact('agent', 2, draftRules)
       return { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 1, draftFingerprint: fingerprint, origin: 'agent', rules: [...draftRules] }
     })
-    const sendIntent = vi.fn(async (_intent: TenderWorkbenchIntentV1) => {})
+    const sendIntent = vi.fn(async (_intent: TenderWorkbenchIntentV2) => {})
     const view = renderWorkbench({ projection: { status: 'ready', projection: draftProjection() }, sendIntent, loadContent })
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
     const name = await screen.findByDisplayValue('数据方向')
@@ -185,14 +186,14 @@ describe('S3 screening workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.rules.delete'].replace('{name}', zh['workbench.rules.newRuleName']) }))
     expect(screen.queryByDisplayValue(zh['workbench.rules.newRuleName'])).toBeNull()
     expect(screen.getByDisplayValue('用户本地编辑')).toBeTruthy()
-    expect(view.getCommandCount()).toBe(0)
+    expect(view.getIntentCount()).toBe(0)
   })
 
   it('marks previews stale after a local edit, blocks confirmation, and previews only on explicit action', async () => {
     const content = vi.fn<RuleContentLoader>(async (_session, artifact) => artifact.kind === 'rule-preview'
       ? previewArtifact('user')
       : { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 1, draftFingerprint: fingerprint, origin: 'user', rules: [...draftRules] })
-    const sendIntent = vi.fn(async (_intent: TenderWorkbenchIntentV1) => {})
+    const sendIntent = vi.fn(async (_intent: TenderWorkbenchIntentV2) => {})
     const view = renderWorkbench({ projection: { status: 'ready', projection: draftProjection('user') }, sendIntent, loadContent: content })
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
     const confirm = await screen.findByRole('button', { name: zh['workbench.rules.confirm'] })
@@ -212,9 +213,9 @@ describe('S3 screening workbench', () => {
       fireEvent.submit(previewForm)
       fireEvent.submit(previewForm)
     }
-    await waitFor(() => { expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({ commandId: 'command-1', kind: 'rules.preview', rules: [{ name: '已修改名称' }] }) })
+    await waitFor(() => { expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({ intentId: 'intent-1', kind: 'rules.preview', payload: { rules: [{ name: '已修改名称' }] } }) })
     expect(sendIntent).toHaveBeenCalledTimes(1)
-    expect(view.getCommandCount()).toBe(1)
+    expect(view.getIntentCount()).toBe(1)
     await waitFor(() => {
       const progress = expectWriteProgress('rules.preview', 'waiting-agent', zh['workbench.write.preview.waiting'])
       const previewWrite = document.querySelector('[data-write-button="rules.preview"]')
@@ -227,7 +228,7 @@ describe('S3 screening workbench', () => {
       projection={{ status: 'ready', projection: { ...queryProjection(), query: { ...queryProjection().query!, normalizedData: { ...dataset, id: 'session-2-data' } } } }}
       navigation={createTenderWorkbenchNavigationController()}
       sendIntent={sendIntent}
-      createCommandId={() => 'session-2-command'}
+      createIntentId={() => 'session-2-intent'}
       loadRuleContent={content}
       t={t}
     />)
@@ -241,7 +242,7 @@ describe('S3 screening workbench', () => {
       : { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 1, draftFingerprint: fingerprint, origin: 'user', rules: [...draftRules] })
     const classifiedRef = { id: 'classified-navigation', kind: 'classified-data' as const, fileName: 'classified.json', mediaType: 'application/json', rowCount: 2, createdAt, accessToken: 'classified-token' }
     const base = draftProjection('user')
-    const withClassification: TenderWorkflowProjectionV1 = {
+    const withClassification: TenderWorkflowProjectionV2 = {
       ...base,
       currentStage: 'classification',
       stages: { ...base.stages, classification: { status: 'succeeded', updatedAt: createdAt } },
@@ -272,7 +273,7 @@ describe('S3 screening workbench', () => {
     const content = vi.fn<RuleContentLoader>(async (_session, artifact) => artifact.kind === 'rule-preview'
       ? previewArtifact('user')
       : { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 1, draftFingerprint: fingerprint, origin: 'user', rules: [...draftRules] })
-    const sendIntent = vi.fn(async (_intent: TenderWorkbenchIntentV1) => {})
+    const sendIntent = vi.fn(async (_intent: TenderWorkbenchIntentV2) => {})
     const loadRows = vi.fn<ClassifiedRowsLoader>(async (_session, artifact, filter) => ({
       schemaVersion: 1, artifactId: artifact.id, page: filter.page, pageSize: filter.pageSize, total: 0,
       datasetTotal: 0, covered: 0, conflicts: 0, rawMatches: 0,
@@ -284,7 +285,7 @@ describe('S3 screening workbench', () => {
       projection={{ status: 'ready', projection: initial }}
       navigation={createTenderWorkbenchNavigationController()}
       sendIntent={sendIntent}
-      createCommandId={() => `command-${++sequence}`}
+      createIntentId={() => `intent-${++sequence}`}
       loadRuleContent={content}
       loadClassifiedRows={loadRows}
       t={t}
@@ -300,22 +301,28 @@ describe('S3 screening workbench', () => {
     }
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(1) })
     expect(sequence).toBe(1)
-    expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({ commandId: 'command-1', kind: 'rules.confirm' })
+    expect(sendIntent.mock.calls[0]?.[0]).toMatchObject({ intentId: 'intent-1', kind: 'rules.confirm' })
     expect(sequence).toBe(1)
     await waitFor(() => {
       expectWriteProgress('rules.confirm', 'waiting-agent', zh['workbench.write.confirm.waiting'])
     })
     expect((screen.getByDisplayValue('数据方向') as HTMLInputElement).disabled).toBe(true)
 
-    const running: TenderWorkflowProjectionV1 = {
+    const running: TenderWorkflowProjectionV2 = {
       ...initial,
       currentStage: 'classification',
       activeOperation: {
-        callId: 'call-confirm-1', commandId: 'command-1', command: 'tender_workbench_confirm_rules', stage: 'classification',
+        callId: 'call-confirm-1', intentId: 'intent-1', tool: 'tender_workbench_confirm_rules', origin: 'workbench-intent', stage: 'classification',
+      },
+      pendingIntent: {
+        intentId: 'intent-1', kind: 'rules.confirm', skill: 'tender-workbench-screening',
+        origin: 'workbench-intent', status: 'running', turn: 1,
+        expectedTool: 'tender_workbench_confirm_rules', terminalTools: ['tender_workbench_confirm_rules'],
+        intentFingerprint: 'intent-confirm', bindingFingerprint: 'binding-confirm',
       },
       stages: { ...initial.stages, classification: { status: 'running' } },
     }
-    view.rerender(<TenderWorkbenchView sessionId={'session-1' as never} projection={{ status: 'ready', projection: running }} navigation={createTenderWorkbenchNavigationController()} sendIntent={sendIntent} createCommandId={() => `command-${++sequence}`} loadRuleContent={content} loadClassifiedRows={loadRows} t={t} />)
+    view.rerender(<TenderWorkbenchView sessionId={'session-1' as never} projection={{ status: 'ready', projection: running }} navigation={createTenderWorkbenchNavigationController()} sendIntent={sendIntent} createIntentId={() => `intent-${++sequence}`} loadRuleContent={content} loadClassifiedRows={loadRows} t={t} />)
     await waitFor(() => {
       expectWriteProgress('rules.confirm', 'running', zh['workbench.write.confirm.running'])
     })
@@ -323,33 +330,34 @@ describe('S3 screening workbench', () => {
     expect(screen.getByRole('heading', { name: zh['workbench.data.completeTitle'] })).toBeTruthy()
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
 
-    const failed: TenderWorkflowProjectionV1 = {
+    const failed: TenderWorkflowProjectionV2 = {
       ...initial,
       currentStage: 'classification',
       stages: { ...initial.stages, classification: { status: 'failed', updatedAt: '2026-09-01T00:01:00.000Z', errorCode: 'tool-failed', errorMessage: '分类执行失败' } },
-      lastFailure: { command: 'tender_workbench_confirm_rules', code: 'tool-failed', message: '分类执行失败' },
+      lastFailure: { intentId: 'intent-1', tool: 'tender_workbench_confirm_rules', code: 'tool-failed', message: '分类执行失败' },
     }
-    view.rerender(<TenderWorkbenchView sessionId={'session-1' as never} projection={{ status: 'ready', projection: failed }} navigation={createTenderWorkbenchNavigationController()} sendIntent={sendIntent} createCommandId={() => `command-${++sequence}`} loadRuleContent={content} loadClassifiedRows={loadRows} t={t} />)
+    view.rerender(<TenderWorkbenchView sessionId={'session-1' as never} projection={{ status: 'ready', projection: failed }} navigation={createTenderWorkbenchNavigationController()} sendIntent={sendIntent} createIntentId={() => `intent-${++sequence}`} loadRuleContent={content} loadClassifiedRows={loadRows} t={t} />)
     expect(await screen.findByText(zh['workbench.write.confirm.failed'])).toBeTruthy()
     const retryAsNewCommand = screen.getByRole('button', { name: zh['workbench.rules.confirm'] })
     expect(retryAsNewCommand.hasAttribute('disabled')).toBe(false)
     fireEvent.click(retryAsNewCommand)
     await waitFor(() => { expect(sendIntent).toHaveBeenCalledTimes(2) })
-    expect(sendIntent.mock.calls[1]?.[0]).toMatchObject({ commandId: 'command-2', kind: 'rules.confirm' })
+    expect(sendIntent.mock.calls[1]?.[0]).toMatchObject({ intentId: 'intent-2', kind: 'rules.confirm' })
 
-    const runningAgain: TenderWorkflowProjectionV1 = {
+    const runningAgain: TenderWorkflowProjectionV2 = {
       ...running,
-      activeOperation: { ...running.activeOperation!, callId: 'call-confirm-2', commandId: 'command-2' },
+      activeOperation: { ...running.activeOperation!, callId: 'call-confirm-2', intentId: 'intent-2' },
+      pendingIntent: { ...running.pendingIntent!, intentId: 'intent-2' },
     }
-    view.rerender(<TenderWorkbenchView sessionId={'session-1' as never} projection={{ status: 'ready', projection: runningAgain }} navigation={createTenderWorkbenchNavigationController()} sendIntent={sendIntent} createCommandId={() => `command-${++sequence}`} loadRuleContent={content} loadClassifiedRows={loadRows} t={t} />)
+    view.rerender(<TenderWorkbenchView sessionId={'session-1' as never} projection={{ status: 'ready', projection: runningAgain }} navigation={createTenderWorkbenchNavigationController()} sendIntent={sendIntent} createIntentId={() => `intent-${++sequence}`} loadRuleContent={content} loadClassifiedRows={loadRows} t={t} />)
     const classifiedRef = { id: 'classified-success', kind: 'classified-data' as const, fileName: 'classified.json', mediaType: 'application/json', rowCount: 2, createdAt, accessToken: 'classified-token' }
-    const succeeded: TenderWorkflowProjectionV1 = {
+    const succeeded: TenderWorkflowProjectionV2 = {
       ...draftProjection('user', draftRules, 3),
       currentStage: 'classification',
       stages: { ...initial.stages, rules: { status: 'succeeded', updatedAt: createdAt }, classification: { status: 'succeeded', updatedAt: '2026-09-01T00:02:00.000Z' } },
       classification: { data: classifiedRef, include: 1, observe: 0, manualReview: 0, exclude: 0, unmatched: 1, covered: 1, conflicts: 0, ruleSetVersion: 'rsv-success', activeDatasetId: dataset.id },
     }
-    view.rerender(<TenderWorkbenchView sessionId={'session-1' as never} projection={{ status: 'ready', projection: succeeded }} navigation={createTenderWorkbenchNavigationController()} sendIntent={sendIntent} createCommandId={() => `command-${++sequence}`} loadRuleContent={content} loadClassifiedRows={loadRows} t={t} />)
+    view.rerender(<TenderWorkbenchView sessionId={'session-1' as never} projection={{ status: 'ready', projection: succeeded }} navigation={createTenderWorkbenchNavigationController()} sendIntent={sendIntent} createIntentId={() => `intent-${++sequence}`} loadRuleContent={content} loadClassifiedRows={loadRows} t={t} />)
     await waitFor(() => { expect(document.querySelector('[data-write-phase="running"]')).toBeNull() })
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.opportunity'] }))
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.data.requery'] }))
@@ -417,7 +425,7 @@ describe('S3 screening workbench', () => {
     const classifiedRef = { id: 'classified', kind: 'classified-data' as const, fileName: 'classified.json', mediaType: 'application/json', rowCount: 2, createdAt, accessToken: 'classified-token' }
     const confirmedRef = { id: 'rule-set', kind: 'rule-set' as const, fileName: 'rules.json', mediaType: 'application/json', createdAt, accessToken: 'rules-token' }
     const base = draftProjection('user', draftRules, 3)
-    const projection: TenderWorkflowProjectionV1 = {
+    const projection: TenderWorkflowProjectionV2 = {
       ...base, currentStage: 'classification',
       stages: { ...base.stages, classification: { status: 'succeeded', updatedAt: createdAt } },
       rules: { ...base.rules!, confirmed: confirmedRef, ruleSetVersion: 'rsv-3-test' },
@@ -433,7 +441,7 @@ describe('S3 screening workbench', () => {
     const loadContent = vi.fn<RuleContentLoader>(async (_session, artifact) => {
       if (artifact.kind === 'rule-preview') return previewArtifact('user', 3)
       if (artifact.kind === 'rule-draft') return { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 2, draftFingerprint: fingerprint, origin: 'user', rules: [...draftRules] }
-      return { schemaVersion: 1, ruleSetVersion: 'rsv-3-test', activeDatasetId: dataset.id, previewArtifactId: previewRef.id, confirmedAt: createdAt, commandId: 'confirm', draftFingerprint: fingerprint, rules: [...draftRules] }
+      return { schemaVersion: 1, ruleSetVersion: 'rsv-3-test', activeDatasetId: dataset.id, previewArtifactId: previewRef.id, confirmedAt: createdAt, intentId: 'confirm-intent', draftFingerprint: fingerprint, rules: [...draftRules] }
     })
     const view = renderWorkbench({ projection: { status: 'ready', projection }, loadClassifiedRows: loadRows, loadContent })
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
@@ -478,11 +486,13 @@ describe('S3 screening workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.classification.openAnalysis'] }))
     await waitFor(() => { expect(view.sendIntent).toHaveBeenCalledOnce() })
     expect(view.sendIntent.mock.calls[0]?.[0]).toMatchObject({
-      kind: 'analysis.request',
-      activeDatasetRef: dataset.id,
-      classificationArtifactRef: classifiedRef.id,
-      ruleSetVersion: 'rsv-3-test',
-      scope: { kind: 'all-eligible' },
+      kind: 'analysis.run',
+      binding: {
+        activeDatasetRef: dataset.id,
+        classificationArtifactRef: classifiedRef.id,
+        ruleSetVersion: 'rsv-3-test',
+      },
+      payload: { scope: { kind: 'all-eligible' } },
     })
     expect(screen.getByRole('tab', { name: zh['workbench.analysis.shortTitle'] }).getAttribute('aria-selected')).toBe('true')
     expect(await screen.findByRole('heading', { name: zh['workbench.analysis.title'] })).toBeTruthy()

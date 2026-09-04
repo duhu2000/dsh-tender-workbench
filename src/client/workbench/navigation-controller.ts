@@ -1,6 +1,6 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react'
 import type {
-  TenderWorkflowProjectionV1,
+  TenderWorkflowProjectionV2,
   WorkflowStage,
 } from '../../contracts/workflow.ts'
 import type { TenderKey } from '../locales.ts'
@@ -56,7 +56,7 @@ export type WorkbenchPhaseProgress = 'not-started' | 'progress' | 'completed' | 
 export const WORKBENCH_PHASES: readonly WorkbenchPhase[] = TENDER_WORKBENCH_PHASES.map(phase => phase.id)
 
 export function tenderWorkbenchPhaseProgress(
-  projection: TenderWorkflowProjectionV1 | undefined,
+  projection: TenderWorkflowProjectionV2 | undefined,
   phase: WorkbenchPhase,
 ): WorkbenchPhaseProgress {
   const config = TENDER_WORKBENCH_PHASES.find(candidate => candidate.id === phase)

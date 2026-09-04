@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { JsonValue, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, describe, expect, it } from 'vitest'
-import { emptyCommandReceiptManifest } from '../src/host/artifacts/command-receipts.ts'
+import { emptyIntentReceiptManifest } from '../src/host/artifacts/intent-receipts.ts'
 import { createArtifactRouteHandler } from '../src/host/artifacts/artifact-route.ts'
 import {
   ArtifactManifestError,
@@ -116,12 +116,12 @@ describe('Session-private Artifact service', () => {
     const ref = await transaction.stageJson('normalized-data', 'dataset.json', json(dataset()), 3)
     const pdf = await transaction.stageBytes('pdf', '阶段性报告.pdf', 'application/pdf', Buffer.from('%PDF-test'))
     const excel = await transaction.stageBytes('excel', '数据底稿.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', Buffer.from('xlsx-test'))
-    await transaction.save(emptyCommandReceiptManifest())
+    await transaction.save(emptyIntentReceiptManifest())
     const manifest = await readArtifactManifest(firstRoot)
     expect(manifest.artifacts[ref.id]).toMatchObject({ id: ref.id, kind: 'normalized-data', rowCount: 3 })
     expect(manifest.artifacts[pdf.id]).toMatchObject({ id: pdf.id, kind: 'pdf', mediaType: 'application/pdf' })
     expect(manifest.artifacts[excel.id]).toMatchObject({ id: excel.id, kind: 'excel' })
-    expect(await readArtifactManifest(secondRoot)).toEqual({ schemaVersion: 1, artifacts: {}, receipts: {} })
+    expect(await readArtifactManifest(secondRoot)).toEqual({ schemaVersion: 2, artifacts: {}, receipts: {} })
     expect(await readFile(first.transcript, 'utf8')).toBe('transcript-sentinel')
     expect(await readFile(second.transcript, 'utf8')).toBe('transcript-sentinel')
   })
@@ -147,7 +147,7 @@ describe('Session-private Artifact service', () => {
     const transaction = new ArtifactTransaction(sessionArtifactRoot(persistence, first.header))
     await transaction.load()
     const ref = await transaction.stageJson('normalized-data', 'dataset.json', json(dataset()), 3)
-    await transaction.save(emptyCommandReceiptManifest())
+    await transaction.save(emptyIntentReceiptManifest())
     const sessions = {
       get: (id: SessionId) => id === first.header.id ? first.session : id === second.header.id ? second.session : undefined,
     }
@@ -192,7 +192,7 @@ describe('Session-private Artifact service', () => {
     const transaction = new ArtifactTransaction(sessionArtifactRoot(persistence, fixture.header))
     await transaction.load()
     const ref = await transaction.stageJson('normalized-data', 'dataset.json', json(dataset()), 3)
-    await transaction.save(emptyCommandReceiptManifest())
+    await transaction.save(emptyIntentReceiptManifest())
     const { port } = await listen(createArtifactRouteHandler({
       sessions: { get: () => fixture.session } as never,
       sessionPersistence: persistence,
@@ -263,16 +263,17 @@ describe('Session-private Artifact service', () => {
       revertedOperationCount: 0,
       operations: [{
         operationId: 'review-operation-1',
-        commandId: 'review-command-1',
+        intentId: 'review-intent-1',
         appliedAt: '2026-09-01T00:00:00.000Z',
-        decision: 'exclude',
-        note: '用户备注',
-        recordRefs: [run.rows[2]!.project.recordId],
+        changes: [{
+          recordRef: run.rows[2]!.project.recordId,
+          value: { decision: 'exclude', note: '用户备注' },
+        }],
         previous: [{ recordRef: run.rows[2]!.project.recordId, value: { decision: 'pending', note: '' } }],
       }],
       rows: reviewRows,
     }), reviewRows.length)
-    await transaction.save(emptyCommandReceiptManifest())
+    await transaction.save(emptyIntentReceiptManifest())
     const sessions = { get: (id: SessionId) => id === first.header.id ? first.session : id === second.header.id ? second.session : undefined }
     const { port } = await listen(createArtifactRouteHandler({ sessions: sessions as never, sessionPersistence: persistence }))
     const baseHeaders = {
@@ -371,7 +372,7 @@ describe('Session-private Artifact service', () => {
     await transaction.load()
     const snapshot = await transaction.stageJson('final-snapshot', 'snapshot.json', json(reportDataset), reportDataset.rows.length)
     const normalizedRef = await transaction.stageJson('normalized-data', 'normalized.json', json(normalized), normalized.rows.length)
-    await transaction.save(emptyCommandReceiptManifest())
+    await transaction.save(emptyIntentReceiptManifest())
     const sessions = { get: (id: SessionId) => id === first.header.id ? first.session : id === second.header.id ? second.session : undefined }
     const { port } = await listen(createArtifactRouteHandler({ sessions: sessions as never, sessionPersistence: persistence }))
     const headers = {

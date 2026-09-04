@@ -51,25 +51,6 @@ export const AnalysisBatchRecordV1Schema = z.object({
   evidence: z.array(AnalysisEvidenceV1Schema).min(1).max(32),
 }).strict()
 
-export const AnalysisNextCommandV1Schema = z.object({
-  schemaVersion: z.literal(1),
-  kind: z.literal('analysis.next'),
-  commandId: idText,
-  activeDatasetRef: idText,
-  classificationArtifactRef: idText,
-  ruleSetVersion: idText,
-  projectionRevision: z.number().int().nonnegative(),
-  scope: AnalysisScopeV1Schema,
-}).strict()
-
-export type AnalysisNextCommandV1 = z.infer<typeof AnalysisNextCommandV1Schema>
-
-export const RequestAnalysisIntentV1Schema = AnalysisNextCommandV1Schema.omit({ kind: true }).extend({
-  kind: z.literal('analysis.request'),
-}).strict()
-
-export type RequestAnalysisIntentV1 = z.infer<typeof RequestAnalysisIntentV1Schema>
-
 export const AnalysisBatchV1Schema = z.object({
   schemaVersion: z.literal(1),
   analysisVersion: idText,
@@ -99,21 +80,6 @@ export const AgentRecommendationInputV1Schema = z.object({
 }).strict()
 
 export type AgentRecommendationInputV1 = z.infer<typeof AgentRecommendationInputV1Schema>
-
-export const AnalysisCommitCommandV1Schema = z.object({
-  schemaVersion: z.literal(1),
-  kind: z.literal('analysis.commit'),
-  commandId: idText,
-  activeDatasetRef: idText,
-  classificationArtifactRef: idText,
-  ruleSetVersion: idText,
-  projectionRevision: z.number().int().nonnegative(),
-  scope: AnalysisScopeV1Schema,
-  batchId: idText,
-  recommendations: z.array(AgentRecommendationInputV1Schema).min(1).max(20),
-}).strict()
-
-export type AnalysisCommitCommandV1 = z.infer<typeof AnalysisCommitCommandV1Schema>
 
 export const AgentRecommendationV1Schema = AgentRecommendationInputV1Schema.extend({
   batchId: idText,
@@ -146,37 +112,6 @@ export const AnalysisDatasetV1Schema = z.object({
 
 export type AnalysisDatasetV1 = z.infer<typeof AnalysisDatasetV1Schema>
 
-export const AnalysisFollowUpContextV1Schema = z.object({
-  title: boundedText,
-  source: z.enum(TENDER_DATA_SOURCES),
-  region: z.string().max(512),
-  amount: z.string().max(512),
-  stage: z.string().max(512),
-  timing: z.string().max(512),
-  classification: z.enum(CLASSIFICATION_VALUES),
-  recommendation: z.enum(AGENT_RECOMMENDATIONS),
-  reason: boundedText,
-  evidence: z.array(AnalysisEvidenceV1Schema).min(1).max(12),
-  verificationItems: z.array(boundedText).max(12),
-  limitations: z.array(boundedText).max(12),
-}).strict()
-
-export const AnalysisFollowUpIntentV1Schema = z.object({
-  schemaVersion: z.literal(1),
-  kind: z.literal('analysis.follow-up'),
-  commandId: idText,
-  activeDatasetRef: idText,
-  classificationArtifactRef: idText,
-  ruleSetVersion: idText,
-  analysisVersion: idText,
-  projectionRevision: z.number().int().nonnegative(),
-  recordRef: idText,
-  question: boundedText,
-  context: AnalysisFollowUpContextV1Schema,
-}).strict()
-
-export type AnalysisFollowUpIntentV1 = z.infer<typeof AnalysisFollowUpIntentV1Schema>
-
 export const ReviewValueV1Schema = z.object({
   decision: z.enum(USER_DECISIONS),
   note: optionalNote,
@@ -190,11 +125,12 @@ export type ReviewRecordV1 = z.infer<typeof ReviewRecordV1Schema>
 
 export const ReviewOperationV1Schema = z.object({
   operationId: idText,
-  commandId: idText,
+  intentId: idText,
   appliedAt: timestamp,
-  decision: z.enum(USER_DECISIONS),
-  note: optionalNote,
-  recordRefs: z.array(idText).min(1).max(100),
+  changes: z.array(z.object({
+    recordRef: idText,
+    value: ReviewValueV1Schema,
+  }).strict()).min(1).max(100),
   previous: z.array(z.object({
     recordRef: idText,
     value: ReviewValueV1Schema,
@@ -215,34 +151,6 @@ export const ReviewDatasetV1Schema = z.object({
 }).strict()
 
 export type ReviewDatasetV1 = z.infer<typeof ReviewDatasetV1Schema>
-
-const reviewBinding = {
-  schemaVersion: z.literal(1),
-  commandId: idText,
-  activeDatasetRef: idText,
-  classificationArtifactRef: idText.optional(),
-  ruleSetVersion: idText.optional(),
-  analysisVersion: idText.optional(),
-  projectionRevision: z.number().int().nonnegative(),
-}
-
-export const ApplyReviewCommandV1Schema = z.object({
-  ...reviewBinding,
-  kind: z.literal('review.apply'),
-  recordRefs: z.array(idText).min(1).max(100)
-    .refine(uniqueValues, 'record refs must be unique'),
-  decision: z.enum(USER_DECISIONS),
-  note: optionalNote,
-}).strict()
-
-export type ApplyReviewCommandV1 = z.infer<typeof ApplyReviewCommandV1Schema>
-
-export const RevertReviewCommandV1Schema = z.object({
-  ...reviewBinding,
-  kind: z.literal('review.revert'),
-}).strict()
-
-export type RevertReviewCommandV1 = z.infer<typeof RevertReviewCommandV1Schema>
 
 export const ReviewCountsV1Schema = z.object({
   confirmedCandidate: z.number().int().nonnegative(),

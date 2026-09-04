@@ -1,9 +1,8 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
-import type { TenderWorkflowProjectionV1 } from '../../contracts/workflow.ts'
-import type { TenderQueryIntentV1 } from '../../contracts/query-schema.ts'
-import type { TenderWorkbenchIntentV1 } from '../../contracts/screening-intents.ts'
+import type { TenderWorkbenchIntentV2 } from '../../contracts/intents.ts'
+import type { TenderWorkflowProjectionV2 } from '../../contracts/workflow.ts'
 import type { TenderTranslate } from '../fields/field-props.ts'
 import {
   fetchArtifactRows,
@@ -15,7 +14,7 @@ import {
 } from '../artifact-api.ts'
 import type { TenderWorkbenchRevealController } from '../better-sidebar-adapter.ts'
 import { useTenderWorkbenchReveal } from '../better-sidebar-adapter.ts'
-import { createTenderQueryIntent } from '../intents/query-intent.ts'
+import { createTenderQueryIntent, type TenderQueryDraft } from '../intents/query-intent.ts'
 import { createContinueScreeningIntent, createRequestAnalysisIntent } from '../intents/screening-intent.ts'
 import { createInitialTenderFilters, type TenderFilters } from '../types.ts'
 import { validateTenderFilters, type TenderValidationErrors } from '../validation.ts'
@@ -69,7 +68,7 @@ import css from './tender-workbench.module.css'
 export { tenderWorkbenchDisplayStatus }
 export type { TenderWorkbenchDisplayStatus }
 
-function projectionOf(read: TenderProjectionRead): TenderWorkflowProjectionV1 | undefined {
+function projectionOf(read: TenderProjectionRead): TenderWorkflowProjectionV2 | undefined {
   return read.status === 'ready' ? read.projection : undefined
 }
 
@@ -89,8 +88,8 @@ export interface TenderWorkbenchViewProps {
   readonly sessionId: SessionId
   readonly projection: TenderProjectionRead
   readonly navigation: TenderWorkbenchNavigationController
-  readonly sendIntent: (intent: TenderWorkbenchIntentV1) => Promise<void>
-  readonly createCommandId?: () => string
+  readonly sendIntent: (intent: TenderWorkbenchIntentV2) => Promise<void>
+  readonly createIntentId?: () => string
   readonly loadRows?: TenderRowsLoader
   readonly loadRuleContent?: RuleContentLoader
   readonly loadClassifiedRows?: ClassifiedRowsLoader
@@ -174,7 +173,7 @@ export function TenderWorkbenchView({
   projection,
   navigation,
   sendIntent,
-  createCommandId = () => globalThis.crypto.randomUUID(),
+  createIntentId = () => globalThis.crypto.randomUUID(),
   loadRows = defaultRowsLoader,
   loadRuleContent = defaultRuleContentLoader,
   loadClassifiedRows = defaultClassifiedRowsLoader,
@@ -185,7 +184,7 @@ export function TenderWorkbenchView({
 }: TenderWorkbenchViewProps) {
   const workflow = projectionOf(projection)
   const [selectedPhase, setSelectedPhase] = useState<WorkbenchPhase>('opportunity')
-  const [scope, setScope] = useState<TenderQueryIntentV1['scope']>('combined')
+  const [scope, setScope] = useState<TenderQueryDraft['scope']>('combined')
   const [target, setTarget] = useState('')
   const [filters, setFilters] = useState<TenderFilters>(() => createInitialTenderFilters())
   const [queryBranch, setQueryBranch] = useState<'tender' | 'proposed'>('tender')
@@ -203,12 +202,12 @@ export function TenderWorkbenchView({
   const queryErrorId = useId()
   const queryDisabledReasonId = useId()
   useTenderWorkbenchNavigation(navigation, sessionId, setSelectedPhase)
-  const write = useSessionWriteFlight({ sessionId, workflow, sendIntent, createCommandId })
-  const writeStage: PendingTenderIntent['stage'] = write.state.action === 'query'
+  const write = useSessionWriteFlight({ sessionId, workflow, sendIntent, createIntentId })
+  const writeStage: PendingTenderIntent['stage'] = write.state.action === 'query.run'
     ? 'query'
     : write.state.action === 'rules.confirm'
       ? 'classification'
-      : write.state.action === 'analysis.request'
+      : write.state.action === 'analysis.run'
         ? 'analysis'
         : write.state.action === 'review.apply' || write.state.action === 'review.revert'
           ? 'review'
@@ -217,7 +216,7 @@ export function TenderWorkbenchView({
           : 'rules'
   const writePending = write.state.action === undefined || !write.busy
     ? undefined
-    : { commandId: write.state.commandId ?? '', revision: workflow?.revision ?? 0, stage: writeStage }
+    : { intentId: write.state.intentId ?? '', revision: workflow?.revision ?? 0, stage: writeStage }
   const status = tenderWorkbenchDisplayStatus(
     projection,
     writePending,
@@ -228,7 +227,7 @@ export function TenderWorkbenchView({
   const activeDataset = workflow?.query?.normalizedData
   useEffect(() => {
     if (
-      write.state.action === 'query'
+      write.state.action === 'query.run'
       && write.state.phase === 'succeeded'
       && workflow?.query?.normalizedData !== undefined
     ) setOpportunityView('overview')
@@ -284,11 +283,11 @@ export function TenderWorkbenchView({
       }
     }
     try {
-      write.start('query', commandId => createTenderQueryIntent({
+      write.start('query.run', intentId => createTenderQueryIntent({
         scope,
         target: trimmedTarget,
         filters,
-      }, commandId))
+      }, intentId, workflow?.revision ?? 0))
     } catch {
       setValidationError(t('workbench.sendFailed'))
     }
@@ -300,8 +299,8 @@ export function TenderWorkbenchView({
   }
   const requestRules = (): void => {
     if (activeDataset === undefined || workflow === undefined) return
-    const started = write.start('rules.propose', commandId => createContinueScreeningIntent({
-      commandId,
+    const started = write.start('rules.propose', intentId => createContinueScreeningIntent({
+      intentId,
       activeDatasetRef: activeDataset.id,
       projectionRevision: workflow.revision,
     }))
@@ -313,8 +312,8 @@ export function TenderWorkbenchView({
   const requestCandidateAnalysis = (): void => {
     const classification = workflow?.classification
     if (activeDataset === undefined || workflow === undefined || classification === undefined) return
-    const started = write.start('analysis.request', commandId => createRequestAnalysisIntent({
-      commandId,
+    const started = write.start('analysis.run', intentId => createRequestAnalysisIntent({
+      intentId,
       activeDatasetRef: activeDataset.id,
       classificationArtifactRef: classification.data.id,
       ruleSetVersion: classification.ruleSetVersion,
@@ -593,7 +592,7 @@ export function TenderWorkbenchView({
                   loadRows={loadReviewRows}
                   write={write}
                   sendIntent={sendIntent}
-                  createCommandId={createCommandId}
+                  createIntentId={createIntentId}
                   onRunAnalysis={requestCandidateAnalysis}
                   onOpenReview={() => { setSelectedPhase('decision') }}
                   footerTarget={screeningView === 'analysis' ? footerTarget : null}
@@ -686,10 +685,10 @@ export function TenderWorkbenchView({
             data-write-button="query"
             disabled={!capabilityAvailable || write.busy}
             aria-describedby={queryDisabledReason === undefined ? undefined : queryDisabledReasonId}
-            aria-busy={write.state.action === 'query' && write.busy}
+            aria-busy={write.state.action === 'query.run' && write.busy}
             title={queryDisabledReason}
           >
-            <SessionWriteButtonLabel action="query" idle={t('workbench.query.submit')} t={t} write={write} />
+            <SessionWriteButtonLabel action="query.run" idle={t('workbench.query.submit')} t={t} write={write} />
           </button>
         )}
       </footer>
@@ -701,7 +700,7 @@ export interface TenderWorkbenchTabProps extends TabComponentProps {
   readonly projectionPort: TenderProjectionPort
   readonly reveal: TenderWorkbenchRevealController
   readonly navigation: TenderWorkbenchNavigationController
-  readonly sendIntent: (sessionId: SessionId, intent: TenderWorkbenchIntentV1) => Promise<void>
+  readonly sendIntent: (sessionId: SessionId, intent: TenderWorkbenchIntentV2) => Promise<void>
   readonly t: TenderTranslate
 }
 

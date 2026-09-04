@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import type { TenderQueryIntentV1 } from '../../contracts/query-schema.ts'
+import type { TenderQueryScope } from '../../contracts/query-schema.ts'
 import type { QccProposedSearchArgs, QccTenderSearchArgs } from '../../contracts/query.ts'
 import { AREA_OPTIONS, type AreaOption } from '../area-data.ts'
 import { formatAreaPath, getAreaRecord, hasSelectedDescendant, isMcpSupportedAreaValue, searchAreas, toggleAreaSelection } from '../area-utils.ts'
@@ -19,7 +19,7 @@ type QueryBranch = 'tender' | 'proposed'
 
 interface TenderQueryWorkspaceProps {
   readonly formId: string
-  readonly scope: TenderQueryIntentV1['scope']
+  readonly scope: TenderQueryScope
   readonly filters: TenderFilters
   readonly target: string
   readonly activeBranch: QueryBranch
@@ -29,7 +29,7 @@ interface TenderQueryWorkspaceProps {
   readonly validationField?: 'target' | 'keywords' | 'branch'
   readonly validationErrorId: string
   readonly feedback?: ReactNode
-  readonly onScopeChange: (scope: TenderQueryIntentV1['scope']) => void
+  readonly onScopeChange: (scope: TenderQueryScope) => void
   readonly onFiltersChange: <K extends keyof TenderFilters>(key: K, value: TenderFilters[K]) => void
   readonly onTargetChange: (target: string) => void
   readonly onBranchChange: (branch: QueryBranch) => void
@@ -224,9 +224,9 @@ function RegionField({ filters, onChange, t }: {
 }
 
 function ScopeSelector({ scope, busy, onChange, t }: {
-  readonly scope: TenderQueryIntentV1['scope']
+  readonly scope: TenderQueryScope
   readonly busy: boolean
-  readonly onChange: (scope: TenderQueryIntentV1['scope']) => void
+  readonly onChange: (scope: TenderQueryScope) => void
   readonly t: TenderTranslate
 }) {
   return <div className={css.scopeSurface}><div className={css.scopeCopy}><strong>{t('workbench.query.scope')}</strong><span>{t('workbench.query.scopeDescription')}</span></div><div className={css.scopeGroup} role="group" aria-label={t('workbench.query.scope')}>{(['tender', 'proposed', 'combined'] as const).map(value => <button key={value} type="button" disabled={busy} aria-pressed={scope === value} className={css.scopeButton} onClick={() => { onChange(value) }}>{t(`workbench.query.scope.${value}`)}</button>)}</div></div>

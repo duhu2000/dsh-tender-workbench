@@ -22,7 +22,7 @@ import {
   TenderRuleSetV1Schema,
   type ArtifactRefV1,
   type TenderRuleV1,
-  type TenderWorkflowProjectionV1,
+  type TenderWorkflowProjectionV2,
 } from '../../contracts/workflow.ts'
 import type { TenderTranslate } from '../fields/field-props.ts'
 import {
@@ -59,7 +59,7 @@ export type ClassifiedRowsLoader = (
 
 interface RulesViewProps {
   readonly sessionId: SessionId
-  readonly workflow: TenderWorkflowProjectionV1
+  readonly workflow: TenderWorkflowProjectionV2
   readonly loadContent: RuleContentLoader
   readonly write: SessionWriteFlight
   readonly onRequestProposal: () => void
@@ -333,8 +333,8 @@ export function TenderRulesView({
     if (!parsed.success) { setError(t('workbench.rules.invalid')); return }
     setError(undefined)
     setValidated(true)
-    write.start('rules.preview', commandId => createPreviewRulesIntent({
-      commandId, activeDatasetRef: dataset.id,
+    write.start('rules.preview', intentId => createPreviewRulesIntent({
+      intentId, activeDatasetRef: dataset.id,
       projectionRevision: workflow.revision, rules: parsed.data,
     }))
   }
@@ -349,9 +349,9 @@ export function TenderRulesView({
     const previewArtifact = workflow.rules?.preview
     if (!parsed.success || !previewFresh || previewArtifact === undefined) { setError(t('workbench.rules.previewStale')); return }
     setError(undefined)
-    write.start('rules.confirm', commandId => createConfirmRulesIntent({
-      commandId, activeDatasetRef: dataset.id,
-      projectionRevision: workflow.revision, previewArtifactId: previewArtifact.id, rules: parsed.data,
+    write.start('rules.confirm', intentId => createConfirmRulesIntent({
+      intentId, activeDatasetRef: dataset.id,
+      projectionRevision: workflow.revision, previewArtifactRef: previewArtifact.id, rules: parsed.data,
     }))
   }
   const taskState = previewAccepted ? 'accepted' : previewFresh ? 'confirm' : 'preview'
@@ -463,7 +463,7 @@ export function TenderRulesView({
 
 interface ClassificationViewProps {
   readonly sessionId: SessionId
-  readonly workflow: TenderWorkflowProjectionV1
+  readonly workflow: TenderWorkflowProjectionV2
   readonly loadRows: ClassifiedRowsLoader
   readonly loadContent: RuleContentLoader
   readonly write: SessionWriteFlight
@@ -690,7 +690,7 @@ export function TenderClassificationView({
         <div className={css.footerCopy}><span className={css.footerHint}>{t('workbench.classification.footerNote')}</span></div>
         <div className={css.footerActions}>
           <button type="button" className={css.secondary} disabled={write.busy} onClick={onOpenReview}>{t('workbench.classification.openReview')}</button>
-          <button type="button" className={css.primary} data-write-button="analysis.request" disabled={write.busy} aria-busy={write.state.action === 'analysis.request' && write.busy} onClick={onOpenAnalysis}><SessionWriteButtonLabel action="analysis.request" idle={t('workbench.classification.openAnalysis')} t={t} write={write} /></button>
+          <button type="button" className={css.primary} data-write-button="analysis.run" disabled={write.busy} aria-busy={write.state.action === 'analysis.run' && write.busy} onClick={onOpenAnalysis}><SessionWriteButtonLabel action="analysis.run" idle={t('workbench.classification.openAnalysis')} t={t} write={write} /></button>
         </div>
       </RulesFooter>
     </section>

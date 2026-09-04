@@ -12,7 +12,7 @@ import css from './tender-workbench.module.css'
 type ActiveWritePhase = Exclude<SessionWritePhase, 'idle'>
 
 const PROGRESS_KEYS: Record<SessionWriteAction, Record<ActiveWritePhase, TenderKey>> = {
-  query: {
+  'query.run': {
     sending: 'workbench.write.query.sending',
     'waiting-agent': 'workbench.write.query.waiting',
     running: 'workbench.write.query.running',
@@ -47,7 +47,7 @@ const PROGRESS_KEYS: Record<SessionWriteAction, Record<ActiveWritePhase, TenderK
     succeeded: 'workbench.write.confirm.succeeded',
     failed: 'workbench.write.confirm.failed',
   },
-  'analysis.request': {
+  'analysis.run': {
     sending: 'workbench.write.analysis.sending',
     'waiting-agent': 'workbench.write.analysis.waiting',
     running: 'workbench.write.analysis.running',

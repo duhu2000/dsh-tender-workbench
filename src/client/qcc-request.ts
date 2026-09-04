@@ -1,6 +1,6 @@
 import { getAreaRecord, isMcpSupportedAreaValue } from './area-utils.ts'
 import type { PublishPreset, TenderFilters } from './types.ts'
-import type { TenderQueryIntentV1 } from '../contracts/query-schema.ts'
+import type { TenderQueryScope } from '../contracts/query-schema.ts'
 import {
   QCC_PROPOSED_SEARCH_TOOL,
   QCC_TENDER_SEARCH_TOOL,
@@ -214,10 +214,10 @@ export interface QccQueryBranches {
   readonly proposed?: QccProposedSearchArgs
 }
 
-/** Build the exact source branches used by the visible plan and TenderQueryIntentV1. */
+/** Build the exact source branches used by the visible plan and query.run payload. */
 export function toQccQueryBranches(
   filters: TenderFilters,
-  scope: TenderQueryIntentV1['scope'],
+  scope: TenderQueryScope,
   now: Date,
 ): QccQueryBranches {
   const tender = scope === 'tender' || scope === 'combined'

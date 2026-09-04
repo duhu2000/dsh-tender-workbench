@@ -21,6 +21,7 @@ import {
   registerTenderWorkbenchTab,
 } from './better-sidebar-adapter.ts'
 import { sendSessionTenderWorkbenchIntent } from './intents/send-session-intent.ts'
+import type { TenderSkillCatalogConnection } from './skill-catalog.ts'
 import { en, zh, type TenderKey } from './locales.ts'
 import { createTenderProjectionPort } from './tender-projection-port.ts'
 import { tenderSearchDefinition } from './tender-search-definition.ts'
@@ -39,7 +40,7 @@ import {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Tender workbench, entries, legacy filters, and result copy. */
+    /** Tender workbench, entries, filters, and result copy. */
     tenderFilter: TenderKey
   }
 }
@@ -48,7 +49,7 @@ const NS = 'tenderFilter'
 
 /** Required public Client services; Better Sidebar is deliberately mandatory. */
 export const inject = [
-  'slots', 'sessions', 'workspaces', 'conversation', 'conversationEvents', 'locale', 'betterSidebar',
+  'slots', 'sessions', 'workspaces', 'conversation', 'conversationEvents', 'locale', 'betterSidebar', 'connection',
 ]
 
 function RegisteredTenderWorkbenchTab({
@@ -91,8 +92,9 @@ export function apply(ctx: TenderClientContext): void {
 
   const sessions = ctx.get('sessions') as ISessions | undefined
   const locale = ctx.get('locale') as TenderClientContext['locale'] | undefined
-  if (sessions === undefined || locale === undefined) {
-    throw new Error('dsh-tender-workbench requires the public sessions and locale services')
+  const connection = ctx.get('connection') as TenderSkillCatalogConnection | undefined
+  if (sessions === undefined || locale === undefined || connection === undefined) {
+    throw new Error('dsh-tender-workbench requires the public sessions, locale, and connection services')
   }
   const t = locale.bind(NS)
   const reveal = createTenderWorkbenchRevealController()
@@ -100,7 +102,7 @@ export function apply(ctx: TenderClientContext): void {
   const projectionPort = createTenderProjectionPort(sessions)
   let active = true
   const sendIntent: TenderWorkbenchTabProps['sendIntent'] = (sessionId, intent) => (
-    sendSessionTenderWorkbenchIntent(sessions, sessionId, intent)
+    sendSessionTenderWorkbenchIntent(sessions, connection, sessionId, intent)
   )
   const openSession = (sessionId: SessionId, phase?: WorkbenchPhase): boolean => {
     const summary = sessions.list.getSnapshot().byId[sessionId]

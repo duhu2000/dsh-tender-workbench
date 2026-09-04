@@ -1,443 +1,281 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
-import ExcelJS from 'exceljs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ReviewDatasetV1Schema, ReviewRecordV1Schema } from '../src/contracts/analysis-review.ts'
-import { ReportDatasetSchema, type ReportDataset, type ReportNarrativeV1 } from '../src/contracts/reporting.ts'
-import { createEmptyTenderWorkflowProjection, type TenderWorkflowProjectionV1 } from '../src/contracts/workflow.ts'
-import { CommandReceiptCoordinator, emptyCommandReceiptManifest } from '../src/host/artifacts/command-receipts.ts'
-import { ArtifactTransaction, readArtifactManifest, readManifestArtifact, sessionArtifactRoot } from '../src/host/artifacts/store.ts'
+import { ReportDatasetSchema } from '../src/contracts/reporting.ts'
+import type { TenderWorkflowProjectionV2 } from '../src/contracts/workflow.ts'
+import { TenderWorkflowProjectionV2Schema, createEmptyTenderWorkflowProjection } from '../src/contracts/workflow.ts'
+import { IntentReceiptCoordinator, emptyIntentReceiptManifest } from '../src/host/artifacts/intent-receipts.ts'
+import { createArtifactTransaction, type SessionPersistenceLocator } from '../src/host/artifacts/store.ts'
+import { analysisBaseRows } from '../src/host/pipeline/analysis-review.ts'
 import { adaptQccProposedPayload, adaptQccTenderPayload } from '../src/host/pipeline/qcc-adapters.ts'
 import { normalizeQccSources } from '../src/host/pipeline/normalize.ts'
-import { escapeExcelText, renderReportExcel } from '../src/host/reporting/excel.ts'
-import { renderReportPdf, reportBusinessSummary } from '../src/host/reporting/pdf.ts'
-import { buildReportDataset, createReportContext } from '../src/host/reporting/report-dataset.ts'
 import {
-  createTenderWorkbenchGenerateReportTool,
-  createTenderWorkbenchReportContextTool,
-  type ReportContextResultV1,
-  type ReportMutationResultV1,
+  createTenderWorkbenchCreateReportTool,
+  createTenderWorkbenchReportNarrativeContextTool,
+  createTenderWorkbenchRetryReportTool,
+  type CreateReportResultV2,
+  type ReportNarrativeContextResultV2,
+  type RetryReportResultV2,
 } from '../src/host/tools/report-tools.ts'
 
 const temporaryRoots: string[] = []
 afterEach(async () => { await Promise.all(temporaryRoots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
 
-function normalizedFixture() {
+async function harness(options: { readonly pending?: boolean; readonly failExcel?: boolean } = {}) {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-tender-report-'))
+  temporaryRoots.push(root)
+  const transcript = join(root, 'session.jsonl')
+  await writeFile(transcript, 'transcript\n', 'utf8')
+  const sessionId = 'session-report-test' as SessionId
+  const events: unknown[] = []
+  const session = { id: sessionId, header: { version: 0, id: sessionId, createdAt: 1 }, events }
+  const persistence: SessionPersistenceLocator = { locate: () => ({ kind: 'jsonl', path: transcript }) }
+  const transaction = createArtifactTransaction(persistence, session.header)
+  await transaction.load()
   const tender = adaptQccTenderPayload({
-    查询摘要: { 命中总数: 2, 结果说明: '报告测试', 生效筛选: {} },
+    查询摘要: { 命中总数: 2, 结果说明: '测试', 生效筛选: {} },
     标讯列表: [
-      { 标讯ID: 't-1', 标题: '数据治理平台', 信息类型: '招标公告', 公告子状态: '招标', 招采单位: [{ 企业ID: 'e-1', 企业名称: '某银行' }], 招采方式: '公开招标', 招采类型: '服务', 标讯行业分类: ['信息技术'], 发布时间: '2026-08-30', 投标截止时间: '2026-09-18', '预算金额（元）': '860万元' },
-      { 标讯ID: 't-2', 标题: '云平台扩容', 信息类型: '招标公告', 公告子状态: '招标', 招采单位: [{ 企业ID: 'e-2', 企业名称: '某集团' }], 招采方式: '竞争性磋商', 招采类型: '服务', 发布时间: '2026-08-29', 投标截止时间: '2026-09-12' },
+      { 标讯ID: 't-1', 标题: '数据平台采购', 信息类型: '招标公告', 招采单位: [{ 企业ID: 'e-1', 企业名称: '某银行' }], 发布时间: '2026-09-01', 投标截止时间: '2026-09-08', '预算金额（元）': '860万元' },
+      { 标讯ID: 't-2', 标题: '云服务采购', 信息类型: '招标公告', 招采单位: [{ 企业ID: 'e-2', 企业名称: '某集团' }], 发布时间: '2026-08-30', 投标截止时间: '2026-10-08', '预算金额（元）': '500万元' },
     ],
   })
   const proposed = adaptQccProposedPayload({
-    查询摘要: { 命中总数: 1, 结果说明: '报告测试', 生效筛选: {} },
-    拟建项目列表: [
-      { 拟建项目ID: 'p-1', 项目名称: '智算中心建设', 项目阶段: '备案', 审批进度: '审批中', 发布时间: '2026-08-31', '项目总投资（元）': '2亿元', 建设单位: [{ 企业ID: 'e-3', 企业名称: '某科技公司' }] },
-    ],
+    查询摘要: { 命中总数: 1, 结果说明: '测试', 生效筛选: {} },
+    拟建项目列表: [{
+      拟建项目ID: 'p-1', 项目名称: '智算中心建设', 项目阶段: '备案', 审批进度: '审批中',
+      发布时间: '2026-08-31', '项目总投资（元）': '2亿元', 建设单位: [{ 企业ID: 'e-3', 企业名称: '某科技公司' }],
+    }],
   })
-  return normalizeQccSources({
-    tender,
-    proposed,
+  const normalized = normalizeQccSources({
+    tender, proposed,
     sources: { tender: { status: 'succeeded', loaded: 2 }, proposed: { status: 'succeeded', loaded: 1 } },
     createdAt: '2026-09-01T08:00:00.000+08:00',
   })
-}
-
-async function harness(options: { readonly complete?: boolean } = {}) {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-tender-report-tools-'))
-  temporaryRoots.push(root)
-  const transcript = join(root, 'session.jsonl')
-  await writeFile(transcript, 'transcript-sentinel\n', 'utf8')
-  const sessionId = 'session-report-test' as SessionId
-  const session = { id: sessionId, header: { version: 0, id: sessionId, createdAt: 1 } }
-  const persistence = { locate: () => ({ kind: 'jsonl', path: transcript }) }
-  const normalized = normalizedFixture()
-  const seed = new ArtifactTransaction(sessionArtifactRoot(persistence, session.header))
-  await seed.load()
-  const querySpec = await seed.stageJson('query-spec', 'query.json', { schemaVersion: 1 })
-  const normalizedRef = await seed.stageJson('normalized-data', 'normalized.json', JSON.parse(JSON.stringify(normalized)), normalized.rows.length)
-  const rows = normalized.rows.map(project => ReviewRecordV1Schema.parse({
-    schemaVersion: 1,
-    project,
-    ...(project.sourceId === 't-1' ? { classification: 'exclude' as const, finalRuleId: 'rule-overridden' } : {}),
-    ...(project.sourceId === 't-1' ? {
-      recommendation: {
-        recordRef: project.recordId,
-        recommendation: 'priority-review',
-        reason: '方向相关，仍需用户核验。',
-        verificationItems: ['核验采购范围'],
-        limitations: ['没有企业能力画像'],
-        batchId: 'batch-report',
-        committedAt: '2026-09-01T08:10:00.000+08:00',
-        evidence: [{ ref: `ev:${project.recordId}:title`, kind: 'source-field', label: '项目名称', value: project.title }],
-      },
-    } : {}),
-    review: {
-      decision: project.sourceId === 't-1' || project.source === 'proposed'
-        ? 'confirmed-candidate'
-        : options.complete === true ? 'exclude' : 'pending',
-      note: project.sourceId === 't-1' ? '用户确认进入候选。' : '',
-    },
+  const querySpec = await transaction.stageJson('query-spec', 'query.json', {
+    schemaVersion: 2, origin: { kind: 'conversation' }, projectionRevision: 0,
+    scope: 'combined', target: '数据与云项目', tender: { keywords: ['数据'] }, proposed: { keywords: ['数据'] },
+  })
+  const normalizedRef = await transaction.stageJson('normalized-data', 'normalized.json', normalized, normalized.rows.length)
+  const baseRows = analysisBaseRows(normalized)
+  const reviewRows = baseRows.map((row, index) => ReviewRecordV1Schema.parse({
+    ...row,
+    review: index === 0 && options.pending ? { decision: 'pending', note: '' }
+      : index === 2 ? { decision: 'watch', note: '持续观察' }
+        : { decision: 'confirmed-candidate', note: '' },
   }))
-  const reviewDataset = ReviewDatasetV1Schema.parse({
+  const review = ReviewDatasetV1Schema.parse({
     schemaVersion: 1,
     activeDatasetId: normalizedRef.id,
-    revision: 2,
+    revision: 1,
     updatedAt: '2026-09-01T08:20:00.000+08:00',
     revertedOperationCount: 0,
     operations: [],
-    rows,
+    rows: reviewRows,
   })
-  const reviewRef = await seed.stageJson('review-data', 'review.json', JSON.parse(JSON.stringify(reviewDataset)), rows.length)
-  await seed.save(emptyCommandReceiptManifest())
-  const empty = createEmptyTenderWorkflowProjection()
-  let projection: TenderWorkflowProjectionV1 = {
-    ...empty,
-    revision: 4,
+  const reviewRef = await transaction.stageJson('review-data', 'review.json', review, review.rows.length)
+  await transaction.save(emptyIntentReceiptManifest())
+  let projection: TenderWorkflowProjectionV2 = TenderWorkflowProjectionV2Schema.parse({
+    ...createEmptyTenderWorkflowProjection(),
+    revision: 3,
     currentStage: 'review',
     stages: {
-      ...empty.stages,
+      ...createEmptyTenderWorkflowProjection().stages,
       query: { status: 'succeeded', updatedAt: normalized.createdAt },
       overview: { status: 'succeeded', updatedAt: normalized.createdAt },
-      review: { status: 'succeeded', updatedAt: reviewDataset.updatedAt },
+      review: { status: 'succeeded', updatedAt: review.updatedAt },
     },
     query: {
-      scope: 'combined',
-      targetSummary: '寻找数据基础设施机会',
-      querySpec,
-      sources: {
-        tender: { status: 'succeeded', loaded: 2 },
-        proposed: { status: 'succeeded', loaded: 1 },
-      },
-      normalizedData: normalizedRef,
-      sourceRecordCount: 3,
-      total: 3,
-      duplicateCount: 0,
-      invalidCount: 0,
-      missingFieldCount: normalized.summary.missingFieldCount,
-      unparseableFieldCount: normalized.summary.unparseableFieldCount,
+      scope: 'combined', targetSummary: '数据与云项目', querySpec,
+      sources: { tender: { status: 'succeeded', loaded: 2 }, proposed: { status: 'succeeded', loaded: 1 } },
+      normalizedData: normalizedRef, sourceRecordCount: 3, total: 3, duplicateCount: 0, invalidCount: 0,
     },
     review: {
-      revision: reviewDataset.revision,
-      data: reviewRef,
-      pending: options.complete === true ? 0 : 1,
-      confirmedCandidate: 2,
-      watch: 0,
-      exclude: options.complete === true ? 1 : 0,
-      canRevert: false,
+      revision: review.revision, data: reviewRef,
+      pending: reviewRows.filter(row => row.review.decision === 'pending').length,
+      confirmedCandidate: reviewRows.filter(row => row.review.decision === 'confirmed-candidate').length,
+      watch: reviewRows.filter(row => row.review.decision === 'watch').length,
+      exclude: 0, canRevert: false,
     },
+  })
+  let failExcel = options.failExcel ?? false
+  const renderers = {
+    excel: vi.fn(async () => {
+      if (failExcel) throw new Error('excel failed')
+      return { fileName: 'report.xlsx', mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', bytes: Buffer.from([1]) }
+    }),
+    pdf: vi.fn(async () => ({ fileName: 'report.pdf', mediaType: 'application/pdf', bytes: Buffer.from([2]) })),
   }
-  const sessionProjections = { stateOf: () => projection }
-  const receipts = new CommandReceiptCoordinator()
-  const context = (id: string): ToolRunContext => ({
-    callId: `call-${id}`, rootCallId: `call-${id}`, token: Symbol(id),
+  const dependencies = {
+    sessionProjections: { stateOf: () => projection } as never,
+    sessionPersistence: persistence,
+    receipts: new IntentReceiptCoordinator(),
+    renderers,
+  }
+  const contextTool = createTenderWorkbenchReportNarrativeContextTool(dependencies)
+  const createTool = createTenderWorkbenchCreateReportTool(dependencies)
+  const retryTool = createTenderWorkbenchRetryReportTool(dependencies)
+  const setUser = (seq: number, text: string) => {
+    events.splice(0, events.length, {
+      type: 'user/message', seq, time: seq,
+      data: { turn: seq, source: { kind: 'user' }, content: [{ type: 'text', text }] },
+    })
+  }
+  const runContext = (label: string): ToolRunContext => ({
+    callId: `call-${label}`, rootCallId: `call-${label}`, token: Symbol(label),
     signal: new AbortController().signal, agent: { id: sessionId, session },
   } as unknown as ToolRunContext)
   const binding = () => ({
-    schemaVersion: 1 as const,
-    kind: 'report.context' as const,
-    activeDatasetRef: normalizedRef.id,
-    reviewArtifactRef: reviewRef.id,
-    reviewRevision: 2,
+    schemaVersion: 2 as const,
+    origin: { kind: 'conversation' as const },
+    activeDatasetRef: projection.query!.normalizedData!.id,
     projectionRevision: projection.revision,
+    basis: { kind: 'dataset-only' as const },
+    reviewArtifactRef: projection.review!.data.id,
+    reviewRevision: projection.review!.revision,
   })
   return {
-    session,
-    persistence,
-    receipts,
-    normalized,
-    reviewDataset,
-    sessionProjections,
-    context,
-    binding,
+    contextTool, createTool, retryTool, runContext, setUser, binding, renderers,
     projection: () => projection,
-    adopt: (value: TenderWorkflowProjectionV1) => { projection = value },
+    adopt: (state: TenderWorkflowProjectionV2) => { projection = state },
+    allowExcel: () => { failExcel = false },
   }
 }
 
-function narrativeFor(recordRef: string): ReportNarrativeV1 {
+function narrativeFor(context: ReportNarrativeContextResultV2['context']) {
   return {
     executiveSummary: {
-      title: '复核范围形成可交付结论',
-      statement: '当前用户决定已形成候选与待复核的清晰分层，后续应继续核验证据边界。',
-      metricRefs: ['reviewed-projects', 'pending-review'],
-      recordRefs: [],
-      distributionRefs: ['review-decisions'],
-      limitations: ['该判断不涉及企业适配、资格符合或投标决策。'],
+      title: '当前范围观察', statement: '已确认范围包含需要近期核验的记录。',
+      metricRefs: [context.metrics[0]!.metricId],
+      recordRefs: context.priorityRecords.slice(0, 1).map(record => record.recordRef),
+      limitations: ['一个项目可以包含多个来源事实。'],
     },
-    keyFindings: [],
-    priorityVerification: [{
-      title: '优先核验采购范围',
-      statement: '该记录具备当前可定位证据，仍需用户核验采购范围和截止要求。',
-      metricRefs: [],
-      recordRefs: [recordRef],
-      distributionRefs: [],
-      limitations: ['来源披露范围可能不完整。'],
-    }],
-    risksAndLimitations: [],
+    keyFindings: [], priorityVerification: [], risksAndLimitations: [],
   }
 }
 
-describe('S5 report context, immutable snapshot, and renderer retry', () => {
-  it('returns stable bounded Host context and rejects stale, unknown, or numeric Agent narrative', async () => {
-    const test = await harness()
-    const root = sessionArtifactRoot(test.persistence, test.session.header)
-    const before = await readArtifactManifest(root)
-    const tool = createTenderWorkbenchReportContextTool({
-      sessionProjections: test.sessionProjections as never,
-      sessionPersistence: test.persistence,
-      receipts: test.receipts,
+describe('S5.6 report context, create, and retry Tools', () => {
+  it('returns bounded context and creates a bound-narrative partial report', async () => {
+    const test = await harness({ pending: true })
+    test.setUser(1, '按当前进度生成带补充观察的报告')
+    const context = await test.contextTool.execute(test.binding(), test.runContext('context')) as ReportNarrativeContextResultV2
+    expect(context).toMatchObject({
+      tool: 'tender_workbench_get_report_narrative_context',
+      context: { contextFingerprint: expect.stringMatching(/^rc_[a-f0-9]{64}$/u) },
+      control: { status: 'continue', nextTool: 'tender_workbench_create_report' },
     })
-    const first = await tool.execute(test.binding(), test.context('context-1')) as ReportContextResultV1
-    const repeated = await tool.execute(test.binding(), test.context('context-2')) as ReportContextResultV1
-    expect(repeated.context.schemaVersion).toBe(2)
-    expect(repeated.context.activeDatasetId).toBe(first.context.activeDatasetId)
-    expect(first.context.priorityRecords).toHaveLength(2)
-    expect(first.context.priorityRecords.map(record => record.source)).toEqual(['tender', 'proposed'])
-    expect(first.context.metrics.find(metric => metric.metricId === 'pending-review')?.value).toBe(1)
-    expect(first.context.distributions.map(distribution => distribution.id)).toContain('tender-deadline-window')
-    expect(first.context.priorityRecords[0]).toMatchObject({ counterparty: '某银行', amountDisplay: '860万元' })
-    expect(first.context.contextFingerprint).toMatch(/^rc_[a-f0-9]{64}$/u)
-    const rendered = tool.output.render(test.binding(), first)
-    expect(rendered).toHaveLength(1)
-    expect(rendered[0]).toMatchObject({ type: 'text' })
-    if (rendered[0]?.type !== 'text') throw new Error('report context must render as text')
-    expect(rendered[0].text).toContain(first.context.contextFingerprint)
-    expect(rendered[0].text).toContain(first.context.metrics[0]?.metricId)
-    expect(rendered[0].text).toContain(first.context.priorityRecords[0]?.recordRef)
-    expect(await readArtifactManifest(root)).toEqual(before)
-
-    const generate = createTenderWorkbenchGenerateReportTool({
-      sessionProjections: test.sessionProjections as never,
-      sessionPersistence: test.persistence,
-      receipts: test.receipts,
-      renderers: {
-        excel: vi.fn(async () => ({ bytes: Buffer.from('xlsx'), fileName: 'report.xlsx', mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })),
-        pdf: vi.fn(async () => ({ bytes: Buffer.from('%PDF-test'), fileName: 'report.pdf', mediaType: 'application/pdf' })),
-      },
-    })
-    expect(generate).toMatchObject({
-      parameters: {
-        activeDatasetRef: { type: 'string' },
-        reviewRevision: { type: 'integer' },
-        narrative: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            executiveSummary: { type: 'object' },
-            keyFindings: { type: 'array' },
-            priorityVerification: { type: 'array' },
-            risksAndLimitations: { type: 'array' },
-          },
-        },
-        contextAsOf: { type: 'string' },
-      },
-    })
-    if (!('parameters' in generate) || typeof generate.parameters !== 'object' || generate.parameters === null) {
-      throw new Error('generate tool must expose its public parameter schema')
-    }
-    const publicParameters = generate.parameters as Record<string, unknown>
-    expect(publicParameters['activeDatasetRef']).not.toHaveProperty('required')
-    expect(publicParameters['reviewRevision']).not.toHaveProperty('required')
-    const recordRef = first.context.priorityRecords[0]?.recordRef
-    if (recordRef === undefined) throw new Error('missing priority record')
-    const binding = test.binding()
-    const createInput = {
-      schemaVersion: 1 as const, kind: 'report.generate' as const, mode: 'create' as const,
-      commandId: 'report-invalid',
-      activeDatasetRef: binding.activeDatasetRef,
-      reviewArtifactRef: binding.reviewArtifactRef,
-      reviewRevision: binding.reviewRevision,
-      projectionRevision: binding.projectionRevision,
-      contextFingerprint: first.context.contextFingerprint,
-      contextAsOf: first.context.createdAt,
-      narrative: narrativeFor(recordRef),
-      confirmPending: false,
-    }
-    await expect(generate.execute(createInput, test.context('pending-not-confirmed'))).rejects.toThrow('必须明确确认')
-    await expect(generate.execute({
-      ...createInput,
-      commandId: 'report-stale-fingerprint', confirmPending: true,
-      contextFingerprint: `rc_${'0'.repeat(64)}`,
-    }, test.context('stale-fingerprint'))).rejects.toThrow('指纹')
-    await expect(generate.execute({
-      ...createInput,
-      commandId: 'report-numeric', confirmPending: true,
+    expect(context.context.priorityRecords.length).toBeLessThanOrEqual(10)
+    const created = await test.createTool.execute({
+      ...test.binding(), scope: 'current-progress', confirmPending: true,
       narrative: {
-        ...narrativeFor(recordRef),
-        keyFindings: [{ title: '发现', statement: '覆盖率为百分之五十并包含 2 个项目。', metricRefs: ['agent-analysis-coverage'], recordRefs: [], limitations: [] }],
+        kind: 'bound', contextFingerprint: context.context.contextFingerprint,
+        contextAsOf: context.context.createdAt, value: narrativeFor(context.context),
       },
-    }, test.context('numeric-narrative'))).rejects.toThrow('不得在自由文本中写入数字')
-    await expect(tool.execute({ ...test.binding(), projectionRevision: 3 }, test.context('stale-context'))).rejects.toThrow('revision')
+    }, test.runContext('create')) as CreateReportResultV2
+    expect(created).toMatchObject({
+      tool: 'tender_workbench_create_report', outcome: 'succeeded',
+      result: { completeness: 'partial' },
+      progress: { succeeded: 2, failed: 0 },
+      control: { status: 'complete' },
+    })
+    expect(created.state.report?.narrativeIncluded).toBe(true)
   })
 
-  it('uses the exact same validated narrative for both formats and retries only a failed format from the same snapshot', async () => {
+  it('creates a deterministic report without requiring narrative context', async () => {
     const test = await harness()
-    const contextTool = createTenderWorkbenchReportContextTool({
-      sessionProjections: test.sessionProjections as never,
-      sessionPersistence: test.persistence,
-      receipts: test.receipts,
-    })
-    const reportContext = (await contextTool.execute(test.binding(), test.context('context')) as ReportContextResultV1).context
-    const recordRef = reportContext.priorityRecords[0]?.recordRef
-    if (recordRef === undefined) throw new Error('missing priority record')
-    const expectedNarrative = narrativeFor(recordRef)
-    const excelDatasets: ReportDataset[] = []
-    const pdfDatasets: ReportDataset[] = []
-    let excelAttempt = 0
-    const excel = vi.fn(async (dataset: ReportDataset) => {
-      excelDatasets.push(structuredClone(dataset))
-      excelAttempt += 1
-      if (excelAttempt === 1) throw new Error('forced excel failure')
-      return { bytes: Buffer.from('xlsx-success'), fileName: 'report.xlsx', mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
-    })
-    const pdf = vi.fn(async (dataset: ReportDataset) => {
-      pdfDatasets.push(structuredClone(dataset))
-      return { bytes: Buffer.from('%PDF-success'), fileName: 'report.pdf', mediaType: 'application/pdf' }
-    })
-    const generate = createTenderWorkbenchGenerateReportTool({
-      sessionProjections: test.sessionProjections as never,
-      sessionPersistence: test.persistence,
-      receipts: test.receipts,
-      renderers: { excel, pdf },
-    })
-    const binding = test.binding()
-    const created = await generate.execute({
-      schemaVersion: 1, kind: 'report.generate', mode: 'create', commandId: 'report-create',
-      activeDatasetRef: binding.activeDatasetRef,
-      reviewArtifactRef: binding.reviewArtifactRef,
-      reviewRevision: binding.reviewRevision,
-      projectionRevision: binding.projectionRevision,
-      confirmPending: true,
-      contextFingerprint: reportContext.contextFingerprint,
-      contextAsOf: reportContext.createdAt,
-      narrative: expectedNarrative,
-    }, test.context('report-create')) as ReportMutationResultV1
+    test.setUser(1, '生成完整报告，不需要补充叙述')
+    const created = await test.createTool.execute({
+      ...test.binding(), scope: 'complete', confirmPending: false, narrative: { kind: 'none' },
+    }, test.runContext('create')) as CreateReportResultV2
+    expect(created.state.report).toMatchObject({ completeness: 'complete', narrativeIncluded: false })
+    expect(test.renderers.excel).toHaveBeenCalledOnce()
+    expect(test.renderers.pdf).toHaveBeenCalledOnce()
+  })
+
+  it('rejects stale narrative fingerprints and an unconfirmed partial range', async () => {
+    const test = await harness({ pending: true })
+    test.setUser(1, '生成报告')
+    const context = await test.contextTool.execute(test.binding(), test.runContext('context')) as ReportNarrativeContextResultV2
+    await expect(test.createTool.execute({
+      ...test.binding(), scope: 'current-progress', confirmPending: true,
+      narrative: {
+        kind: 'bound', contextFingerprint: `rc_${'0'.repeat(64)}`,
+        contextAsOf: context.context.createdAt, value: narrativeFor(context.context),
+      },
+    }, test.runContext('stale'))).rejects.toThrow('指纹')
+    await expect(test.createTool.execute({
+      ...test.binding(), scope: 'complete', confirmPending: false, narrative: { kind: 'none' },
+    }, test.runContext('unconfirmed'))).rejects.toThrow('明确确认')
+  })
+
+  it('identifies the exact narrative field and numeric token that must be corrected', async () => {
+    const test = await harness()
+    test.setUser(1, '生成带补充观察的完整报告')
+    const context = await test.contextTool.execute(test.binding(), test.runContext('context')) as ReportNarrativeContextResultV2
+    const narrative = narrativeFor(context.context)
+    await expect(test.createTool.execute({
+      ...test.binding(), scope: 'complete', confirmPending: false,
+      narrative: {
+        kind: 'bound', contextFingerprint: context.context.contextFingerprint,
+        contextAsOf: context.context.createdAt,
+        value: {
+          ...narrative,
+          executiveSummary: { ...narrative.executiveSummary, statement: '当前范围包含 3 个待核验项目。' },
+        },
+      },
+    }, test.runContext('numeric-narrative'))).rejects.toThrow('observation[0].statement 命中数值“3”')
+  })
+
+  it('retries only a failed format from the same immutable snapshot', async () => {
+    const test = await harness({ failExcel: true })
+    test.setUser(1, '生成完整报告')
+    const created = await test.createTool.execute({
+      ...test.binding(), scope: 'complete', confirmPending: false, narrative: { kind: 'none' },
+    }, test.runContext('create')) as CreateReportResultV2
+    expect(created).toMatchObject({ outcome: 'partial', progress: { succeeded: 1, failed: 1 } })
     test.adopt(created.state)
-    expect(created.state.report).toMatchObject({ completeness: 'partial', pending: 1, excel: { status: 'failed' }, pdf: { status: 'succeeded' } })
-    expect(excelDatasets[0]?.narrative).toEqual(expectedNarrative)
-    expect(pdfDatasets[0]?.narrative).toEqual(expectedNarrative)
-    expect(excelDatasets[0]?.finalSnapshotId).toBe(pdfDatasets[0]?.finalSnapshotId)
-
-    const snapshotId = created.state.report?.finalSnapshotId
-    const pdfArtifactId = created.state.report?.pdf.artifact?.id
-    if (snapshotId === undefined) throw new Error('missing final snapshot')
-    const retried = await generate.execute({
-      schemaVersion: 1, kind: 'report.generate', mode: 'retry', commandId: 'report-retry-excel',
+    test.allowExcel()
+    test.setUser(2, '重试失败的 Excel')
+    const retried = await test.retryTool.execute({
+      schemaVersion: 2,
+      origin: { kind: 'conversation' },
       projectionRevision: created.state.revision,
-      finalSnapshotId: snapshotId,
+      finalSnapshotId: created.result.finalSnapshotId,
       formats: ['excel'],
-    }, test.context('report-retry-excel')) as ReportMutationResultV1
+    }, test.runContext('retry')) as RetryReportResultV2
+    expect(retried).toMatchObject({
+      tool: 'tender_workbench_retry_report', outcome: 'succeeded',
+      result: { finalSnapshotId: created.result.finalSnapshotId },
+      progress: { succeeded: 2, failed: 0 },
+    })
+    expect(retried.result.finalSnapshotArtifactRef).toBe(created.result.finalSnapshotArtifactRef)
     test.adopt(retried.state)
-    expect(retried.state.report).toMatchObject({ finalSnapshotId: snapshotId, excel: { status: 'succeeded' }, pdf: { status: 'succeeded', artifact: { id: pdfArtifactId } } })
-    expect(excel).toHaveBeenCalledTimes(2)
-    expect(pdf).toHaveBeenCalledTimes(1)
-    expect(excelDatasets[1]).toEqual(excelDatasets[0])
-
-    const root = sessionArtifactRoot(test.persistence, test.session.header)
-    const manifest = await readArtifactManifest(root)
-    const snapshots = Object.values(manifest.artifacts).filter(entry => entry.kind === 'final-snapshot')
-    expect(snapshots).toHaveLength(1)
-    const snapshot = snapshots[0]
-    if (snapshot === undefined) throw new Error('missing snapshot entry')
-    const stored = ReportDatasetSchema.parse(JSON.parse((await readManifestArtifact(root, snapshot)).toString('utf8')) as unknown)
-    expect(stored.schemaVersion).toBe(2)
-    expect(stored.finalSnapshotId).toBe(snapshotId)
-    expect(stored.narrative).toEqual(expectedNarrative)
-    expect(stored.contextFingerprint).toBe(reportContext.contextFingerprint)
+    test.setUser(3, '重试已经成功的 PDF')
+    await expect(test.retryTool.execute({
+      schemaVersion: 2, origin: { kind: 'conversation' }, projectionRevision: retried.state.revision,
+      finalSnapshotId: created.result.finalSnapshotId, formats: ['pdf'],
+    }, test.runContext('bad-retry'))).rejects.toThrow('只能重试失败格式')
   })
 
-  it('renders the fixed real workbook/PDF with narrative only in the designated Excel summary area', async () => {
+  it('stores only the immutable V2 report snapshot contract', async () => {
     const test = await harness()
-    const context = createReportContext({
-      normalized: test.normalized,
-      review: test.reviewDataset,
-      stateRevision: 4,
-      createdAt: '2026-09-02T14:00:00.000+08:00',
-    })
-    const recordRef = context.priorityRecords[0]?.recordRef
-    if (recordRef === undefined) throw new Error('missing priority record')
-    const narrative = narrativeFor(recordRef)
-    const dataset = buildReportDataset({
-      finalSnapshotId: 'fs_renderer_test',
-      createdAt: '2026-09-02T14:00:00.000+08:00',
-      stateRevision: 4,
-      normalized: test.normalized,
-      review: test.reviewDataset,
-      query: {
-        scope: 'combined',
-        targetSummary: '寻找数据基础设施机会',
-        sources: { tender: { status: 'succeeded', loaded: 2 }, proposed: { status: 'succeeded', loaded: 1 } },
-      },
-      narrative,
-    })
-    expect(reportBusinessSummary(dataset)).toContain('正式招投标候选')
-    expect(reportBusinessSummary({ ...dataset, narrative: undefined })).not.toContain('Agent')
-    const signal = new AbortController().signal
-    const [xlsx, pdf] = await Promise.all([renderReportExcel(dataset, signal), renderReportPdf(dataset, signal)])
-    const qaOutput = process.env['DSH_TENDER_REPORT_QA_OUTPUT']
-    if (qaOutput !== undefined) {
-      await mkdir(qaOutput, { recursive: true })
-      await Promise.all([
-        writeFile(join(qaOutput, 's5-report-qa.xlsx'), xlsx.bytes),
-        writeFile(join(qaOutput, 's5-report-qa.pdf'), pdf.bytes),
-      ])
-    }
-    const workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(xlsx.bytes as never)
-    expect(workbook.worksheets.map(sheet => sheet.name)).toEqual([
-      '交付总览', '结果分布', '正式招投标候选', '拟建重点线索', '待复核', '观察项目',
-      '排除项目', '全量项目', '决策追溯', '数据质量与口径',
-    ])
-    const statement = narrative.executiveSummary?.statement ?? ''
-    expect(JSON.stringify(workbook.getWorksheet('结果分布')?.model)).toContain(statement)
-    ;['正式招投标候选', '拟建重点线索', '待复核', '观察项目', '排除项目', '全量项目']
-      .forEach(name => expect(JSON.stringify(workbook.getWorksheet(name)?.model)).not.toContain(statement))
-    expect(workbook.getWorksheet('正式招投标候选')?.getRow(1).values).toContain('截止窗口')
-    expect(workbook.getWorksheet('拟建重点线索')?.getRow(1).values).toContain('审批进度')
-    expect(workbook.getWorksheet('交付总览')?.getCell('A1').value).toBe('招投标机会筛选结果报告')
-    expect(workbook.getWorksheet('排除项目')?.rowCount).toBe(1)
-    expect(pdf.bytes.subarray(0, 5).toString('ascii')).toBe('%PDF-')
-    expect(pdf.bytes.byteLength).toBeGreaterThan(10_000)
-    expect(pdf.bytes.toString('latin1').match(/\/Type\s*\/Page\b/gu)).toHaveLength(2)
-    ;['=2+2', '+SUM(A1:A2)', '-1+1', '@cmd', '\t=HYPERLINK("https://evil.test")', '\n+SUM(A1:A2)']
-      .forEach(value => expect(escapeExcelText(value)).toMatch(/^'/u))
-    expect(escapeExcelText('line one\tline two\nline three')).not.toMatch(/[\t\r\n]/u)
-    expect(escapeExcelText('长文本'.repeat(20_000)).length).toBeLessThanOrEqual(32_000)
-  })
-
-  it('creates a complete deterministic report without calling for or storing Agent narrative', async () => {
-    const test = await harness({ complete: true })
-    const datasets: ReportDataset[] = []
-    const renderer = vi.fn(async (dataset: ReportDataset, _signal: AbortSignal) => {
-      datasets.push(structuredClone(dataset))
-      return { bytes: Buffer.from('deterministic'), fileName: 'report.bin', mediaType: 'application/octet-stream' }
-    })
-    const generate = createTenderWorkbenchGenerateReportTool({
-      sessionProjections: test.sessionProjections as never,
-      sessionPersistence: test.persistence,
-      receipts: test.receipts,
-      renderers: { excel: renderer, pdf: renderer },
-    })
-    const binding = test.binding()
-    const created = await generate.execute({
-      schemaVersion: 1, kind: 'report.generate', mode: 'create', commandId: 'deterministic-report',
-      activeDatasetRef: binding.activeDatasetRef,
-      reviewArtifactRef: binding.reviewArtifactRef,
-      reviewRevision: binding.reviewRevision,
-      projectionRevision: binding.projectionRevision,
-      confirmPending: false,
-    }, test.context('deterministic-report')) as ReportMutationResultV1
-    expect(created.state.report).toMatchObject({
-      completeness: 'complete', pending: 0, narrativeIncluded: false,
-      excel: { status: 'succeeded' }, pdf: { status: 'succeeded' },
-    })
-    expect(datasets).toHaveLength(2)
-    expect(datasets[0]?.narrative).toBeUndefined()
-    expect(datasets[1]).toEqual(datasets[0])
+    test.setUser(1, '生成报告')
+    const created = await test.createTool.execute({
+      ...test.binding(), scope: 'complete', confirmPending: false, narrative: { kind: 'none' },
+    }, test.runContext('create')) as CreateReportResultV2
+    const report = created.state.report
+    if (report?.finalSnapshot === undefined) throw new Error('missing final snapshot')
+    const transaction = createArtifactTransaction(
+      { locate: () => ({ kind: 'jsonl', path: join(temporaryRoots.at(-1)!, 'session.jsonl') }) },
+      { version: 0, id: 'session-report-test' as SessionId, createdAt: 1 },
+    )
+    await transaction.load()
+    const snapshot = ReportDatasetSchema.parse(
+      await transaction.readJsonArtifact(report.finalSnapshot.id, 'final-snapshot'),
+    )
+    expect(snapshot).toMatchObject({ schemaVersion: 2, finalSnapshotId: created.result.finalSnapshotId })
   })
 })

@@ -511,17 +511,25 @@ export function validateReportNarrative(value: unknown, context: ReportContextV2
   const metricRefs = new Set(context.metrics.map(metric => metric.metricId))
   const distributionRefs = new Set(context.distributions.map(distribution => distribution.id))
   const recordRefs = new Set(context.priorityRecords.map(record => record.recordRef))
-  const forbiddenNumericFact = /[0-9０-９][0-9０-９,，.．:%％￥¥元万亿年月日号-]*|百分之[〇零一二三四五六七八九十百千万亿]+|[〇零一二三四五六七八九十百千万亿]+(?:个|项|条|家|份|元|万|亿|年|月|日)/u
-  narrativeObservations(narrative).forEach((observation) => {
+  const forbiddenNumericFact = /[0-9０-９][0-9０-９,，.．:%％￥¥元万亿年月日号-]*|百分之[〇零一二三四五六七八九十百千万亿两]+|(?:两|[二三四五六七八九十百千万亿][〇零一二三四五六七八九十百千万亿两]*|一[十百千万亿][〇零一二三四五六七八九十百千万亿两]*)(?:个|项|条|家|份|元|万|亿|年|月|日)/u
+  narrativeObservations(narrative).forEach((observation, observationIndex) => {
     const unknownMetric = observation.metricRefs.find(ref => !metricRefs.has(ref))
     if (unknownMetric !== undefined) throw new Error(`Agent 报告叙述包含未知 metricRef：${unknownMetric}`)
     const unknownDistribution = observation.distributionRefs?.find(ref => !distributionRefs.has(ref))
     if (unknownDistribution !== undefined) throw new Error(`Agent 报告叙述包含未知 distributionRef：${unknownDistribution}`)
     const unknownRecord = observation.recordRefs.find(ref => !recordRefs.has(ref))
     if (unknownRecord !== undefined) throw new Error(`Agent 报告叙述包含未知或非近期核验 recordRef：${unknownRecord}`)
-    const freeText = [observation.title, observation.statement, ...observation.limitations]
-    if (freeText.some(text => forbiddenNumericFact.test(text))) {
-      throw new Error('Agent 报告叙述不得在自由文本中写入数字、比例、金额或日期；请只引用 Host metricRef / distributionRef / recordRef。')
+    const freeText = [
+      ['title', observation.title],
+      ['statement', observation.statement],
+      ...observation.limitations.map((text, index) => [`limitations[${index}]`, text]),
+    ] as const
+    for (const [field, text] of freeText) {
+      const match = forbiddenNumericFact.exec(text)
+      if (match === null) continue
+      throw new Error(
+        `Agent 报告叙述 observation[${observationIndex}].${field} 命中数值“${match[0]}”；请删除该字面值并只引用 Host metricRef / distributionRef / recordRef。`,
+      )
     }
   })
   return structuredClone(narrative)
