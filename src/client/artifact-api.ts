@@ -17,6 +17,7 @@ import {
   type ReviewRowsFilterV1,
   type ReviewRowsPageV1,
 } from '../contracts/analysis-review.ts'
+import { ReportDeliveryViewV1Schema, type ReportDeliveryViewV1 } from '../contracts/reporting.ts'
 
 const ARTIFACT_ROUTE_PREFIX = '/dsh-tender-workbench/api/v1/artifacts'
 
@@ -134,12 +135,24 @@ export async function fetchRuleArtifactContent(
 
 function reviewRowsParameters(filter: ReviewRowsFilterV1): URLSearchParams {
   const parameters = new URLSearchParams({ page: String(filter.page), pageSize: String(filter.pageSize) })
+  if (filter.queue !== undefined) parameters.set('queue', filter.queue)
+  if (filter.sort !== undefined) parameters.set('sort', filter.sort)
   if (filter.query !== undefined) parameters.set('q', filter.query)
+  filter.queryRuleIds?.forEach(ruleId => { parameters.append('queryRuleId', ruleId) })
   if (filter.source !== undefined) parameters.set('source', filter.source)
   if (filter.classification !== undefined) parameters.set('classification', filter.classification)
   if (filter.recommendation !== undefined) parameters.set('recommendation', filter.recommendation)
   if (filter.userDecision !== undefined) parameters.set('userDecision', filter.userDecision)
   if (filter.deadlineStatus !== undefined) parameters.set('deadlineStatus', filter.deadlineStatus)
+  if (filter.region !== undefined) parameters.set('region', filter.region)
+  if (filter.stage !== undefined) parameters.set('stage', filter.stage)
+  if (filter.procurementMethod !== undefined) parameters.set('procurementMethod', filter.procurementMethod)
+  if (filter.procurementType !== undefined) parameters.set('procurementType', filter.procurementType)
+  if (filter.ruleId !== undefined) parameters.set('ruleId', filter.ruleId)
+  if (filter.risk !== undefined) parameters.set('risk', filter.risk)
+  if (filter.disclosure !== undefined) parameters.set('disclosure', filter.disclosure)
+  if (filter.amountMinCny !== undefined) parameters.set('amountMinCny', String(filter.amountMinCny))
+  if (filter.amountMaxCny !== undefined) parameters.set('amountMaxCny', String(filter.amountMaxCny))
   return parameters
 }
 
@@ -164,6 +177,29 @@ export async function fetchReviewArtifactRows(
   if (!response.ok) throw new ArtifactApiError(response.status)
   const value: unknown = await response.json()
   return ReviewRowsPageV1Schema.parse(value)
+}
+
+export async function fetchReportDeliveryView(
+  fetcher: ArtifactFetch,
+  sessionId: SessionId,
+  artifact: ArtifactRefV1,
+  signal?: AbortSignal,
+): Promise<ReportDeliveryViewV1> {
+  if (artifact.kind !== 'final-snapshot') throw new TypeError('交付视图只接受 final-snapshot Artifact。')
+  const response = await fetcher(
+    `${ARTIFACT_ROUTE_PREFIX}/${encodeURIComponent(artifact.id)}/report-view`,
+    {
+      method: 'GET',
+      headers: artifactHeaders(sessionId, artifact),
+      credentials: 'same-origin',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      signal,
+    },
+  )
+  if (!response.ok) throw new ArtifactApiError(response.status)
+  const value: unknown = await response.json()
+  return ReportDeliveryViewV1Schema.parse(value)
 }
 
 /** Download one opaque Session-private artifact and always release the temporary Blob URL. */

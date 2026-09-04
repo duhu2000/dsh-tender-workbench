@@ -12,10 +12,11 @@ import {
 import type { TenderRuleV1 } from '../../contracts/workflow.ts'
 import type { UserDecision } from '../../contracts/workflow.ts'
 import {
+  AnalysisFollowUpIntentV1Schema,
   ApplyReviewCommandV1Schema,
   RequestAnalysisIntentV1Schema,
   RevertReviewCommandV1Schema,
-  type AnalysisScopeV1,
+  type AnalysisFollowUpIntentV1,
 } from '../../contracts/analysis-review.ts'
 import {
   CreateReportIntentV1Schema,
@@ -86,14 +87,21 @@ interface CurrentS4Binding {
   readonly projectionRevision: number
 }
 
-export function createRequestAnalysisIntent(input: CurrentS4Binding & {
-  readonly scope: AnalysisScopeV1
-  readonly batchSize?: number
-}) {
+export function createRequestAnalysisIntent(input: Required<CurrentS4Binding>) {
   return RequestAnalysisIntentV1Schema.parse({
     schemaVersion: 1,
     kind: 'analysis.request',
-    batchSize: input.batchSize ?? 12,
+    scope: { kind: 'all-eligible' },
+    ...input,
+  })
+}
+
+export function createAnalysisFollowUpIntent(
+  input: Omit<AnalysisFollowUpIntentV1, 'schemaVersion' | 'kind'>,
+) {
+  return AnalysisFollowUpIntentV1Schema.parse({
+    schemaVersion: 1,
+    kind: 'analysis.follow-up',
     ...input,
   })
 }
@@ -176,15 +184,24 @@ export function serializeTenderWorkbenchIntent(input: TenderWorkbenchIntentV1): 
     '请调用 tender_workbench_confirm_rules 并原样传递全部字段。旧快照、旧 revision 或过期预览必须失败。',
   ].join('\n')
   if (intent.kind === 'analysis.request') return [
-    '请只分析我在工作台中明确选择的当前记录范围，并保存一批证据化 Agent 建议。Agent 建议只用于安排人工复核，不是用户决定。',
+    '请分析当前分类中全部可分析候选，并保存证据化 Agent 建议。固定范围为规则初选、观察和人工复核；规则排除与未匹配不进入分析。Agent 建议只用于安排人工复核，不是用户决定。',
     '',
     '类型化工作台意图（schemaVersion 1）：',
     visibleJson(intent),
     '',
-    '先准确调用一次 tender_workbench_analysis_next：把 kind 改为 analysis.next，其余绑定、范围、batchSize 和 commandId 原样传递。不得扩大 scope、重新查询来源或维护隐藏游标。',
+    '先准确调用 tender_workbench_analysis_next：把 kind 改为 analysis.next，其余绑定、scope 和 commandId 原样传递。不得提交 recordRefs、classifications、batchSize，不得重新查询来源或维护隐藏游标。',
     '只使用该工具返回的本批 recordRef 与 evidenceRef，为每条记录形成一个 priority-review、watch 或 not-recommended 建议。recommendations 中每个对象只能包含 recordRef、recommendation、evidenceRefs、reason、verificationItems、limitations；evidenceRefs、verificationItems、limitations 都必须是字符串数组。不得使用 decision、verification 等近义字段，也不得把 limitations 写成字符串。',
-    '随后准确调用一次 tender_workbench_analysis_commit，原样传递批次绑定、batchId 和完整建议。本轮只提交这一批，工具返回后立即结束。',
-    '不得输出企业适配度、中标概率、利润、资格符合或 Bid/No-Bid 结论；分析失败或未覆盖的记录必须保留为可直接人工复核。',
+    '随后调用 tender_workbench_analysis_commit，原样传递批次绑定、scope、batchId 和完整建议。若返回 remaining 大于 0，必须使用返回的新 projectionRevision 再次执行 analysis_next → analysis_commit；循环直到 remaining 为 0 且 completed 等于 eligibleTotal 后才结束本轮。',
+    '不得输出企业适配度、中标概率、利润、资格符合或 Bid/No-Bid 结论；不得把部分批次描述为分析完成。',
+  ].join('\n')
+  if (intent.kind === 'analysis.follow-up') return [
+    `请回答当前候选的问题：${intent.question}`,
+    '',
+    '类型化工作台意图（schemaVersion 1）：',
+    visibleJson(intent),
+    '',
+    '只使用意图 context 中当前记录的来源事实、分类、Agent 建议、证据、待核验项和局限回答；不得调用 qcc、Web、Shell 或其他工具补充事实。',
+    '若现有证据不足，请明确指出缺少什么，不得推断企业适配度、中标概率、利润、资格符合或 Bid/No-Bid。回答不会改写分类、Agent 建议、用户决定或分析完成度。',
   ].join('\n')
   if (intent.kind === 'review.apply') return [
     '请应用我在工作台中明确选择的用户复核决定和备注。该决定独立于初筛分类与 Agent 建议。',

@@ -264,7 +264,7 @@ describe('S3 rule preview and confirmation tools', () => {
     })
     test.adopt({
       ...firstConfirmed.state,
-      analysis: { version: 'analysis-old', activeDatasetId: firstConfirmed.state.query?.normalizedData?.id ?? '', data: fakeArtifact('analysis-data', 'analysis-old'), total: 4, completed: 4, priorityReview: 1, watch: 2, notRecommended: 1 },
+      analysis: { version: 'analysis-old', activeDatasetId: firstConfirmed.state.query?.normalizedData?.id ?? '', data: fakeArtifact('analysis-data', 'analysis-old'), eligibleTotal: 4, completed: 4, priorityReview: 1, watch: 2, notRecommended: 1, urgent: 0 },
       review: { revision: 1, data: fakeArtifact('review-data', 'review-old'), pending: 1, confirmedCandidate: 1, watch: 1, exclude: 1, canRevert: true },
       report: { finalSnapshot: fakeArtifact('final-snapshot', 'snapshot-old'), excel: { status: 'not-started' }, pdf: { status: 'not-started' } },
     })

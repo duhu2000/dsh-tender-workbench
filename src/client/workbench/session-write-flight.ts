@@ -174,6 +174,13 @@ function hasSucceeded(
   workflow: TenderWorkflowProjectionV1,
 ): boolean {
   if (!flight.seenRunning) return false
+  if (flight.action === 'analysis.request') {
+    const analysis = workflow.analysis
+    return workflow.stages.analysis.status === 'succeeded'
+      && analysis !== undefined
+      && analysis.activeDatasetId === intentDataset(flight.intent)
+      && analysis.completed === analysis.eligibleTotal
+  }
   if (workflow.revision <= flight.baseline.revision) return false
   if (flight.action === 'query') {
     return workflow.stages.query.status === 'succeeded'
@@ -186,11 +193,6 @@ function hasSucceeded(
     return workflow.stages.classification.status === 'succeeded'
       && classification?.activeDatasetId === datasetId
       && classification?.data.id !== flight.baseline.classificationArtifactId
-  }
-  if (flight.action === 'analysis.request') {
-    return workflow.stages.analysis.status === 'succeeded'
-      && workflow.analysis?.activeDatasetId === datasetId
-      && workflow.analysis?.data?.id !== flight.baseline.analysisArtifactId
   }
   if (flight.action === 'review.apply' || flight.action === 'review.revert') {
     return workflow.stages.review.status === 'succeeded'

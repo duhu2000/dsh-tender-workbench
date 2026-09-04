@@ -248,7 +248,9 @@ describe('S3 screening workbench', () => {
       classification: { data: classifiedRef, include: 1, observe: 0, manualReview: 0, exclude: 0, unmatched: 1, covered: 1, conflicts: 0, ruleSetVersion: 'rsv-navigation', activeDatasetId: dataset.id },
     }
     const loadRows = vi.fn<ClassifiedRowsLoader>(async (_session, artifact, filter) => ({
-      schemaVersion: 1, artifactId: artifact.id, page: filter.page, pageSize: filter.pageSize, total: 0, rows: [],
+      schemaVersion: 1, artifactId: artifact.id, page: filter.page, pageSize: filter.pageSize, total: 0,
+      datasetTotal: 0, covered: 0, conflicts: 0, rawMatches: 0,
+      counts: { include: 0, observe: 0, manualReview: 0, exclude: 0, unmatched: 0 }, ruleImpacts: [], rows: [],
     }))
     renderWorkbench({ projection: { status: 'ready', projection: withClassification }, loadContent: content, loadClassifiedRows: loadRows })
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.screening'] }))
@@ -272,7 +274,9 @@ describe('S3 screening workbench', () => {
       : { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 1, draftFingerprint: fingerprint, origin: 'user', rules: [...draftRules] })
     const sendIntent = vi.fn(async (_intent: TenderWorkbenchIntentV1) => {})
     const loadRows = vi.fn<ClassifiedRowsLoader>(async (_session, artifact, filter) => ({
-      schemaVersion: 1, artifactId: artifact.id, page: filter.page, pageSize: filter.pageSize, total: 0, rows: [],
+      schemaVersion: 1, artifactId: artifact.id, page: filter.page, pageSize: filter.pageSize, total: 0,
+      datasetTotal: 0, covered: 0, conflicts: 0, rawMatches: 0,
+      counts: { include: 0, observe: 0, manualReview: 0, exclude: 0, unmatched: 0 }, ruleImpacts: [], rows: [],
     }))
     const initial = draftProjection('user')
     const view = render(<TenderWorkbenchView
@@ -419,7 +423,13 @@ describe('S3 screening workbench', () => {
       rules: { ...base.rules!, confirmed: confirmedRef, ruleSetVersion: 'rsv-3-test' },
       classification: { data: classifiedRef, include: 1, observe: 0, manualReview: 0, exclude: 0, unmatched: 1, covered: 1, conflicts: 0, ruleSetVersion: 'rsv-3-test', activeDatasetId: dataset.id },
     }
-    const loadRows = vi.fn<ClassifiedRowsLoader>(async (_session, artifact, filter) => ({ schemaVersion: 1, artifactId: artifact.id, page: filter.page, pageSize: filter.pageSize, total: 1, rows: [classifiedRow] }))
+    const loadRows = vi.fn<ClassifiedRowsLoader>(async (_session, artifact, filter) => ({
+      schemaVersion: 1, artifactId: artifact.id, page: filter.page, pageSize: filter.pageSize, total: 1,
+      datasetTotal: 2, covered: 1, conflicts: 0, rawMatches: 1,
+      counts: { include: 1, observe: 0, manualReview: 0, exclude: 0, unmatched: 1 },
+      ruleImpacts: [{ ruleId: 'r-data', rawMatchCount: 1, exceptionCount: 0, conflictCount: 0, finalCount: 1 }],
+      rows: [classifiedRow],
+    }))
     const loadContent = vi.fn<RuleContentLoader>(async (_session, artifact) => {
       if (artifact.kind === 'rule-preview') return previewArtifact('user', 3)
       if (artifact.kind === 'rule-draft') return { schemaVersion: 1, activeDatasetId: dataset.id, basedOnRevision: 2, draftFingerprint: fingerprint, origin: 'user', rules: [...draftRules] }
@@ -448,18 +458,21 @@ describe('S3 screening workbench', () => {
     expect(screen.getByText(zh['workbench.classification.boundary'])).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/建议重点复核|确认候选商机|用户已排除/u)
     const includeCard = await screen.findByRole('button', { name: /初选.*1/u })
-    expect(includeCard.getAttribute('aria-pressed')).toBe('false')
+    expect(includeCard.getAttribute('data-classification')).toBe('include')
     fireEvent.click(includeCard)
     expect(document.querySelector('[data-classification-details]')).toBeTruthy()
-    expect(await within(classificationPanel).findByText('数据治理平台')).toBeTruthy()
+    expect((await within(classificationPanel).findAllByText('数据治理平台')).length).toBeGreaterThanOrEqual(1)
     fireEvent.change(screen.getByLabelText(zh['workbench.classification.conflictFilter']), { target: { value: 'false' } })
     await waitFor(() => { expect(loadRows).toHaveBeenLastCalledWith('session-1', classifiedRef, expect.objectContaining({ conflict: false }), expect.any(AbortSignal)) })
-    fireEvent.click(screen.getByRole('button', { name: zh['workbench.classification.trace'] }))
+    fireEvent.click(screen.getByRole('row', { name: /初选 数据治理平台/u }))
     expect(screen.getByText(zh['workbench.classification.tracePath'])).toBeTruthy()
-    await waitFor(() => { expect(document.activeElement).toBe(screen.getByLabelText(zh['workbench.classification.traceTitle'])) })
+    const trace = screen.getByLabelText(zh['workbench.classification.traceTitle'])
+    await waitFor(() => { expect(document.activeElement).toBe(trace) })
     expect(screen.queryByText(/dataDisposition=/u)).toBeNull()
-    expect(screen.getByText(zh['workbench.classification.traceSnapshot'])).toBeTruthy()
-    expect(screen.getByText(t('workbench.classification.traceSnapshotValue', { snapshot: dataset.id, version: 'rsv-3-test' }))).toBeTruthy()
+    expect(within(trace).getByText(zh['workbench.classification.auditDataset'])).toBeTruthy()
+    expect(within(trace).getByText(dataset.id)).toBeTruthy()
+    expect(within(trace).getByText(zh['workbench.classification.auditVersion'])).toBeTruthy()
+    expect(within(trace).getByText('rsv-3-test')).toBeTruthy()
     expect(screen.getByRole('link', { name: /打开来源记录/u }).getAttribute('href')).toBe('https://example.test/tender/t-1')
     expect(screen.getByText(/同一动作内/u)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['workbench.classification.openAnalysis'] }))
@@ -469,7 +482,7 @@ describe('S3 screening workbench', () => {
       activeDatasetRef: dataset.id,
       classificationArtifactRef: classifiedRef.id,
       ruleSetVersion: 'rsv-3-test',
-      scope: { kind: 'classifications', classifications: ['include'] },
+      scope: { kind: 'all-eligible' },
     })
     expect(screen.getByRole('tab', { name: zh['workbench.analysis.shortTitle'] }).getAttribute('aria-selected')).toBe('true')
     expect(await screen.findByRole('heading', { name: zh['workbench.analysis.title'] })).toBeTruthy()

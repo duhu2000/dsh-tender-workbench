@@ -2,12 +2,15 @@ import { createHash } from 'node:crypto'
 import {
   MetricDefinitionV1Schema,
   ReportContextV2Schema,
+  ReportDeliveryViewV1Schema,
   ReportDatasetV2Schema,
   ReportNarrativeV1Schema,
   type AmountDistributionV2,
   type MetricDefinitionV1,
   type MetricValueV1,
   type ReportContextV2,
+  type ReportDeliveryRecordV1,
+  type ReportDeliveryViewV1,
   type ReportDatasetV2,
   type ReportDistributionV2,
   type ReportNarrativeV1,
@@ -124,19 +127,83 @@ export function deadlineWindowOf(row: ReviewRecordV1, createdAt: string): Deadli
 
 function amountBandOf(value: number, thresholds: readonly [number, number]): 'low' | 'middle' | 'high' {
   if (value < thresholds[0]) return 'low'
-  if (value <= thresholds[1]) return 'middle'
+  if (value < thresholds[1]) return 'middle'
   return 'high'
+}
+
+function niceAmountStep(target: number): number {
+  if (!Number.isFinite(target) || target <= 1) return 1
+  const magnitude = 10 ** Math.floor(Math.log10(target))
+  const normalized = target / magnitude
+  const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10
+  return multiplier * magnitude
+}
+
+function amountAxis(ranges: readonly { readonly minCny: number, readonly maxCny: number }[]): NonNullable<AmountDistributionV2['axis']> | undefined {
+  if (ranges.length === 0) return undefined
+  const dataMin = Math.min(...ranges.map(range => range.minCny))
+  const dataMax = Math.max(...ranges.map(range => range.maxCny))
+  const dataSpan = dataMax - dataMin
+  const targetSpan = dataSpan === 0 ? Math.max(dataMax * 0.3, 3) : dataSpan * 1.16
+  let step = niceAmountStep(targetSpan / 3)
+  let minCny: number
+  let maxCny: number
+  if (dataSpan === 0) {
+    minCny = Math.max(0, (Math.floor(dataMin / step) - 1) * step)
+    maxCny = minCny + step * 3
+  } else {
+    minCny = Math.max(0, Math.floor(dataMin / step) * step)
+    maxCny = minCny + step * 3
+    while (maxCny < dataMax) {
+      step = niceAmountStep(step * 1.01)
+      minCny = Math.max(0, Math.floor(dataMin / step) * step)
+      maxCny = minCny + step * 3
+    }
+  }
+  const unit = maxCny >= 100_000_000
+    ? 'hundred-million-yuan' as const
+    : maxCny >= 10_000
+      ? 'ten-thousand-yuan' as const
+      : 'yuan' as const
+  const unitLabel = unit === 'hundred-million-yuan' ? '亿元' as const : unit === 'ten-thousand-yuan' ? '万元' as const : '元' as const
+  return {
+    unit,
+    unitLabel,
+    minCny,
+    maxCny,
+    ticksCny: [minCny, minCny + step, minCny + step * 2, maxCny],
+  }
+}
+
+function formatAmountTick(value: number, unit: NonNullable<AmountDistributionV2['axis']>['unit']): string {
+  const divisor = unit === 'hundred-million-yuan' ? 100_000_000 : unit === 'ten-thousand-yuan' ? 10_000 : 1
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value / divisor)
+}
+
+export function formatAmountAxis(axis: NonNullable<AmountDistributionV2['axis']>): string {
+  return `${formatAmountTick(axis.minCny, axis.unit)} 至 ${formatAmountTick(axis.maxCny, axis.unit)} ${axis.unitLabel}`
 }
 
 export function amountDistribution(rows: readonly ReviewRecordV1[], source: 'tender' | 'proposed'): AmountDistributionV2 {
   const eligible = rows.filter(row => row.project.source === source && row.review.decision === 'confirmed-candidate')
-  const thresholds = source === 'tender'
-    ? [3_000_000, 10_000_000] as const
-    : [50_000_000, 200_000_000] as const
-  const labels = source === 'tender'
-    ? ['300 万以下', '300 万至 1,000 万', '1,000 万以上'] as const
-    : ['5,000 万以下', '5,000 万至 2 亿元', '2 亿元以上'] as const
   const singleValues: number[] = []
+  const closedRanges: { minCny: number, maxCny: number }[] = []
+  eligible.forEach((row) => {
+    const { minCny, maxCny, parseStatus } = row.project.amount
+    if (parseStatus !== 'missing' && parseStatus !== 'unparseable' && minCny !== undefined && maxCny !== undefined) {
+      closedRanges.push({ minCny, maxCny })
+    }
+  })
+  const axis = amountAxis(closedRanges)
+  const thresholds = axis === undefined ? [0, 0] as const : [axis.ticksCny[1] ?? 0, axis.ticksCny[2] ?? 0] as const
+  const tickLabels = axis === undefined ? undefined : axis.ticksCny.map(value => formatAmountTick(value, axis.unit))
+  const labels = tickLabels === undefined || axis === undefined
+    ? ['低金额档', '中金额档', '高金额档'] as const
+    : [
+        `${tickLabels[0]} 至 ${tickLabels[1]} ${axis.unitLabel}`,
+        `${tickLabels[1]} 至 ${tickLabels[2]} ${axis.unitLabel}`,
+        `${tickLabels[2]} 至 ${tickLabels[3]} ${axis.unitLabel}`,
+      ] as const
   const bands = { low: 0, middle: 0, high: 0 }
   let bandedRangeCount = 0
   let indeterminateCount = 0
@@ -175,6 +242,7 @@ export function amountDistribution(rows: readonly ReviewRecordV1[], source: 'ten
     missingCount,
     unparseableCount,
     ...(medianCny === undefined ? {} : { medianCny }),
+    ...(axis === undefined ? {} : { axis }),
     bands: [
       { id: 'low', label: labels[0], count: bands.low },
       { id: 'middle', label: labels[1], count: bands.middle },
@@ -508,6 +576,42 @@ export function buildReportDataset(input: {
     ],
     invalidRecords: input.normalized.invalidRecords,
     rows,
+  })
+}
+
+function deliveryRecord(row: ReviewRecordV1, createdAt: string): ReportDeliveryRecordV1 {
+  const { evidenceRefs: _evidenceRefs, ...record } = contextRecord(row, createdAt)
+  return record
+}
+
+export function createReportDeliveryView(datasetValue: unknown): ReportDeliveryViewV1 {
+  const dataset = ReportDatasetV2Schema.parse(datasetValue)
+  const byRef = new Map(dataset.rows.map(row => [row.project.recordId, row]))
+  const recordsFor = (refs: readonly string[]): ReportDeliveryRecordV1[] => refs.map((ref) => {
+    const row = byRef.get(ref)
+    if (row === undefined) throw new Error(`交付视图引用了不存在的记录：${ref}`)
+    return deliveryRecord(row, dataset.createdAt)
+  })
+  const completed = metricValueOf(dataset, 'agent-analyzed').value
+  const total = metricValueOf(dataset, 'normalized-projects').value
+  return ReportDeliveryViewV1Schema.parse({
+    schemaVersion: 1,
+    finalSnapshotId: dataset.finalSnapshotId,
+    createdAt: dataset.createdAt,
+    timeZone: dataset.timeZone,
+    completeness: dataset.completeness,
+    query: dataset.query,
+    rulesIncluded: dataset.ruleSetVersion !== undefined,
+    analysisIncluded: dataset.analysisVersion !== undefined,
+    analysisCoverage: { completed, total },
+    metricDefinitions: dataset.metricDefinitions,
+    metricValues: dataset.metricValues,
+    distributions: dataset.distributions,
+    amountDistributions: dataset.amountDistributions,
+    homepageRecords: recordsFor(dataset.homepageRecordRefs),
+    priorityRecords: recordsFor(dataset.priorityRecordRefs),
+    ...(dataset.narrative === undefined ? {} : { narrative: dataset.narrative }),
+    limitations: dataset.limitations,
   })
 }
 

@@ -43,6 +43,15 @@ function result(
   } as unknown as SessionEvent
 }
 
+function turnEnd(seq: number): SessionEvent {
+  return {
+    seq,
+    time: Date.UTC(2026, 7, 31) + seq,
+    type: 'turn/end',
+    data: { turn: 1, reason: { kind: 'completed' } },
+  } as unknown as SessionEvent
+}
+
 function meta(
   commandId: string,
   command: TenderCommandKind,
@@ -97,13 +106,34 @@ describe('tenderWorkflowProjectionDefinition', () => {
       stages: { ...current.stages, analysis: { status: 'succeeded' } },
       analysis: {
         version: 'analysis-v1', activeDatasetId: 'data-v1',
-        total: 2, completed: 1, priorityReview: 1, watch: 0, notRecommended: 0,
+        eligibleTotal: 2, completed: 1, priorityReview: 1, watch: 0, notRecommended: 0, urgent: 0,
       },
     }
     expect(tenderWorkflowProjectionDefinition.apply(
       committing,
       result(4, 'analysis-commit', meta('analysis-command', 'tender_workbench_analysis_commit', completed)),
     )).toEqual(completed)
+  })
+
+  it('marks a partial all-eligible analysis as resumable when the Agent turn ends', () => {
+    const empty = createEmptyTenderWorkflowProjection()
+    const partial: TenderWorkflowProjectionV1 = {
+      ...empty,
+      revision: 5,
+      currentStage: 'analysis',
+      stages: { ...empty.stages, analysis: { status: 'running' } },
+      analysis: {
+        version: 'analysis-v1', activeDatasetId: 'data-v1',
+        eligibleTotal: 15, completed: 12, priorityReview: 3, watch: 7, notRecommended: 2, urgent: 1,
+      },
+    }
+    const interrupted = tenderWorkflowProjectionDefinition.apply(partial, turnEnd(10))
+    expect(interrupted).toMatchObject({
+      revision: 5,
+      stages: { analysis: { status: 'failed', errorCode: 'analysis-incomplete', errorMessage: expect.stringContaining('12/15') } },
+      lastFailure: { command: 'tender_workbench_analysis_commit', code: 'analysis-incomplete', message: expect.stringContaining('12/15') },
+    })
+    expect(tenderWorkflowProjectionDefinition.apply(interrupted, turnEnd(11))).toBe(interrupted)
   })
 
   it('tracks an exact call and adopts only a validated newer whole state', () => {

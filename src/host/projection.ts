@@ -112,6 +112,32 @@ function applyTenderProjection(
   state: TenderWorkflowProjectionV1 | null,
   event: SessionEvent,
 ): TenderWorkflowProjectionV1 | null {
+  if (event.type === 'turn/end' && state !== null) {
+    const analysis = state.analysis
+    if (state.activeOperation === undefined
+      && state.stages.analysis.status === 'running'
+      && analysis !== undefined
+      && analysis.completed < analysis.eligibleTotal) {
+      const message = `Agent 分析在 ${analysis.completed}/${analysis.eligibleTotal} 时中断；可继续处理剩余记录。`
+      return {
+        ...state,
+        stages: {
+          ...state.stages,
+          analysis: {
+            status: 'failed',
+            updatedAt: new Date(event.time).toISOString(),
+            errorCode: 'analysis-incomplete',
+            errorMessage: message,
+          },
+        },
+        lastFailure: {
+          command: 'tender_workbench_analysis_commit',
+          code: 'analysis-incomplete',
+          message,
+        },
+      }
+    }
+  }
   if (event.type === 'tool/call') {
     if (!isTenderToolName(event.data.name)) return state
     const commandId = commandIdFrom(event.data.arguments)

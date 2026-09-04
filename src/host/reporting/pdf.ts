@@ -8,6 +8,7 @@ import {
   deadlineWindowLabel,
   deadlineWindowOf,
   distributionOf,
+  formatAmountAxis,
   formatReportDateTime,
   metricValueOf,
 } from './report-dataset.ts'
@@ -282,7 +283,9 @@ function renderPdf(dataset: ReportDatasetV2, signal: AbortSignal): Promise<Buffe
     ensure(72)
     const title = distribution.source === 'tender' ? '正式候选预算' : '拟建重点线索总投资'
     const median = distribution.medianCny === undefined ? '暂无可计算中位数' : `可解析单值中位数 ${businessAmount(distribution.medianCny)}`
-    paragraph(`${title}：统计 ${distribution.eligibleCount} 个；${median}。${distribution.bands.map(band => `${band.label} ${band.count}`).join('；')}；区间暂无法确定 ${distribution.indeterminateCount}；来源未披露 ${distribution.missingCount}；暂无法解析 ${distribution.unparseableCount}。`)
+    const bands = distribution.bands.filter(band => band.count > 0).map(band => `${band.label} ${band.count}`).join('；')
+    const axis = distribution.axis === undefined ? '没有可用金额轴' : `金额轴 ${formatAmountAxis(distribution.axis)}`
+    paragraph(`${title}：统计 ${distribution.eligibleCount} 个；${median}；${axis}；${bands === '' ? '没有可稳定分档的金额' : bands}；区间暂无法确定 ${distribution.indeterminateCount}；来源未披露 ${distribution.missingCount}；暂无法解析 ${distribution.unparseableCount}。`)
     paragraph(distribution.limitation, { muted: true, size: 8.5 })
   })
   ;['confirmed-regions', 'tender-procurement-methods', 'tender-procurement-types', 'proposed-project-stages', 'proposed-approval-progress'].forEach((id) => {

@@ -1,6 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import {
+  IconChevronLeftOutline14,
+  IconDataOutline16,
+  IconRightUpOutline14,
+  IconWarningOutline16,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   RuleDraftArtifactV1Schema,
   RulePreviewArtifactV1Schema,
@@ -478,6 +485,7 @@ export function TenderClassificationView({
   t,
 }: ClassificationViewProps) {
   const classification = workflow.classification
+  const tabId = useId()
   const [page, setPage] = useState(1)
   const [query, setQuery] = useState('')
   const [source, setSource] = useState<ClassifiedRowsFilterV1['source']>()
@@ -494,6 +502,7 @@ export function TenderClassificationView({
   const [requestVersion, setRequestVersion] = useState(0)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const traceRef = useRef<HTMLElement>(null)
+  const categoryTabs = useRef<Array<HTMLButtonElement | null>>([])
   const filter = useMemo<ClassifiedRowsFilterV1>(() => ({
     page, pageSize: 50,
     ...(query.trim() === '' ? {} : { query: query.trim() }),
@@ -538,18 +547,48 @@ export function TenderClassificationView({
   const maximumPage = Math.max(1, Math.ceil((data?.total ?? 0) / 50))
   const reset = () => { setPage(1); setSelected(undefined) }
   const ruleName = (id: string | undefined) => rules.find(rule => rule.id === id)?.name ?? id ?? t('workbench.classification.none')
-  const selectedSourceLink = selected === undefined ? undefined : sourceLink(selected)
+  const focused = selected ?? data?.rows[0]
+  const selectedSourceLink = focused === undefined ? undefined : sourceLink(focused)
+  const ruleImpacts = data?.ruleImpacts ?? []
+  const categories = [undefined, 'include', 'observe', 'manual-review', 'exclude', 'unmatched'] as const
+  const categoryCount = (value: Exclude<typeof categories[number], undefined>) => value === 'manual-review'
+    ? classification.manualReview
+    : classification[value]
+  const openDetails = (nextCategory?: ClassifiedRowsFilterV1['classification'], row?: ClassifiedRecordV1): void => {
+    setCategory(nextCategory)
+    setPage(1)
+    setSelected(row)
+    setDetailsOpen(true)
+  }
+  const closeDetails = (): void => {
+    setDetailsOpen(false)
+    setCategory(undefined)
+    setPage(1)
+    setSelected(undefined)
+  }
+  const selectCategoryFromKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number): void => {
+    let next: number | undefined
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % categories.length
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + categories.length) % categories.length
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = categories.length - 1
+    if (next === undefined) return
+    event.preventDefault()
+    setCategory(categories[next])
+    reset()
+    categoryTabs.current[next]?.focus()
+  }
   useEffect(() => { if (selected !== undefined) traceRef.current?.focus() }, [selected])
   return (
     <section className={css.dataView} aria-label={t('workbench.classification.title')}>
-      {detailsOpen && <button type="button" className={css.backButton} onClick={() => { setDetailsOpen(false); setSelected(undefined) }}>← {t('workbench.classification.backOverview')}</button>}
+      {detailsOpen && <button type="button" className={css.backButton} onClick={closeDetails}><IconChevronLeftOutline14 size={14} />{t('workbench.classification.backOverview')}</button>}
       <PageHeader
         eyebrow={t('workbench.classification.eyebrow')}
         title={t(detailsOpen ? 'workbench.classification.detailsTitle' : 'workbench.classification.title')}
         description={t(detailsOpen ? 'workbench.classification.detailsDescription' : 'workbench.classification.description')}
         aside={<div className={css.summaryInline}><StatusPill>{classification.ruleSetVersion}</StatusPill><StatusPill>{classification.data.rowCount ?? workflow.query?.total ?? 0} {t('workbench.data.records')}</StatusPill><StatusPill tone="success">{t('workbench.phaseStatus.completed')}</StatusPill></div>}
       />
-      <p className={css.scopeNotice}>{t('workbench.classification.boundary')}</p>
+      {!detailsOpen && <p className={css.scopeNotice}>{t('workbench.classification.boundary')}</p>}
       {!detailsOpen && <div className={css.classificationGrid} data-classification-overview>
         {([
           ['include', classification.include], ['observe', classification.observe],
@@ -561,43 +600,57 @@ export function TenderClassificationView({
             type="button"
             className={css.classificationMetric}
             data-classification={value}
-            aria-pressed={category === value}
-            onClick={() => { setCategory(value); reset(); setDetailsOpen(true) }}
+            onClick={() => { openDetails(value) }}
           >
-            <span>{t(`workbench.classification.${value}`)}</span><strong>{count}</strong><small>{t('workbench.classification.openDetails')}</small>
+            <span>{t(`workbench.classification.card.${value}`)}</span><strong>{count}</strong><small>{t('workbench.classification.openDetails')}<IconRightUpOutline14 size={10} /></small>
           </button>
         ))}
       </div>}
       {!detailsOpen && <div className={css.classificationOverview}>
         <section className={css.summarySurface}>
-          <SurfaceHeader title={t('workbench.classification.coverageTitle')} description={t('workbench.classification.coverageDescription')} action={<button type="button" className={css.secondary} onClick={() => { setDetailsOpen(true) }}>{t('workbench.classification.openDetails')}</button>} />
+          <SurfaceHeader title={t('workbench.classification.coverageTitle')} description={t('workbench.classification.coverageDescription')} action={<button type="button" className={css.secondary} onClick={() => { openDetails() }}><IconDataOutline16 size={16} />{t('workbench.classification.openDetails')}</button>} />
           <div className={css.classificationFunnel} data-classification-funnel>
             {([
               [t('workbench.classification.rawRecords'), workflow.query?.sourceRecordCount ?? workflow.query?.total ?? 0],
               [t('workbench.classification.auditNormalized'), workflow.query?.total ?? classification.data.rowCount ?? 0],
               [t('workbench.classification.coveredRecords'), classification.covered],
-              [t('workbench.classification.include'), classification.include],
+              [t('workbench.classification.funnelInclude'), classification.include],
             ] as const).map(([label, value], index) => <div key={label}><span>{label}</span><i style={{ width: `${Math.max(12, 100 - index * 18)}%` }} /><strong>{value}</strong></div>)}
           </div>
+          {ruleImpacts.length > 0 && <div className={css.ruleCoverageList} data-rule-coverage>
+            {ruleImpacts.slice(0, 5).map((impact) => {
+              const maximum = Math.max(1, ...ruleImpacts.map(item => item.rawMatchCount))
+              return <div key={impact.ruleId}><span>{ruleName(impact.ruleId)}</span><div><i style={{ width: `${Math.max(4, impact.rawMatchCount / maximum * 100)}%` }} /></div><strong>{impact.finalCount}</strong></div>
+            })}
+          </div>}
         </section>
         <aside className={css.summarySurface}>
           <SurfaceHeader title={t('workbench.classification.auditTitle')} description={t('workbench.classification.auditDescription')} />
           <dl className={css.auditList}>
-            <div><dt>{t('workbench.classification.auditNormalized')}</dt><dd>{workflow.query?.total ?? classification.data.rowCount ?? 0}</dd></div>
-            <div data-tone={classification.conflicts > 0 ? 'warning' : 'neutral'}><dt>{t('workbench.classification.column.conflict')}</dt><dd>{classification.conflicts}</dd></div>
-            <div><dt>{t('workbench.rules.rawMatches', { count: classification.covered })}</dt><dd>{workflow.rules?.rawMatches ?? classification.covered}</dd></div>
+            <div><dt>{t('workbench.classification.auditNormalized')}</dt><dd>{workflow.query?.total ?? classification.data.rowCount ?? 0} / {workflow.query?.total ?? classification.data.rowCount ?? 0}</dd></div>
+            <div><dt>{t('workbench.classification.auditLinked')}</dt><dd>{workflow.query?.duplicateCount ?? 0}</dd></div>
+            <div data-tone={classification.conflicts > 0 ? 'warning' : 'neutral'}><dt>{t('workbench.classification.auditConflicts')}</dt><dd>{classification.conflicts}</dd></div>
+            <div><dt>{t('workbench.classification.auditOverrides')}</dt><dd>{t('workbench.classification.auditNone')}</dd></div>
+            <div><dt>{t('workbench.classification.auditSources')}</dt><dd>{t('workbench.classification.auditPreserved')}</dd></div>
           </dl>
+          <div className={css.classificationNotice}><IconWarningOutline16 size={17} /><p><strong>{t('workbench.classification.analysisScopeTitle')}</strong>{t('workbench.classification.analysisScope', { count: classification.include + classification.observe + classification.manualReview })}</p></div>
         </aside>
       </div>}
-      {!detailsOpen && data !== undefined && data.rows.length > 0 && <section className={css.screenCard} data-classification-samples><SurfaceHeader title={t('workbench.classification.sampleTitle')} description={t('workbench.classification.sampleDescription')} action={<button type="button" className={css.primary} onClick={() => { setDetailsOpen(true) }}>{t('workbench.classification.openAll', { count: data.total })}</button>} /><div className={css.dataTableWrap}><table className={css.dataTable}><thead><tr><th>{t('workbench.classification.column.classification')}</th><th>{t('workbench.data.column.project')}</th><th>{t('workbench.classification.column.finalRule')}</th><th>{t('workbench.classification.column.conflict')}</th><th>{t('workbench.data.column.source')}</th><th>{t('workbench.data.column.action')}</th></tr></thead><tbody>{data.rows.slice(0, 4).map(row => <tr key={row.project.recordId}><td><span className={css.sourceTag} data-classification={row.classification}>{t(`workbench.classification.${row.classification}`)}</span></td><td><strong>{row.project.title}</strong></td><td>{ruleName(row.finalRuleId)}</td><td>{row.conflictRuleIds.length > 0 ? t('workbench.classification.hasConflict') : '—'}</td><td>{t(`workbench.data.source.${row.project.source}`)}</td><td><button type="button" className={css.rowAction} onClick={() => { setSelected(row); setDetailsOpen(true) }}>{t('workbench.classification.trace')}</button></td></tr>)}</tbody></table></div></section>}
+      {!detailsOpen && data !== undefined && data.rows.length > 0 && <section className={css.screenCard} data-classification-samples><SurfaceHeader title={t('workbench.classification.sampleTitle')} description={t('workbench.classification.sampleDescription')} action={<button type="button" className={css.primary} onClick={() => { openDetails() }}><IconDataOutline16 size={16} />{t('workbench.classification.openAll', { count: data.datasetTotal })}</button>} /><div className={css.dataTableWrap}><table className={`${css.dataTable} ${css.classificationSampleTable}`}><thead><tr><th>{t('workbench.classification.column.classification')}</th><th>{t('workbench.data.column.project')}</th><th>{t('workbench.classification.column.finalRule')}</th><th>{t('workbench.classification.column.otherMatches')}</th><th>{t('workbench.classification.column.rationale')}</th><th>{t('workbench.data.column.source')}</th><th>{t('workbench.data.column.action')}</th></tr></thead><tbody>{data.rows.slice(0, 4).map(row => { const other = row.rawMatches.filter(match => match.ruleId !== row.finalRuleId); return <tr key={row.project.recordId}><td><span className={css.sourceTag} data-classification={row.classification}>{t(`workbench.classification.${row.classification}`)}</span></td><td><strong>{row.project.title}</strong></td><td>{ruleName(row.finalRuleId)}</td><td>{other.map(match => ruleName(match.ruleId)).join(t('workbench.classification.matchSeparator')) || '—'}</td><td>{t(`workbench.classification.decision.${row.decision.kind}`)}</td><td>{t(`workbench.data.source.${row.project.source}`)}</td><td><button type="button" className={css.rowAction} onClick={() => { openDetails(row.classification, row) }}><IconDataOutline16 size={14} />{t('workbench.classification.trace')}</button></td></tr>})}</tbody></table></div></section>}
       {rulesFailed && <p className={css.staleNotice} role="status">{t('workbench.classification.rulesLoadFailed')}</p>}
-      {detailsOpen && <div className={selected === undefined ? css.classificationWorkspace : `${css.classificationWorkspace} ${css.classificationWorkspaceOpen}`} data-classification-details>
-      <section className={css.screenCard} aria-busy={loading}>
-        <SurfaceHeader title={t('workbench.classification.detailsTitle')} description={t('workbench.classification.detailsDescription')} />
+      {detailsOpen && <>
+      <div className={css.classificationTabs} role="tablist" aria-label={t('workbench.classification.tabs')}>
+        {categories.map((value, index) => {
+          const active = category === value
+          const label = value === undefined ? t('workbench.classification.allCount', { count: classification.data.rowCount ?? workflow.query?.total ?? 0 }) : t('workbench.classification.categoryCount', { category: t(`workbench.classification.${value}`), count: categoryCount(value) })
+          return <button key={value ?? 'all'} ref={element => { categoryTabs.current[index] = element }} id={`${tabId}-${value ?? 'all'}-tab`} type="button" role="tab" aria-selected={active} tabIndex={active ? 0 : -1} onClick={() => { setCategory(value); reset() }} onKeyDown={event => { selectCategoryFromKeyboard(event, index) }}>{label}</button>
+        })}
+      </div>
+      <div className={css.classificationWorkspaceOpen} data-classification-details>
+      <section className={css.screenCard} aria-busy={loading} role="tabpanel" aria-labelledby={`${tabId}-${category ?? 'all'}-tab`}>
         <div className={css.detailToolbar}>
           <input type="search" aria-label={t('workbench.classification.search')} value={query} placeholder={t('workbench.classification.searchPlaceholder')} onChange={event => { setQuery(event.target.value); reset() }} />
           <select aria-label={t('workbench.data.filterSource')} value={source ?? ''} onChange={event => { setSource(event.target.value === '' ? undefined : event.target.value as NonNullable<typeof source>); reset() }}><option value="">{t('workbench.data.filterSourceAll')}</option><option value="tender">{t('workbench.data.source.tender')}</option><option value="proposed">{t('workbench.data.source.proposed')}</option></select>
-          <select aria-label={t('workbench.classification.filter')} value={category ?? ''} onChange={event => { setCategory(event.target.value === '' ? undefined : event.target.value as NonNullable<typeof category>); reset() }}><option value="">{t('workbench.classification.all')}</option>{(['include', 'observe', 'manual-review', 'exclude', 'unmatched'] as const).map(value => <option key={value} value={value}>{t(`workbench.classification.${value}`)}</option>)}</select>
           <select aria-label={t('workbench.classification.ruleFilter')} value={ruleId ?? ''} onChange={event => { setRuleId(event.target.value || undefined); reset() }}><option value="">{t('workbench.classification.ruleAll')}</option>{rules.map(rule => <option key={rule.id} value={rule.id}>{rule.name}</option>)}</select>
           <select aria-label={t('workbench.classification.conflictFilter')} value={conflict === undefined ? '' : String(conflict)} onChange={event => { setConflict(event.target.value === '' ? undefined : event.target.value === 'true'); reset() }}><option value="">{t('workbench.classification.conflictAll')}</option><option value="true">{t('workbench.classification.conflictOnly')}</option><option value="false">{t('workbench.classification.noConflict')}</option></select>
           <select aria-label={t('workbench.data.filterStatus')} value={fieldFilter ?? ''} onChange={event => { setFieldFilter(event.target.value === '' ? undefined : event.target.value as NonNullable<typeof fieldFilter>); reset() }}><option value="">{t('workbench.data.filterStatusAll')}</option><option value="normalized">{t('workbench.data.status.normalized')}</option><option value="missing">{t('workbench.data.status.missing')}</option><option value="unparseable">{t('workbench.data.status.unparseable')}</option></select>
@@ -613,25 +666,26 @@ export function TenderClassificationView({
         ) : (
           <>
             {loading && <div className={css.inlineLoading} role="status">{t('workbench.classification.loading')}</div>}
-            <div className={css.dataTableWrap}><table className={css.dataTable}><thead><tr><th>{t('workbench.classification.column.classification')}</th><th>{t('workbench.data.column.project')}</th><th>{t('workbench.classification.column.finalRule')}</th><th>{t('workbench.classification.column.matches')}</th><th>{t('workbench.classification.column.conflict')}</th><th>{t('workbench.data.column.source')}</th><th>{t('workbench.data.column.status')}</th><th>{t('workbench.data.column.action')}</th></tr></thead><tbody>{data.rows.map(row => <tr key={row.project.recordId}><td><span className={css.sourceTag} data-classification={row.classification}>{t(`workbench.classification.${row.classification}`)}</span></td><td><strong>{row.project.title}</strong><small>{row.project.sourceId}</small></td><td>{ruleName(row.finalRuleId)}</td><td>{row.rawMatches.map(match => ruleName(match.ruleId)).join(t('workbench.classification.matchSeparator')) || '—'}</td><td>{row.conflictRuleIds.length > 0 ? t('workbench.classification.hasConflict') : '—'}</td><td>{t(`workbench.data.source.${row.project.source}`)}</td><td><span className={css.fieldStatus} data-field-status={fieldStatus(row)}>{t(`workbench.data.status.${fieldStatus(row)}`)}</span></td><td><button type="button" className={css.rowAction} aria-expanded={selected?.project.recordId === row.project.recordId} onClick={() => { setSelected(row) }}>{t('workbench.classification.trace')}</button></td></tr>)}</tbody></table></div>
+            <div className={css.dataTableWrap}><table className={`${css.dataTable} ${css.classificationDetailTable}`}><thead><tr><th>{t('workbench.classification.column.classification')}</th><th>{t('workbench.data.column.project')}</th><th>{t('workbench.classification.column.finalRule')}</th><th>{t('workbench.classification.column.conflict')}</th><th>{t('workbench.analysis.factDisclosure')}</th><th>{t('workbench.data.column.source')}</th></tr></thead><tbody>{data.rows.map(row => <tr key={row.project.recordId} tabIndex={0} data-row-selected={focused?.project.recordId === row.project.recordId ? 'true' : 'false'} onClick={() => { setSelected(row); queueMicrotask(() => { traceRef.current?.focus() }) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelected(row); queueMicrotask(() => { traceRef.current?.focus() }) } }}><td><span className={css.sourceTag} data-classification={row.classification}>{t(`workbench.classification.${row.classification}`)}</span></td><td><strong>{row.project.title}</strong></td><td>{ruleName(row.finalRuleId)}</td><td>{row.conflictRuleIds.length > 0 ? <StatusPill tone="warning">{t('workbench.classification.conflictCount', { count: row.conflictRuleIds.length })}</StatusPill> : '—'}</td><td><span className={css.fieldStatus} data-field-status={fieldStatus(row)}>{t(`workbench.data.status.${fieldStatus(row)}`)}</span></td><td>{t(`workbench.data.source.${row.project.source}`)}</td></tr>)}</tbody></table></div>
             <footer className={css.tableFooter}><span>{t('workbench.data.pageSummary', { page: data.page, pages: maximumPage, total: data.total })}</span><div><button type="button" disabled={page <= 1} onClick={() => { setPage(value => value - 1) }}>{t('workbench.data.previous')}</button><button type="button" disabled={page >= maximumPage} onClick={() => { setPage(value => value + 1) }}>{t('workbench.data.next')}</button></div></footer>
           </>
         )}
       </section>
-      {selected !== undefined && (
+      {focused !== undefined && (
         <section ref={traceRef} className={css.traceCard} tabIndex={-1} aria-label={t('workbench.classification.traceTitle')}>
-          <header><div><StatusPill tone={selected.conflictRuleIds.length > 0 ? 'warning' : 'success'}>{t(`workbench.classification.${selected.classification}`)}</StatusPill><strong>{selected.project.title}</strong><p>{t('workbench.classification.tracePath')}</p></div><button type="button" className={css.iconButton} aria-label={t('action.cancel')} onClick={() => { setSelected(undefined) }}>×</button></header>
+          <header><div><StatusPill tone={focused.conflictRuleIds.length > 0 ? 'warning' : 'success'}>{t(`workbench.classification.${focused.classification}`)}</StatusPill><strong>{focused.project.title}</strong><p>{t('workbench.classification.tracePath')}</p></div></header>
           <ol>
-            <li><strong>{t('workbench.classification.traceSource')}</strong><span>{t(`workbench.data.source.${selected.project.source}`)} · {selected.project.sourceId}</span></li>
-            <li><strong>{t('workbench.classification.traceSnapshot')}</strong><span>{t('workbench.classification.traceSnapshotValue', { snapshot: classification.activeDatasetId, version: classification.ruleSetVersion })}</span></li>
-            <li><strong>{t('workbench.classification.traceNormalized')}</strong><span>{selected.project.title} · {selected.project.counterparty.value ?? t('workbench.data.value.missing')} · {t('workbench.data.status.normalized')}</span></li>
-            <li><strong>{t('workbench.classification.traceMatches')}</strong><span>{selected.rawMatches.map(match => `${ruleName(match.ruleId)} [${match.matchedKeywords.join('、')}]${match.eligible ? '' : ` (${t('workbench.classification.exception')}: ${match.exceptionKeywords.join('、')})`}`).join('；') || t('workbench.classification.none')}</span></li>
-            <li><strong>{t('workbench.classification.traceDecision')}</strong><span>{t(`workbench.classification.decision.${selected.decision.kind}`)} · {ruleName(selected.finalRuleId)} · {t(`workbench.classification.${selected.classification}`)}</span></li>
+            <li><strong>{t('workbench.classification.traceSource')}</strong><span>{t(`workbench.data.source.${focused.project.source}`)} · {focused.project.sourceId}</span></li>
+            <li><strong>{t('workbench.classification.traceNormalized')}</strong><span>{focused.project.title} · {focused.project.counterparty.value ?? t('workbench.data.value.missing')} · {focused.project.region.value ?? t('workbench.data.value.missing')}</span></li>
+            <li><strong>{t('workbench.classification.traceMatches')}</strong><span>{focused.rawMatches.map(match => `${ruleName(match.ruleId)} [${match.matchedKeywords.join('、')}]${match.eligible ? '' : ` (${t('workbench.classification.exception')}: ${match.exceptionKeywords.join('、')})`}`).join('；') || t('workbench.classification.none')}</span></li>
+            <li><strong>{t('workbench.classification.traceDecision')}</strong><span>{t(`workbench.classification.decision.${focused.decision.kind}`)} · {ruleName(focused.finalRuleId)}</span></li>
           </ol>
-          {selectedSourceLink !== undefined && <a className={css.sourceLink} href={selectedSourceLink} target="_blank" rel="noreferrer">{t('workbench.data.openSource')} ↗</a>}
+          <div className={css.traceOutcome}><strong>{t('workbench.classification.currentOutcome', { category: t(`workbench.classification.${focused.classification}`) })}</strong><p>{t('workbench.classification.outcomeBoundary')}</p></div>
+          <dl className={css.traceAudit}><div><dt>{t('workbench.classification.auditDataset')}</dt><dd>{classification.activeDatasetId}</dd></div><div><dt>{t('workbench.classification.auditVersion')}</dt><dd>{classification.ruleSetVersion}</dd></div><div><dt>{t('workbench.classification.auditSources')}</dt><dd>{t(`workbench.data.source.${focused.project.source}`)}</dd></div></dl>
+          {selectedSourceLink !== undefined && <a className={css.sourceLink} href={selectedSourceLink} target="_blank" rel="noreferrer">{t('workbench.data.openSource')}<IconRightUpOutline14 size={12} /></a>}
         </section>
       )}
-      </div>}
+      </div></>}
       <RulesFooter target={footerTarget}>
         <div className={css.footerCopy}><span className={css.footerHint}>{t('workbench.classification.footerNote')}</span></div>
         <div className={css.footerActions}>

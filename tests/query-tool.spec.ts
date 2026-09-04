@@ -157,7 +157,7 @@ describe('tender_workbench_query', () => {
         include: 1, observe: 0, exclude: 0, manualReview: 0, unmatched: 0,
         covered: 1, conflicts: 0, ruleSetVersion: 'v1', activeDatasetId: first.state.query?.normalizedData?.id ?? 'old-data',
       },
-      analysis: { version: 'a1', activeDatasetId: first.state.query?.normalizedData?.id ?? 'old-data', data: artifact('analysis-data', 'old-analysis'), total: 1, completed: 1, priorityReview: 1, watch: 0, notRecommended: 0 },
+      analysis: { version: 'a1', activeDatasetId: first.state.query?.normalizedData?.id ?? 'old-data', data: artifact('analysis-data', 'old-analysis'), eligibleTotal: 1, completed: 1, priorityReview: 1, watch: 0, notRecommended: 0, urgent: 0 },
       review: { revision: 1, data: artifact('review-data', 'old-review'), pending: 0, confirmedCandidate: 1, watch: 0, exclude: 0, canRevert: true },
       report: { finalSnapshot: artifact('final-snapshot', 'old-report'), excel: { status: 'not-started' }, pdf: { status: 'not-started' } },
     })

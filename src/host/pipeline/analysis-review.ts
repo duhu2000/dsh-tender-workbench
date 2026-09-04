@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import {
   AgentRecommendationV1Schema,
+  ANALYSIS_ELIGIBLE_CLASSIFICATIONS,
   AnalysisEvidenceV1Schema,
   AnalysisBatchV1Schema,
   AnalysisDatasetV1Schema,
@@ -25,8 +26,8 @@ function stableId(prefix: string, value: unknown): string {
 
 export function analysisVersion(input: {
   readonly activeDatasetId: string
-  readonly classificationArtifactId?: string
-  readonly ruleSetVersion?: string
+  readonly classificationArtifactId: string
+  readonly ruleSetVersion: string
 }): string {
   return stableId('anv', input)
 }
@@ -82,33 +83,26 @@ export function allowedAnalysisEvidence(row: AnalysisRecordV1) {
   return evidence.map(item => AnalysisEvidenceV1Schema.parse(item))
 }
 
-function scopeRows(rows: readonly AnalysisRecordV1[], scope: AnalysisScopeV1): AnalysisRecordV1[] {
-  if (scope.kind === 'records') {
-    const byId = new Map(rows.map(row => [row.project.recordId, row]))
-    const selected = scope.recordRefs.map((recordRef) => {
-      const row = byId.get(recordRef)
-      if (row === undefined) throw new Error(`分析范围包含未知 recordRef：${recordRef}`)
-      return row
-    })
-    return selected.sort((left, right) => left.project.recordId.localeCompare(right.project.recordId))
-  }
+export function analysisEligibleRows(rows: readonly AnalysisRecordV1[]): AnalysisRecordV1[] {
   if (rows.every(row => row.classification === undefined)) {
-    throw new Error('classification 分析范围要求当前存在已确认的分类版本；请改为明确 recordRef 范围。')
+    throw new Error('Agent 全量分析要求当前存在已确认的分类版本。')
   }
-  return rows.filter(row => row.classification !== undefined && scope.classifications.includes(row.classification))
+  return rows.filter(row => row.classification !== undefined
+    && (ANALYSIS_ELIGIBLE_CLASSIFICATIONS as readonly string[]).includes(row.classification))
 }
 
 export function createAnalysisBatch(input: {
   readonly analysisVersion: string
   readonly activeDatasetRef: string
-  readonly classificationArtifactRef?: string
-  readonly ruleSetVersion?: string
+  readonly classificationArtifactRef: string
+  readonly ruleSetVersion: string
   readonly basedOnRevision: number
   readonly scope: AnalysisScopeV1
   readonly batchSize: number
   readonly rows: readonly AnalysisRecordV1[]
 }): AnalysisBatchV1 {
-  const uncommitted = scopeRows(input.rows, input.scope).filter(row => row.recommendation === undefined)
+  const eligible = analysisEligibleRows(input.rows)
+  const uncommitted = eligible.filter(row => row.recommendation === undefined)
   const selected = uncommitted.slice(0, input.batchSize)
   const recordRefs = selected.map(row => row.project.recordId)
   const batchId = stableId('anb', {
@@ -123,12 +117,14 @@ export function createAnalysisBatch(input: {
     schemaVersion: 1,
     analysisVersion: input.analysisVersion,
     activeDatasetRef: input.activeDatasetRef,
-    ...(input.classificationArtifactRef === undefined ? {} : { classificationArtifactRef: input.classificationArtifactRef }),
-    ...(input.ruleSetVersion === undefined ? {} : { ruleSetVersion: input.ruleSetVersion }),
+    classificationArtifactRef: input.classificationArtifactRef,
+    ruleSetVersion: input.ruleSetVersion,
     basedOnRevision: input.basedOnRevision,
     scope: input.scope,
     batchSize: input.batchSize,
     batchId,
+    eligibleTotal: eligible.length,
+    completed: eligible.length - uncommitted.length,
     remaining: uncommitted.length,
     records: selected.map(row => ({
       recordRef: row.project.recordId,
@@ -185,8 +181,9 @@ export function commitAnalysisBatch(input: {
     schemaVersion: 1,
     analysisVersion: input.batch.analysisVersion,
     activeDatasetId: input.batch.activeDatasetRef,
-    ...(input.batch.classificationArtifactRef === undefined ? {} : { classificationArtifactId: input.batch.classificationArtifactRef }),
-    ...(input.batch.ruleSetVersion === undefined ? {} : { ruleSetVersion: input.batch.ruleSetVersion }),
+    classificationArtifactId: input.batch.classificationArtifactRef,
+    ruleSetVersion: input.batch.ruleSetVersion,
+    eligibleTotal: input.batch.eligibleTotal,
     updatedAt: input.now,
     rows,
   })

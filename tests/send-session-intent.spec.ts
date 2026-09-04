@@ -12,6 +12,7 @@ import {
 } from '../src/client/intents/send-session-intent.ts'
 import {
   createAdjustRulesIntent,
+  createAnalysisFollowUpIntent,
   createContinueScreeningIntent,
   createPreviewRulesIntent,
   createGenerateReportIntent,
@@ -150,11 +151,35 @@ describe('typed Session Intent', () => {
     const intent = createRequestAnalysisIntent({
       commandId: 'analysis-1', activeDatasetRef: 'data-1', classificationArtifactRef: 'classification-1',
       ruleSetVersion: 'rules-1', projectionRevision: 3,
-      scope: { kind: 'classifications', classifications: ['include'] }, batchSize: 12,
     })
     const message = serializeTenderWorkbenchIntent(intent)
+    expect(intent.scope).toEqual({ kind: 'all-eligible' })
+    expect(message).toContain('规则排除与未匹配不进入分析')
+    expect(message).toContain('循环直到 remaining 为 0')
     expect(message).toContain('recordRef、recommendation、evidenceRefs、reason、verificationItems、limitations')
     expect(message).toContain('不得使用 decision、verification 等近义字段')
     expect(message).toContain('不得把 limitations 写成字符串')
+
+    const followUp = createAnalysisFollowUpIntent({
+      commandId: 'follow-up-1',
+      activeDatasetRef: 'data-1',
+      classificationArtifactRef: 'classification-1',
+      ruleSetVersion: 'rules-1',
+      analysisVersion: 'analysis-1',
+      projectionRevision: 4,
+      recordRef: 'record-1',
+      question: '还需要核验什么？',
+      context: {
+        title: '数据治理平台', source: 'tender', region: '江苏省', amount: '860万元',
+        stage: '招标公告', timing: '7 天内截止', classification: 'include', recommendation: 'priority-review',
+        reason: '方向相关。',
+        evidence: [{ ref: 'ev:record-1:title', kind: 'source-field', label: '项目名称', value: '数据治理平台' }],
+        verificationItems: ['核验资格要求'], limitations: ['没有企业画像'],
+      },
+    })
+    const followUpMessage = serializeTenderWorkbenchIntent(followUp)
+    expect(followUpMessage).toContain('只使用意图 context')
+    expect(followUpMessage).toContain('不得调用 qcc、Web、Shell')
+    expect(followUpMessage).toContain('还需要核验什么？')
   })
 })

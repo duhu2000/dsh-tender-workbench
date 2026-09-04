@@ -9,6 +9,7 @@ const css = readFileSync(
 const queryView = readFileSync(new URL('../src/client/workbench/TenderQueryWorkspace.tsx', import.meta.url), 'utf8')
 const screeningView = readFileSync(new URL('../src/client/workbench/TenderScreeningViews.tsx', import.meta.url), 'utf8')
 const analysisView = readFileSync(new URL('../src/client/workbench/TenderAnalysisReviewViews.tsx', import.meta.url), 'utf8')
+const reportView = readFileSync(new URL('../src/client/workbench/TenderReportView.tsx', import.meta.url), 'utf8')
 
 describe('workbench visual contracts', () => {
   it('keeps typography readable and scoped without scaling the host', () => {
@@ -69,6 +70,11 @@ describe('workbench visual contracts', () => {
     expect(analysisView).toContain('data-analysis-risk')
     expect(analysisView).toContain('data-analysis-verification')
     expect(css).toMatch(/\.analysisWorkspace\s*\{[\s\S]*?grid-template-columns:\s*350px minmax\(520px, 1fr\)/u)
+    expect(css).toMatch(/\.reviewTable \[data-agent-recommendation\][^{]*\{[^}]*white-space:\s*nowrap/u)
+    expect(css).toMatch(/\.reviewTiming\s*\{[^}]*white-space:\s*nowrap/u)
+    expect(css).toMatch(/\.decisionSaveRow\s*\{[^}]*scroll-margin-block-end:/u)
+    expect(css).toMatch(/\.reviewDetail\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 220px\)[\s\S]*?overflow-y:\s*auto/u)
+    expect(css).toMatch(/@container tender-workbench \(max-width: 1000px\)[\s\S]*?\.reviewDetail\s*\{[^}]*max-height:\s*none;[^}]*overflow-y:\s*visible/u)
     expect(screeningView).not.toContain('createAdjustRulesIntent')
     expect(screeningView).not.toContain('adjustPlaceholder')
     expect(screeningView).not.toMatch(/导入规则|复制规则|添加条件组|继续询问/u)
@@ -76,5 +82,21 @@ describe('workbench visual contracts', () => {
 
   it('keeps Chinese and English locale keys complete', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort())
+  })
+
+  it('keeps the S5.4 prototype hierarchy, responsive geometry, and closed omission list', () => {
+    expect(reportView).toContain("const REPORT_TABS = ['summary', 'charts', 'opportunities', 'files', 'provenance']")
+    expect(reportView).toContain('role="tablist"')
+    expect(reportView).toContain('role="tabpanel"')
+    expect(reportView).toContain('hidden={selectedTab !== tab}')
+    expect(reportView.indexOf('<ReportHero')).toBeLessThan(reportView.indexOf('className={css.reportTabs}'))
+    expect(reportView).not.toMatch(/在线预览|版本对比|用户排除原因 Top 5/u)
+    expect(css).toMatch(/\.deliveryHeroGrid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1\.35fr\) minmax\(280px, \.65fr\)/u)
+    expect(css).toMatch(/\.reportKpis\s*\{[^}]*grid-template-columns:\s*repeat\(6,/u)
+    expect(css).toMatch(/@container tender-workbench \(max-width: 1000px\)[\s\S]*?\.deliveryHeroGrid,[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)/u)
+    expect(css).toMatch(/@container tender-workbench \(max-width: 760px\)[\s\S]*?\.reportKpis,[\s\S]*?grid-template-columns:\s*repeat\(2,/u)
+    expect(css).toMatch(/@container tender-workbench \(max-width: 600px\)[\s\S]*?\.footer\[data-workbench-phase="delivery"\][\s\S]*?flex-direction:\s*row/u)
+    expect(css).toContain('--tw-surface: var(--dsw-alias-bg-layer-1')
+    expect(css).toContain('--tw-ink: var(--dsw-alias-label-primary')
   })
 })

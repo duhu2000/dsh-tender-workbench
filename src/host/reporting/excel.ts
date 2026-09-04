@@ -5,6 +5,7 @@ import {
   deadlineWindowLabel,
   deadlineWindowOf,
   distributionOf,
+  formatAmountAxis,
   formatReportDateTime,
   metricValueOf,
 } from './report-dataset.ts'
@@ -408,14 +409,15 @@ function addResultDistributions(workbook: ExcelJS.Workbook, dataset: ReportDatas
   dataset.amountDistributions.forEach((distribution) => {
     sectionHeading(sheet, row, distribution.source === 'tender' ? '正式候选预算分布' : '拟建重点线索总投资分布')
     const buckets = [
-      ...distribution.bands,
+      ...distribution.bands.filter(band => band.count > 0),
       { id: 'indeterminate', label: '区间暂无法确定', count: distribution.indeterminateCount },
       { id: 'missing', label: '来源未披露', count: distribution.missingCount },
       { id: 'unparseable', label: '来源已披露，暂无法解析', count: distribution.unparseableCount },
     ]
     row = drawHorizontalBars(sheet, row + 1, { id: 'amount', label: '金额', scopeDescription: '', buckets }) + 1
     sheet.mergeCells(row, 1, row, 24)
-    sheet.getCell(row, 1).value = `${distribution.medianCny === undefined ? '没有可计算中位数的单一金额。' : `可解析单值中位数：${Math.round(distribution.medianCny).toLocaleString('zh-CN')} 元。`} ${distribution.limitation}`
+    const axis = distribution.axis === undefined ? '没有可用的金额分档轴。' : `金额分档轴：${formatAmountAxis(distribution.axis)}。`
+    sheet.getCell(row, 1).value = `${axis} ${distribution.medianCny === undefined ? '没有可计算中位数的单一金额。' : `可解析单值中位数：${Math.round(distribution.medianCny).toLocaleString('zh-CN')} 元。`} ${distribution.limitation}`
     sheet.getCell(row, 1).font = { name: 'Microsoft YaHei', size: 9, color: { argb: COLORS.muted } }
     row += 2
   })

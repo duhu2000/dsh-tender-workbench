@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { SessionProjectionRegistry } from '@deepseek-ai/dsh-session-projection'
 import { defineTool, type ToolRunContext } from '@deepseek-ai/dsh-tools'
@@ -32,6 +33,7 @@ import {
 } from '../artifacts/store.ts'
 import {
   analysisBaseRows,
+  analysisEligibleRows,
   analysisVersion,
   commitAnalysisBatch,
   createAnalysisBatch,
@@ -45,9 +47,18 @@ const AnalysisNextResultV1Schema = z.object({
   state: TenderWorkflowProjectionV1Schema,
 }).strict()
 
+const AnalysisProgressV1Schema = z.object({
+  eligibleTotal: z.number().int().nonnegative(),
+  completed: z.number().int().nonnegative(),
+  remaining: z.number().int().nonnegative(),
+  complete: z.boolean(),
+  projectionRevision: z.number().int().nonnegative(),
+}).strict()
+
 const MutationResultV1Schema = z.object({
   outcome: z.literal('succeeded'),
   message: z.string().min(1).max(512),
+  progress: AnalysisProgressV1Schema.optional(),
   state: TenderWorkflowProjectionV1Schema,
 }).strict()
 
@@ -58,6 +69,14 @@ export interface AnalysisReviewToolDependencies {
   readonly sessionProjections: Pick<SessionProjectionRegistry, 'stateOf'>
   readonly sessionPersistence: SessionPersistenceLocator
   readonly receipts: CommandReceiptCoordinator
+}
+
+function reviewProjectionCounts(rows: z.infer<typeof ReviewDatasetV1Schema>['rows']) {
+  return {
+    ...reviewCounts(rows),
+    confirmedTender: rows.filter(row => row.project.source === 'tender' && row.review.decision === 'confirmed-candidate').length,
+    priorityProposed: rows.filter(row => row.project.source === 'proposed' && row.review.decision === 'confirmed-candidate').length,
+  }
 }
 
 function jsonValue(value: unknown): JsonValue {
@@ -159,13 +178,75 @@ async function loadPreviousReview(
 function analysisBinding(state: TenderWorkflowProjectionV1) {
   const activeDatasetId = state.query?.normalizedData?.id
   if (activeDatasetId === undefined) throw new Error('当前 Session 尚无可分析的数据。')
+  const classification = state.classification
+  if (classification === undefined) throw new Error('请先确认初筛口径并完成确定性分类。')
   return {
     activeDatasetId,
-    ...(state.classification === undefined ? {} : {
-      classificationArtifactId: state.classification.data.id,
-      ruleSetVersion: state.classification.ruleSetVersion,
-    }),
+    classificationArtifactId: classification.data.id,
+    ruleSetVersion: classification.ruleSetVersion,
   }
+}
+
+const ANALYSIS_BATCH_SIZE = 12
+
+function analysisReceiptId(commandId: string, batchId: string): string {
+  return `anr_${createHash('sha256').update(`${commandId}\0${batchId}`, 'utf8').digest('hex').slice(0, 40)}`
+}
+
+type AnalysisRow = z.infer<typeof AnalysisDatasetV1Schema>['rows'][number]
+
+function countRecommendations(rows: ReadonlyArray<AnalysisRow>) {
+  const counts = { priorityReview: 0, watch: 0, notRecommended: 0 }
+  analysisEligibleRows(rows).forEach((row) => {
+    if (row.recommendation?.recommendation === 'priority-review') counts.priorityReview += 1
+    else if (row.recommendation?.recommendation === 'watch') counts.watch += 1
+    else if (row.recommendation?.recommendation === 'not-recommended') counts.notRecommended += 1
+  })
+  return counts
+}
+
+function urgentCandidateCount(rows: ReadonlyArray<AnalysisRow>, now: string): number {
+  const current = Date.parse(now)
+  return analysisEligibleRows(rows).filter((row) => {
+    if (row.project.source !== 'tender' || row.project.deadline?.value === undefined) return false
+    const deadline = Date.parse(row.project.deadline.value)
+    return Number.isFinite(deadline) && deadline >= current && deadline - current <= 7 * 24 * 60 * 60 * 1_000
+  }).length
+}
+
+function analysisState(input: {
+  readonly state: TenderWorkflowProjectionV1
+  readonly version: string
+  readonly binding: ReturnType<typeof analysisBinding>
+  readonly rows: ReadonlyArray<AnalysisRow>
+  readonly updatedAt?: string
+}): TenderWorkflowProjectionV1 {
+  const { activeOperation: _activeOperation, lastFailure: _lastFailure, ...base } = input.state
+  const counts = countRecommendations(input.rows)
+  const eligibleTotal = analysisEligibleRows(input.rows).length
+  const completed = counts.priorityReview + counts.watch + counts.notRecommended
+  const now = input.updatedAt ?? new Date().toISOString()
+  return TenderWorkflowProjectionV1Schema.parse({
+    ...base,
+    currentStage: 'analysis',
+    stages: {
+      ...base.stages,
+      analysis: {
+        status: completed === eligibleTotal ? 'succeeded' : 'running',
+        ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
+      },
+    },
+    analysis: {
+      version: input.version,
+      activeDatasetId: input.binding.activeDatasetId,
+      ruleSetVersion: input.binding.ruleSetVersion,
+      ...(input.state.analysis?.data === undefined ? {} : { data: input.state.analysis.data }),
+      eligibleTotal,
+      completed,
+      ...counts,
+      urgent: urgentCandidateCount(input.rows, now),
+    },
+  })
 }
 
 function commonParameters() {
@@ -183,7 +264,7 @@ function scopeParameter() {
   return { type: 'json' as const, required: true as const }
 }
 
-function outputSchema(includeBatch = false) {
+function outputSchema(includeBatch = false, includeProgress = false) {
   return {
     schema: {
       type: 'object' as const,
@@ -192,6 +273,7 @@ function outputSchema(includeBatch = false) {
         outcome: { type: 'string' as const, const: 'succeeded' as const, required: true as const },
         message: { type: 'string' as const, required: true as const },
         ...(includeBatch ? { batch: { type: 'json' as const, required: true as const } } : {}),
+        ...(includeProgress ? { progress: { type: 'json' as const, required: true as const } } : {}),
         state: { type: 'json' as const, required: true as const },
       },
     },
@@ -232,12 +314,13 @@ function analysisRecommendationParameter() {
 export function createTenderWorkbenchAnalysisNextTool(dependencies: AnalysisReviewToolDependencies) {
   return defineTool({
     name: 'tender_workbench_analysis_next',
-    description: 'Read exactly one deterministic, bounded evidence batch from the user-selected current scope. This is read-only and has no cursor. Repeating it before commit returns the same batchId. Never expand the scope, re-query sources, or infer enterprise fit, win probability, profit, qualification compliance, or Bid/No-Bid.',
+    description: 'Read the next deterministic bounded batch for the current all-eligible analysis run. The Host scope is always include + observe + manual-review and always excludes exclude + unmatched. This is read-only and has no cursor. Repeating it before commit returns the same batchId. After each commit with remaining > 0, call this tool again with the returned projectionRevision; stop only when completed equals eligibleTotal.',
     parameters: {
       ...commonParameters(),
       kind: { type: 'string', const: 'analysis.next', required: true },
+      classificationArtifactRef: { type: 'string', required: true },
+      ruleSetVersion: { type: 'string', required: true },
       scope: scopeParameter(),
-      batchSize: { type: 'integer', required: true },
     },
     output: {
       ...outputSchema(true),
@@ -245,7 +328,7 @@ export function createTenderWorkbenchAnalysisNextTool(dependencies: AnalysisRevi
         const parsed = AnalysisNextResultV1Schema.parse(value)
         return [{
           type: 'text',
-          text: `${parsed.message}\n\nAnalysisBatchV1（必须逐字使用其中的 batchId、recordRef 与 evidenceRef）：\n${JSON.stringify(parsed.batch, null, 2)}\n\n提交 recommendations 时，每个对象只能包含 recordRef、recommendation、evidenceRefs、reason、verificationItems、limitations。recommendation 只能是 priority-review、watch 或 not-recommended；evidenceRefs、verificationItems、limitations 都必须是字符串数组。不要使用 decision、verification 等近义字段。`,
+          text: `${parsed.message}\n\nAnalysisBatchV1（必须逐字使用其中的 batchId、recordRef 与 evidenceRef）：\n${JSON.stringify(parsed.batch, null, 2)}\n\n提交 recommendations 时，每个对象只能包含 recordRef、recommendation、evidenceRefs、reason、verificationItems、limitations。recommendation 只能是 priority-review、watch 或 not-recommended；evidenceRefs、verificationItems、limitations 都必须是字符串数组。不要使用 decision、verification 等近义字段。提交后若 remaining 大于 0，必须继续下一批。`,
         }]
       },
       presentationMeta(args, value) {
@@ -269,20 +352,27 @@ export function createTenderWorkbenchAnalysisNextTool(dependencies: AnalysisRevi
       const batch = createAnalysisBatch({
         analysisVersion: version,
         activeDatasetRef: binding.activeDatasetId,
-        ...(binding.classificationArtifactId === undefined ? {} : { classificationArtifactRef: binding.classificationArtifactId }),
-        ...(binding.ruleSetVersion === undefined ? {} : { ruleSetVersion: binding.ruleSetVersion }),
+        classificationArtifactRef: binding.classificationArtifactId,
+        ruleSetVersion: binding.ruleSetVersion,
         basedOnRevision: state.revision,
         scope: args.scope,
-        batchSize: args.batchSize,
+        batchSize: ANALYSIS_BATCH_SIZE,
         rows: previous?.rows ?? baseRows,
+      })
+      const nextState = analysisState({
+        state,
+        version,
+        binding,
+        rows: previous?.rows ?? baseRows,
+        updatedAt: previous?.updatedAt,
       })
       const result = AnalysisNextResultV1Schema.parse({
         outcome: 'succeeded',
         message: batch.records.length === 0
-          ? '当前明确分析范围内没有尚未提交建议的记录。'
-          : `已提供稳定分析批次 ${batch.batchId}，包含 ${batch.records.length} 条记录；只能引用批次内 evidenceRef。`,
+          ? `全部可分析候选已完成：${batch.completed}/${batch.eligibleTotal}。规则排除和未匹配未进入分析。`
+          : `已提供稳定分析批次 ${batch.batchId}，包含 ${batch.records.length} 条记录；当前完成 ${batch.completed}/${batch.eligibleTotal}，只能引用批次内 evidenceRef。`,
         batch,
-        state,
+        state: nextState,
       })
       exec.signal.throwIfAborted()
       return result
@@ -293,17 +383,18 @@ export function createTenderWorkbenchAnalysisNextTool(dependencies: AnalysisRevi
 export function createTenderWorkbenchAnalysisCommitTool(dependencies: AnalysisReviewToolDependencies) {
   return defineTool({
     name: 'tender_workbench_analysis_commit',
-    description: 'Commit exactly one previously returned analysis batch. Every recommendations item must use the exact AgentRecommendationInputV1 fields: recordRef, recommendation, evidenceRefs, reason, verificationItems, limitations. verificationItems and limitations are string arrays. Do not use decision or verification aliases. Agent recommendations remain optional and never create user decisions.',
+    description: 'Commit exactly one previously returned all-eligible analysis batch. Every recommendations item must use the exact AgentRecommendationInputV1 fields. When the result has remaining > 0, continue analysis_next then analysis_commit using the returned projectionRevision. Stop only when completed equals eligibleTotal. Agent recommendations never create user decisions.',
     parameters: {
       ...commonParameters(),
       kind: { type: 'string', const: 'analysis.commit', required: true },
+      classificationArtifactRef: { type: 'string', required: true },
+      ruleSetVersion: { type: 'string', required: true },
       scope: scopeParameter(),
-      batchSize: { type: 'integer', required: true },
       batchId: { type: 'string', required: true },
       recommendations: { type: 'array', items: analysisRecommendationParameter(), required: true },
     },
     output: {
-      ...outputSchema(),
+      ...outputSchema(false, true),
       render(_args, value) {
         const parsed = MutationResultV1Schema.parse(value)
         return [{ type: 'text', text: parsed.message }]
@@ -318,7 +409,7 @@ export function createTenderWorkbenchAnalysisCommitTool(dependencies: AnalysisRe
       const previousState = currentProjection(dependencies, exec)
       const transaction = createArtifactTransaction(dependencies.sessionPersistence, agent.session.header)
       const command = await dependencies.receipts.run(String(agent.session.id), {
-        commandId: args.commandId,
+        commandId: analysisReceiptId(args.commandId, args.batchId),
         arguments: jsonValue(args) as ReceiptJsonValue,
         observedProjectionRevision: previousState.revision,
         store: transaction,
@@ -333,11 +424,11 @@ export function createTenderWorkbenchAnalysisCommitTool(dependencies: AnalysisRe
           const batch = createAnalysisBatch({
             analysisVersion: version,
             activeDatasetRef: binding.activeDatasetId,
-            ...(binding.classificationArtifactId === undefined ? {} : { classificationArtifactRef: binding.classificationArtifactId }),
-            ...(binding.ruleSetVersion === undefined ? {} : { ruleSetVersion: binding.ruleSetVersion }),
+            classificationArtifactRef: binding.classificationArtifactId,
+            ruleSetVersion: binding.ruleSetVersion,
             basedOnRevision: previousState.revision,
             scope: args.scope,
-            batchSize: args.batchSize,
+            batchSize: ANALYSIS_BATCH_SIZE,
             rows: currentRows,
           })
           if (batch.batchId !== args.batchId) throw new Error('batchId 已失效或不属于当前稳定批次。')
@@ -351,7 +442,7 @@ export function createTenderWorkbenchAnalysisCommitTool(dependencies: AnalysisRe
             now,
           })
           const analysisData = await transaction.stageJson(
-            'analysis-data', `analysis-${version}-${args.commandId}.json`, jsonValue(dataset), dataset.rows.length,
+            'analysis-data', `analysis-${version}-${args.batchId}.json`, jsonValue(dataset), dataset.rows.length,
           )
           const previousReview = await loadPreviousReview(transaction, previousState)
           const reviewDataset = syncReviewDataset({
@@ -366,14 +457,10 @@ export function createTenderWorkbenchAnalysisCommitTool(dependencies: AnalysisRe
           const reviewData = await transaction.stageJson(
             'review-data', `review-sync-${args.commandId}.json`, jsonValue(reviewDataset), reviewDataset.rows.length,
           )
-          const counts = reviewCounts(reviewDataset.rows)
-          const recommendationCounts = { priorityReview: 0, watch: 0, notRecommended: 0 }
-          dataset.rows.forEach((row) => {
-            if (row.recommendation?.recommendation === 'priority-review') recommendationCounts.priorityReview += 1
-            else if (row.recommendation?.recommendation === 'watch') recommendationCounts.watch += 1
-            else if (row.recommendation?.recommendation === 'not-recommended') recommendationCounts.notRecommended += 1
-          })
+          const counts = reviewProjectionCounts(reviewDataset.rows)
+          const recommendationCounts = countRecommendations(dataset.rows)
           const completed = recommendationCounts.priorityReview + recommendationCounts.watch + recommendationCounts.notRecommended
+          const remaining = dataset.eligibleTotal - completed
           const {
             activeOperation: _activeOperation, lastFailure: _lastFailure, report: _report,
             ...base
@@ -384,17 +471,18 @@ export function createTenderWorkbenchAnalysisCommitTool(dependencies: AnalysisRe
             currentStage: 'analysis',
             stages: {
               ...base.stages,
-              analysis: { status: 'succeeded', updatedAt: now },
+              analysis: { status: remaining === 0 ? 'succeeded' : 'running', updatedAt: now },
               report: { status: 'not-started' },
             },
             analysis: {
               version,
               activeDatasetId: binding.activeDatasetId,
-              ...(binding.ruleSetVersion === undefined ? {} : { ruleSetVersion: binding.ruleSetVersion }),
+              ruleSetVersion: binding.ruleSetVersion,
               data: analysisData,
-              total: dataset.rows.length,
+              eligibleTotal: dataset.eligibleTotal,
               completed,
               ...recommendationCounts,
+              urgent: urgentCandidateCount(dataset.rows, now),
             },
             review: {
               revision: reviewDataset.revision,
@@ -405,7 +493,16 @@ export function createTenderWorkbenchAnalysisCommitTool(dependencies: AnalysisRe
           })
           return jsonValue(MutationResultV1Schema.parse({
             outcome: 'succeeded',
-            message: `已保存 ${args.recommendations.length} 条 Agent 建议；当前覆盖 ${completed}/${dataset.rows.length}，未分析记录仍可直接复核。`,
+            message: remaining === 0
+              ? `全部可分析候选已完成：${completed}/${dataset.eligibleTotal}。规则排除和未匹配未进入分析。`
+              : `已保存 ${args.recommendations.length} 条建议；当前完成 ${completed}/${dataset.eligibleTotal}，剩余 ${remaining}。必须使用 projectionRevision ${nextRevision} 继续调用 analysis_next。`,
+            progress: {
+              eligibleTotal: dataset.eligibleTotal,
+              completed,
+              remaining,
+              complete: remaining === 0,
+              projectionRevision: nextRevision,
+            },
             state,
           })) as ReceiptJsonValue
         },
@@ -459,7 +556,7 @@ function reviewState(
   dataset: z.infer<typeof ReviewDatasetV1Schema>,
   artifact: Awaited<ReturnType<ArtifactTransaction['stageJson']>>,
 ): TenderWorkflowProjectionV1 {
-  const counts = reviewCounts(dataset.rows)
+  const counts = reviewProjectionCounts(dataset.rows)
   const { activeOperation: _activeOperation, lastFailure: _lastFailure, report: _report, ...base } = previousState
   return TenderWorkflowProjectionV1Schema.parse({
     ...base,

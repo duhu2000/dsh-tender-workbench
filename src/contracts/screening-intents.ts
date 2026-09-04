@@ -6,6 +6,7 @@ import {
 } from './screening.ts'
 import { TenderRuleSetV1Schema } from './workflow.ts'
 import {
+  AnalysisFollowUpIntentV1Schema,
   ApplyReviewCommandV1Schema,
   RequestAnalysisIntentV1Schema,
   RevertReviewCommandV1Schema,
@@ -40,6 +41,7 @@ export const TenderWorkbenchIntentV1Schema = z.union([
   PreviewRulesCommandV1Schema,
   ConfirmRulesCommandV1Schema,
   RequestAnalysisIntentV1Schema,
+  AnalysisFollowUpIntentV1Schema,
   ApplyReviewCommandV1Schema,
   RevertReviewCommandV1Schema,
   CreateReportIntentV1Schema,

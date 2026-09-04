@@ -18,8 +18,10 @@ import {
 import { adaptQccProposedPayload, adaptQccTenderPayload } from '../src/host/pipeline/qcc-adapters.ts'
 import { normalizeQccSources } from '../src/host/pipeline/normalize.ts'
 import { classifyTenderProjects, createClassifiedDataset, createRulePreviewArtifact } from '../src/host/pipeline/classify.ts'
-import { ruleDraftFingerprint } from '../src/contracts/screening.ts'
+import { CLASSIFICATION_VALUES, ruleDraftFingerprint } from '../src/contracts/screening.ts'
+import { ReviewDatasetV1Schema, ReviewRowsPageV1Schema } from '../src/contracts/analysis-review.ts'
 import type { TenderRuleV1 } from '../src/contracts/workflow.ts'
+import { buildReportDataset } from '../src/host/reporting/report-dataset.ts'
 
 const roots: string[] = []
 const servers: Server[] = []
@@ -238,9 +240,9 @@ describe('Session-private Artifact service', () => {
       project: row.project,
       classification: row.classification,
       ...(row.finalRuleId === undefined ? {} : { finalRuleId: row.finalRuleId }),
-      ...(index === 0 ? { recommendation: {
+      ...(index < 2 ? { recommendation: {
         recordRef: row.project.recordId,
-        recommendation: 'priority-review',
+        recommendation: index === 0 ? 'priority-review' : 'watch',
         reason: '方向相关，需核验资格。',
         verificationItems: ['核验资格'],
         limitations: ['无企业画像'],
@@ -248,7 +250,7 @@ describe('Session-private Artifact service', () => {
         committedAt: '2026-09-01T00:00:00.000Z',
         evidence: [{ ref: `ev:${row.project.recordId}:title`, kind: 'source-field', label: '项目名称', value: row.project.title }],
       } } : {}),
-      review: { decision: index === 0 ? 'pending' : index === 1 ? 'watch' : 'exclude', note: index === 0 ? '' : '用户备注' },
+      review: { decision: index < 2 ? 'pending' : 'exclude', note: index < 2 ? '' : '用户备注' },
     }))
     const review = await transaction.stageJson('review-data', 'review.json', json({
       schemaVersion: 1,
@@ -259,7 +261,15 @@ describe('Session-private Artifact service', () => {
       revision: 2,
       updatedAt: '2026-09-01T00:00:00.000Z',
       revertedOperationCount: 0,
-      operations: [],
+      operations: [{
+        operationId: 'review-operation-1',
+        commandId: 'review-command-1',
+        appliedAt: '2026-09-01T00:00:00.000Z',
+        decision: 'exclude',
+        note: '用户备注',
+        recordRefs: [run.rows[2]!.project.recordId],
+        previous: [{ recordRef: run.rows[2]!.project.recordId, value: { decision: 'pending', note: '' } }],
+      }],
       rows: reviewRows,
     }), reviewRows.length)
     await transaction.save(emptyCommandReceiptManifest())
@@ -273,13 +283,27 @@ describe('Session-private Artifact service', () => {
     const classifiedHeaders = { ...baseHeaders, 'X-Dsh-Tender-Artifact-Token': classified.accessToken }
     const rows = await get(port, `/dsh-tender-workbench/api/v1/artifacts/${classified.id}/rows?page=1&pageSize=50&classification=include&ruleId=include-data&conflict=false&fieldStatus=missing`, classifiedHeaders)
     expect(rows.status).toBe(200)
-    expect(JSON.parse(rows.body)).toMatchObject({ total: 1, rows: [{ classification: 'include', finalRuleId: 'include-data', project: { title: '江苏数据项目', dataDisposition: 'normalized' } }] })
+    expect(JSON.parse(rows.body)).toMatchObject({
+      total: 1, datasetTotal: 3, covered: 2, rawMatches: 2,
+      counts: { include: 1, observe: 1, manualReview: 0, exclude: 0, unmatched: 1 },
+      ruleImpacts: expect.any(Array),
+      rows: [{ classification: 'include', finalRuleId: 'include-data', project: { title: '江苏数据项目', dataDisposition: 'normalized' } }],
+    })
+    const classifiedPages = await Promise.all([1, 2, 3].map(async page => JSON.parse((await get(
+      port,
+      `/dsh-tender-workbench/api/v1/artifacts/${classified.id}/rows?page=${page}&pageSize=1`,
+      classifiedHeaders,
+    )).body) as { rows: Array<{ classification: string }> }))
+    expect([...CLASSIFICATION_VALUES]).toEqual(['include', 'observe', 'manual-review', 'exclude', 'unmatched'])
+    expect(classifiedPages.map(page => page.rows[0]?.classification)).toEqual(['include', 'observe', 'unmatched'])
 
     const reviewHeaders = { ...baseHeaders, 'X-Dsh-Tender-Artifact-Token': review.accessToken }
     const reviewPage = await get(port, `/dsh-tender-workbench/api/v1/artifacts/${review.id}/review-rows?page=1&pageSize=50&source=tender&classification=include&recommendation=priority-review&userDecision=pending&deadlineStatus=active`, reviewHeaders)
     expect(reviewPage.status).toBe(200)
     expect(JSON.parse(reviewPage.body)).toMatchObject({
-      total: 1,
+      total: 1, pending: 2, reviewed: 1,
+      facets: { regions: expect.arrayContaining(['江苏省', '上海市', '浙江省']), ruleIds: ['include-data', 'observe-cloud'] },
+      audit: [{ operationId: 'review-operation-1', decision: 'exclude', note: '用户备注' }],
       rows: [{
         classification: 'include',
         recommendation: { recommendation: 'priority-review' },
@@ -287,6 +311,17 @@ describe('Session-private Artifact service', () => {
         project: { title: '江苏数据项目' },
       }],
     })
+    const firstPending = ReviewRowsPageV1Schema.parse(JSON.parse((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${review.id}/review-rows?page=1&pageSize=1&queue=pending&sort=recommendation`, reviewHeaders)).body) as unknown)
+    const secondPending = ReviewRowsPageV1Schema.parse(JSON.parse((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${review.id}/review-rows?page=2&pageSize=1&queue=pending&sort=recommendation`, reviewHeaders)).body) as unknown)
+    expect(firstPending).toMatchObject({ page: 1, total: 2, pending: 2, reviewed: 1, rows: [{ recommendation: { recommendation: 'priority-review' } }] })
+    expect(secondPending).toMatchObject({ page: 2, total: 2, rows: [{ recommendation: { recommendation: 'watch' } }] })
+    const reviewedPage = ReviewRowsPageV1Schema.parse(JSON.parse((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${review.id}/review-rows?queue=reviewed&sort=recommendation`, reviewHeaders)).body) as unknown)
+    expect(reviewedPage).toMatchObject({ total: 1, rows: [{ review: { decision: 'exclude' }, classification: 'unmatched' }] })
+    const analysisEligible = ReviewRowsPageV1Schema.parse(JSON.parse((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${review.id}/review-rows?queue=analysis-eligible&sort=recommendation`, reviewHeaders)).body) as unknown)
+    expect(analysisEligible.total).toBe(2)
+    expect(analysisEligible.rows.every(row => row.classification !== 'exclude' && row.classification !== 'unmatched')).toBe(true)
+    const visibleRuleSearch = ReviewRowsPageV1Schema.parse(JSON.parse((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${review.id}/review-rows?q=%E4%BA%91%E6%96%B9%E5%90%91&queryRuleId=observe-cloud`, reviewHeaders)).body) as unknown)
+    expect(visibleRuleSearch).toMatchObject({ total: 1, rows: [{ finalRuleId: 'observe-cloud', project: { title: '上海云项目' } }] })
     expect((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${review.id}/review-rows`, { ...reviewHeaders, 'X-Dsh-Tender-Session': String(second.header.id) })).status).toBe(404)
 
     const previewHeaders = { ...baseHeaders, 'X-Dsh-Tender-Artifact-Token': preview.accessToken }
@@ -295,5 +330,69 @@ describe('Session-private Artifact service', () => {
     expect(JSON.parse(content.body)).toMatchObject({ activeDatasetId: 'active-data', draftFingerprint: fingerprint, total: 3 })
     expect((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${classified.id}/content`, classifiedHeaders)).status).toBe(404)
     expect((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${preview.id}/content`, { ...previewHeaders, 'X-Dsh-Tender-Session': String(second.header.id) })).status).toBe(404)
+  })
+
+  it('serves only a bounded report view from an authenticated final snapshot', async () => {
+    const first = await sessionFixture('session-report-a')
+    const second = await sessionFixture('session-report-b')
+    const persistence = {
+      locate: (header: SessionHeader) => ({ kind: 'jsonl', path: header.id === first.header.id ? first.transcript : second.transcript }),
+    }
+    const normalized = dataset()
+    const review = ReviewDatasetV1Schema.parse({
+      schemaVersion: 1,
+      activeDatasetId: 'active-data',
+      revision: 1,
+      updatedAt: '2026-09-03T10:00:00.000+08:00',
+      revertedOperationCount: 0,
+      operations: [],
+      rows: normalized.rows.map(project => ({
+        schemaVersion: 1,
+        project,
+        review: { decision: 'confirmed-candidate', note: '' },
+      })),
+    })
+    const reportDataset = buildReportDataset({
+      finalSnapshotId: 'snapshot-v2',
+      createdAt: '2026-09-03T10:00:00.000+08:00',
+      stateRevision: 4,
+      normalized,
+      review,
+      query: {
+        scope: 'combined',
+        targetSummary: '数据与智算机会',
+        sources: {
+          tender: { status: 'succeeded', loaded: 2 },
+          proposed: { status: 'succeeded', loaded: 1 },
+        },
+      },
+    })
+    const transaction = new ArtifactTransaction(sessionArtifactRoot(persistence, first.header))
+    await transaction.load()
+    const snapshot = await transaction.stageJson('final-snapshot', 'snapshot.json', json(reportDataset), reportDataset.rows.length)
+    const normalizedRef = await transaction.stageJson('normalized-data', 'normalized.json', json(normalized), normalized.rows.length)
+    await transaction.save(emptyCommandReceiptManifest())
+    const sessions = { get: (id: SessionId) => id === first.header.id ? first.session : id === second.header.id ? second.session : undefined }
+    const { port } = await listen(createArtifactRouteHandler({ sessions: sessions as never, sessionPersistence: persistence }))
+    const headers = {
+      Origin: `http://127.0.0.1:${port}`,
+      'Sec-Fetch-Site': 'same-origin',
+      'X-Dsh-Tender-Session': String(first.header.id),
+      'X-Dsh-Tender-Artifact-Token': snapshot.accessToken,
+    }
+    const response = await get(port, `/dsh-tender-workbench/api/v1/artifacts/${snapshot.id}/report-view`, headers)
+    expect(response.status).toBe(200)
+    const view = JSON.parse(response.body) as Record<string, unknown>
+    expect(view).toMatchObject({
+      schemaVersion: 1,
+      finalSnapshotId: 'snapshot-v2',
+      completeness: 'complete',
+      analysisCoverage: { completed: 0, total: 3 },
+    })
+    expect(view).not.toHaveProperty('rows')
+    expect(view).not.toHaveProperty('invalidRecords')
+    expect(response.body.length).toBeLessThan(256 * 1_024)
+    expect((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${snapshot.id}/report-view`, { ...headers, 'X-Dsh-Tender-Session': String(second.header.id) })).status).toBe(404)
+    expect((await get(port, `/dsh-tender-workbench/api/v1/artifacts/${normalizedRef.id}/report-view`, { ...headers, 'X-Dsh-Tender-Artifact-Token': normalizedRef.accessToken })).status).toBe(404)
   })
 })

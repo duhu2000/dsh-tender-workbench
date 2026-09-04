@@ -9,6 +9,7 @@ import {
   fetchArtifactRows,
   fetchClassifiedArtifactRows,
   fetchReviewArtifactRows,
+  fetchReportDeliveryView,
   fetchRuleArtifactContent,
   downloadArtifact,
 } from '../artifact-api.ts'
@@ -60,7 +61,7 @@ import {
   TenderReviewView,
   type ReviewRowsLoader,
 } from './TenderAnalysisReviewViews.tsx'
-import { TenderReportView, type ReportArtifactDownloader } from './TenderReportView.tsx'
+import { TenderReportView, type ReportArtifactDownloader, type ReportDeliveryViewLoader } from './TenderReportView.tsx'
 import { StatePanel } from './WorkbenchPrimitives.tsx'
 import { TenderQueryWorkspace } from './TenderQueryWorkspace.tsx'
 import css from './tender-workbench.module.css'
@@ -94,6 +95,7 @@ export interface TenderWorkbenchViewProps {
   readonly loadRuleContent?: RuleContentLoader
   readonly loadClassifiedRows?: ClassifiedRowsLoader
   readonly loadReviewRows?: ReviewRowsLoader
+  readonly loadReportView?: ReportDeliveryViewLoader
   readonly downloadReport?: ReportArtifactDownloader
   readonly t: TenderTranslate
 }
@@ -109,6 +111,9 @@ const defaultClassifiedRowsLoader: ClassifiedRowsLoader = (sessionId, artifact, 
 )
 const defaultReviewRowsLoader: ReviewRowsLoader = (sessionId, artifact, filter, signal) => fetchReviewArtifactRows(
   globalThis.fetch.bind(globalThis), sessionId, artifact, filter, signal,
+)
+const defaultReportViewLoader: ReportDeliveryViewLoader = (sessionId, artifact, signal) => fetchReportDeliveryView(
+  globalThis.fetch.bind(globalThis), sessionId, artifact, signal,
 )
 const defaultReportDownloader: ReportArtifactDownloader = (sessionId, artifact) => downloadArtifact(
   globalThis.fetch.bind(globalThis), sessionId, artifact,
@@ -174,6 +179,7 @@ export function TenderWorkbenchView({
   loadRuleContent = defaultRuleContentLoader,
   loadClassifiedRows = defaultClassifiedRowsLoader,
   loadReviewRows = defaultReviewRowsLoader,
+  loadReportView = defaultReportViewLoader,
   downloadReport = defaultReportDownloader,
   t,
 }: TenderWorkbenchViewProps) {
@@ -313,8 +319,6 @@ export function TenderWorkbenchView({
       classificationArtifactRef: classification.data.id,
       ruleSetVersion: classification.ruleSetVersion,
       projectionRevision: workflow.revision,
-      scope: { kind: 'classifications', classifications: ['include'] },
-      batchSize: 12,
     }))
     if (started) setScreeningView('analysis')
   }
@@ -583,11 +587,14 @@ export function TenderWorkbenchView({
                 hidden={screeningView !== 'analysis'}
               >
                 <TenderAnalysisView
-                  key={`${sessionId}:${workflow.analysis?.data?.id ?? activeDataset.id}`}
+                  key={`${sessionId}:${activeDataset.id}`}
                   sessionId={sessionId}
                   workflow={workflow}
                   loadRows={loadReviewRows}
                   write={write}
+                  sendIntent={sendIntent}
+                  createCommandId={createCommandId}
+                  onRunAnalysis={requestCandidateAnalysis}
                   onOpenReview={() => { setSelectedPhase('decision') }}
                   footerTarget={screeningView === 'analysis' ? footerTarget : null}
                   t={t}
@@ -604,11 +611,14 @@ export function TenderWorkbenchView({
             tabIndex={0}
           >
             <TenderReviewView
-              key={`${sessionId}:${workflow.review?.data.id ?? workflow.analysis?.data?.id ?? workflow.classification?.data.id ?? activeDataset.id}`}
+              key={`${sessionId}:${activeDataset.id}`}
               sessionId={sessionId}
               workflow={workflow}
               loadRows={loadReviewRows}
+              loadRuleContent={loadRuleContent}
               write={write}
+              onOpenReport={() => { setSelectedPhase('delivery') }}
+              footerTarget={footerTarget}
               t={t}
             />
           </section>
@@ -624,7 +634,9 @@ export function TenderWorkbenchView({
               sessionId={sessionId}
               workflow={workflow}
               write={write}
+              loadView={loadReportView}
               download={downloadReport}
+              footerTarget={footerTarget}
               t={t}
             />
           </section>
@@ -657,9 +669,9 @@ export function TenderWorkbenchView({
         )}
       </div>
 
-      <footer className={css.footer}>
+      <footer className={css.footer} data-workbench-phase={selectedPhase}>
         <div className={css.footerPortal} ref={setFooterTarget}>
-          {selectedPhase !== 'screening' && <div className={css.footerCopy}>
+          {selectedPhase !== 'screening' && selectedPhase !== 'decision' && !(selectedPhase === 'delivery' && workflow !== undefined && activeDataset !== undefined && (workflow.review !== undefined || workflow.report !== undefined)) && <div className={css.footerCopy}>
             <span className={css.footerHint}>{t('workbench.footerHint')}</span>
             {selectedPhase === 'opportunity' && queryDisabledReason !== undefined && (
               <span id={queryDisabledReasonId} className={css.disabledReason}>{queryDisabledReason}</span>

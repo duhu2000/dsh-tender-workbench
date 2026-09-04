@@ -20,8 +20,13 @@ import {
 import type { ArtifactRefV1 } from '../../contracts/workflow.ts'
 import {
   AGENT_RECOMMENDATIONS,
+  ANALYSIS_ELIGIBLE_CLASSIFICATIONS,
   AnalysisDatasetV1Schema,
   DEADLINE_STATUSES,
+  REVIEW_DISCLOSURES,
+  REVIEW_QUEUES,
+  REVIEW_RISKS,
+  REVIEW_SORTS,
   ReviewDatasetV1Schema,
   ReviewRecordV1Schema,
   ReviewRowsPageV1Schema,
@@ -29,7 +34,9 @@ import {
   type ReviewRecordV1,
   type ReviewRowsFilterV1,
 } from '../../contracts/analysis-review.ts'
+import { ReportDatasetSchema } from '../../contracts/reporting.ts'
 import { artifactRequestIdentity } from '../http-trust.ts'
+import { createReportDeliveryView } from '../reporting/report-dataset.ts'
 import { ARTIFACT_ROUTE_PREFIX } from './register-route.ts'
 import {
   ArtifactManifestError,
@@ -44,6 +51,8 @@ const SAFE_HEADERS = {
   'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff',
 } as const
+
+const REPORT_DELIVERY_VIEW_MAX_BYTES = 256 * 1_024
 
 interface ArtifactRouteServices {
   readonly sessions: Pick<SessionStore, 'get'>
@@ -194,34 +203,77 @@ function filteredClassifiedRows(
       if (!haystack.includes(needle)) return false
     }
     return true
-  }).sort((left, right) => left.project.recordId.localeCompare(right.project.recordId))
+  }).sort((left, right) => {
+    const classificationOrder = CLASSIFICATION_VALUES.indexOf(left.classification)
+      - CLASSIFICATION_VALUES.indexOf(right.classification)
+    return classificationOrder === 0
+      ? left.project.recordId.localeCompare(right.project.recordId)
+      : classificationOrder
+  })
 }
 
 function reviewRowsFilter(parameters: URLSearchParams): ReviewRowsFilterV1 {
   const page = positiveInteger(singleParameter(parameters, 'page'), 1)
   const pageSize = positiveInteger(singleParameter(parameters, 'pageSize'), 50)
   if (pageSize > 100) throw new RangeError('pageSize exceeds 100')
+  const queue = singleParameter(parameters, 'queue')
+  const sort = singleParameter(parameters, 'sort')
   const query = singleParameter(parameters, 'q')?.trim()
+  const queryRuleIds = parameters.getAll('queryRuleId').map(value => value.trim())
   const source = singleParameter(parameters, 'source')
   const classification = singleParameter(parameters, 'classification')
   const recommendation = singleParameter(parameters, 'recommendation')
   const userDecision = singleParameter(parameters, 'userDecision')
   const deadlineStatus = singleParameter(parameters, 'deadlineStatus')
+  const region = singleParameter(parameters, 'region')?.trim()
+  const stage = singleParameter(parameters, 'stage')?.trim()
+  const procurementMethod = singleParameter(parameters, 'procurementMethod')?.trim()
+  const procurementType = singleParameter(parameters, 'procurementType')?.trim()
+  const ruleId = singleParameter(parameters, 'ruleId')?.trim()
+  const risk = singleParameter(parameters, 'risk')
+  const disclosure = singleParameter(parameters, 'disclosure')
+  const amountMinRaw = singleParameter(parameters, 'amountMinCny')
+  const amountMaxRaw = singleParameter(parameters, 'amountMaxCny')
+  const amountMinCny = amountMinRaw === undefined ? undefined : Number(amountMinRaw)
+  const amountMaxCny = amountMaxRaw === undefined ? undefined : Number(amountMaxRaw)
   if (query !== undefined && query.length > 200) throw new RangeError('query exceeds 200 characters')
+  if (queryRuleIds.length > 20 || queryRuleIds.some(value => value.length === 0 || value.length > 128)) throw new RangeError('invalid query rule ids')
+  if (queue !== undefined && !(REVIEW_QUEUES as readonly string[]).includes(queue)) throw new RangeError('unknown review queue')
+  if (sort !== undefined && !(REVIEW_SORTS as readonly string[]).includes(sort)) throw new RangeError('unknown review sort')
   if (source !== undefined && !(TENDER_DATA_SOURCES as readonly string[]).includes(source)) throw new RangeError('unknown source filter')
   if (classification !== undefined && !(CLASSIFICATION_VALUES as readonly string[]).includes(classification)) throw new RangeError('unknown classification filter')
   if (recommendation !== undefined && recommendation !== 'unanalyzed' && !(AGENT_RECOMMENDATIONS as readonly string[]).includes(recommendation)) throw new RangeError('unknown recommendation filter')
   if (userDecision !== undefined && !(USER_DECISIONS as readonly string[]).includes(userDecision)) throw new RangeError('unknown user decision filter')
   if (deadlineStatus !== undefined && !(DEADLINE_STATUSES as readonly string[]).includes(deadlineStatus)) throw new RangeError('unknown deadline status filter')
+  for (const [name, value] of [['region', region], ['stage', stage], ['procurementMethod', procurementMethod], ['procurementType', procurementType], ['ruleId', ruleId]] as const) {
+    if (value !== undefined && value.length > 512) throw new RangeError(`${name} exceeds 512 characters`)
+  }
+  if (risk !== undefined && !(REVIEW_RISKS as readonly string[]).includes(risk)) throw new RangeError('unknown risk filter')
+  if (disclosure !== undefined && !(REVIEW_DISCLOSURES as readonly string[]).includes(disclosure)) throw new RangeError('unknown disclosure filter')
+  if (amountMinCny !== undefined && (!Number.isFinite(amountMinCny) || amountMinCny < 0)) throw new RangeError('invalid amountMinCny')
+  if (amountMaxCny !== undefined && (!Number.isFinite(amountMaxCny) || amountMaxCny < 0)) throw new RangeError('invalid amountMaxCny')
+  if (amountMinCny !== undefined && amountMaxCny !== undefined && amountMaxCny < amountMinCny) throw new RangeError('amount range is inverted')
   return {
     page,
     pageSize,
+    ...(queue === undefined ? {} : { queue: queue as ReviewRowsFilterV1['queue'] }),
+    ...(sort === undefined ? {} : { sort: sort as ReviewRowsFilterV1['sort'] }),
     ...(query === undefined || query === '' ? {} : { query }),
+    ...(queryRuleIds.length === 0 ? {} : { queryRuleIds }),
     ...(source === undefined ? {} : { source: source as ReviewRowsFilterV1['source'] }),
     ...(classification === undefined ? {} : { classification: classification as ReviewRowsFilterV1['classification'] }),
     ...(recommendation === undefined ? {} : { recommendation: recommendation as ReviewRowsFilterV1['recommendation'] }),
     ...(userDecision === undefined ? {} : { userDecision: userDecision as ReviewRowsFilterV1['userDecision'] }),
     ...(deadlineStatus === undefined ? {} : { deadlineStatus: deadlineStatus as ReviewRowsFilterV1['deadlineStatus'] }),
+    ...(region === undefined || region === '' ? {} : { region }),
+    ...(stage === undefined || stage === '' ? {} : { stage }),
+    ...(procurementMethod === undefined || procurementMethod === '' ? {} : { procurementMethod }),
+    ...(procurementType === undefined || procurementType === '' ? {} : { procurementType }),
+    ...(ruleId === undefined || ruleId === '' ? {} : { ruleId }),
+    ...(risk === undefined ? {} : { risk: risk as ReviewRowsFilterV1['risk'] }),
+    ...(disclosure === undefined ? {} : { disclosure: disclosure as ReviewRowsFilterV1['disclosure'] }),
+    ...(amountMinCny === undefined ? {} : { amountMinCny }),
+    ...(amountMaxCny === undefined ? {} : { amountMaxCny }),
   }
 }
 
@@ -249,31 +301,122 @@ function rowsForReview(kind: ArtifactRefV1['kind'], value: unknown): ReviewRecor
   }))
 }
 
-function deadlineStatus(row: ReviewRecordV1, now: number): 'active' | 'expired' | 'missing' {
+function reviewAudit(kind: ArtifactRefV1['kind'], value: unknown) {
+  if (kind !== 'review-data') return []
+  return ReviewDatasetV1Schema.parse(value).operations.slice(-100).reverse().map(operation => ({
+    operationId: operation.operationId,
+    appliedAt: operation.appliedAt,
+    decision: operation.decision,
+    note: operation.note,
+    recordRefs: operation.recordRefs,
+  }))
+}
+
+function deadlineStatus(row: ReviewRecordV1, now: number): typeof DEADLINE_STATUSES[number] {
   const value = row.project.deadline?.value
   if (value === undefined) return 'missing'
   const parsed = Date.parse(value)
   if (!Number.isFinite(parsed)) return 'missing'
-  return parsed < now ? 'expired' : 'active'
+  if (parsed < now) return 'expired'
+  return parsed - now <= 7 * 24 * 60 * 60 * 1_000 ? 'urgent' : 'active'
+}
+
+function rowStages(row: ReviewRecordV1): string[] {
+  return [
+    row.project.stage.value,
+    row.project.stage.original,
+    row.project.tenderDetails?.noticeStatus.value,
+    row.project.tenderDetails?.noticeStatus.original,
+    row.project.proposedDetails?.projectStage.value,
+    row.project.proposedDetails?.projectStage.original,
+  ].filter((value): value is string => value !== undefined && value !== '')
+}
+
+function comparableAmount(row: ReviewRecordV1): number | undefined {
+  const { minCny, maxCny } = row.project.amount
+  if (minCny === undefined || maxCny === undefined) return undefined
+  return minCny
+}
+
+function reviewFacets(rows: readonly ReviewRecordV1[]) {
+  const values = (items: Array<string | undefined>) => [...new Set(items.filter((item): item is string => item !== undefined && item !== ''))]
+    .sort((left, right) => left.localeCompare(right, 'zh-CN')).slice(0, 200)
+  return {
+    regions: values(rows.map(row => row.project.region.value ?? row.project.region.original)),
+    stages: values(rows.flatMap(row => rowStages(row))),
+    procurementMethods: values(rows.map(row => row.project.tenderDetails?.procurementMethod.value)),
+    procurementTypes: values(rows.map(row => row.project.tenderDetails?.procurementType.value)),
+    ruleIds: values(rows.map(row => row.finalRuleId)),
+  }
+}
+
+function reviewQueueCounts(rows: readonly ReviewRecordV1[]) {
+  const pending = rows.filter(row => row.review.decision === 'pending').length
+  return { pending, reviewed: rows.length - pending }
 }
 
 function filteredReviewRows(rows: readonly ReviewRecordV1[], filter: ReviewRowsFilterV1): ReviewRecordV1[] {
   const needle = filter.query?.toLocaleLowerCase('zh-CN')
   const now = Date.now()
   return rows.filter(row => {
+    if (filter.queue === 'pending' && row.review.decision !== 'pending') return false
+    if (filter.queue === 'reviewed' && row.review.decision === 'pending') return false
+    if (filter.queue === 'analysis-eligible' && (row.classification === undefined
+      || !(ANALYSIS_ELIGIBLE_CLASSIFICATIONS as readonly string[]).includes(row.classification))) return false
     if (filter.source !== undefined && row.project.source !== filter.source) return false
     if (filter.classification !== undefined && row.classification !== filter.classification) return false
     if (filter.recommendation === 'unanalyzed' && row.recommendation !== undefined) return false
     if (filter.recommendation !== undefined && filter.recommendation !== 'unanalyzed' && row.recommendation?.recommendation !== filter.recommendation) return false
     if (filter.userDecision !== undefined && row.review.decision !== filter.userDecision) return false
-    if (filter.deadlineStatus !== undefined && deadlineStatus(row, now) !== filter.deadlineStatus) return false
+    const currentDeadlineStatus = deadlineStatus(row, now)
+    if (filter.deadlineStatus === 'active' && currentDeadlineStatus !== 'active' && currentDeadlineStatus !== 'urgent') return false
+    if (filter.deadlineStatus !== undefined && filter.deadlineStatus !== 'active' && currentDeadlineStatus !== filter.deadlineStatus) return false
+    if (filter.region !== undefined && (row.project.region.value ?? row.project.region.original) !== filter.region) return false
+    if (filter.stage !== undefined && !rowStages(row).includes(filter.stage)) return false
+    if (filter.procurementMethod !== undefined && row.project.tenderDetails?.procurementMethod.value !== filter.procurementMethod) return false
+    if (filter.procurementType !== undefined && row.project.tenderDetails?.procurementType.value !== filter.procurementType) return false
+    if (filter.ruleId !== undefined && row.finalRuleId !== filter.ruleId) return false
+    if (filter.risk === 'has-verification' && (row.recommendation?.verificationItems.length ?? 0) === 0) return false
+    if (filter.risk === 'deadline-urgent' && currentDeadlineStatus !== 'urgent') return false
+    if (filter.disclosure === 'complete' && (row.project.disclosure.missingFields.length > 0 || row.project.disclosure.unparseableFields.length > 0)) return false
+    if (filter.disclosure === 'missing' && row.project.disclosure.missingFields.length === 0) return false
+    if (filter.disclosure === 'unparseable' && row.project.disclosure.unparseableFields.length === 0) return false
+    if (filter.amountMinCny !== undefined && (row.project.amount.maxCny === undefined || row.project.amount.maxCny < filter.amountMinCny)) return false
+    if (filter.amountMaxCny !== undefined && (row.project.amount.minCny === undefined || row.project.amount.minCny > filter.amountMaxCny)) return false
     if (needle !== undefined) {
-      const haystack = [row.project.title, row.project.counterparty.original, row.project.sourceId, row.review.note]
+      const haystack = [row.project.title, row.project.counterparty.value, row.project.counterparty.original]
         .join('\n').toLocaleLowerCase('zh-CN')
-      if (!haystack.includes(needle)) return false
+      const ruleNameMatched = row.finalRuleId !== undefined && filter.queryRuleIds?.includes(row.finalRuleId) === true
+      if (!haystack.includes(needle) && !ruleNameMatched) return false
     }
     return true
-  }).sort((left, right) => left.project.recordId.localeCompare(right.project.recordId))
+  }).sort((left, right) => {
+    let comparison = 0
+    if (filter.sort === 'recommendation') {
+      const rank = { 'priority-review': 0, watch: 1, 'not-recommended': 2 } as const
+      const leftRank = left.recommendation === undefined ? 3 : rank[left.recommendation.recommendation]
+      const rightRank = right.recommendation === undefined ? 3 : rank[right.recommendation.recommendation]
+      comparison = leftRank - rightRank
+    } else if (filter.sort === 'timing') {
+      const leftValue = Date.parse(left.project.source === 'tender'
+        ? left.project.deadline?.value ?? ''
+        : left.project.publishedAt.value ?? '')
+      const rightValue = Date.parse(right.project.source === 'tender'
+        ? right.project.deadline?.value ?? ''
+        : right.project.publishedAt.value ?? '')
+      if (Number.isFinite(leftValue) && Number.isFinite(rightValue)) comparison = leftValue - rightValue
+      else if (Number.isFinite(leftValue)) comparison = -1
+      else if (Number.isFinite(rightValue)) comparison = 1
+    } else if (filter.sort === 'amount-desc' || filter.sort === 'amount-asc') {
+      const leftAmount = comparableAmount(left)
+      const rightAmount = comparableAmount(right)
+      if (leftAmount !== undefined && rightAmount !== undefined) comparison = leftAmount - rightAmount
+      else if (leftAmount !== undefined) comparison = -1
+      else if (rightAmount !== undefined) comparison = 1
+      if (filter.sort === 'amount-desc' && leftAmount !== undefined && rightAmount !== undefined) comparison *= -1
+    }
+    return comparison === 0 ? left.project.recordId.localeCompare(right.project.recordId) : comparison
+  })
 }
 
 function contentDisposition(fileName: string): string {
@@ -310,13 +453,21 @@ async function handleRows(
       page: filter.page,
       pageSize: filter.pageSize,
       total: rows.length,
+      datasetTotal: dataset.total,
+      covered: dataset.covered,
+      conflicts: dataset.conflicts,
+      rawMatches: dataset.rawMatches,
+      counts: dataset.counts,
+      ruleImpacts: dataset.ruleImpacts,
       rows: rows.slice(start, start + filter.pageSize),
     }))
     return
   }
   if (kind === 'analysis-data' || kind === 'review-data') {
     const filter = reviewRowsFilter(parameters)
-    const rows = filteredReviewRows(rowsForReview(kind, value), filter)
+    const allRows = rowsForReview(kind, value)
+    const rows = filteredReviewRows(allRows, filter)
+    const counts = reviewQueueCounts(allRows)
     const maximumPage = Math.max(1, Math.ceil(rows.length / filter.pageSize))
     if (filter.page > maximumPage) {
       error(res, 416, 'page-out-of-range', '请求页超出当前筛选结果范围。')
@@ -329,6 +480,9 @@ async function handleRows(
       page: filter.page,
       pageSize: filter.pageSize,
       total: rows.length,
+      ...counts,
+      facets: reviewFacets(allRows),
+      audit: reviewAudit(kind, value),
       rows: rows.slice(start, start + filter.pageSize),
     }))
     return
@@ -366,19 +520,21 @@ async function handleReviewRows(
     throw new ArtifactManifestError('复核数据 Artifact 不是合法 JSON。')
   }
   const filter = reviewRowsFilter(parameters)
-  const rows = filteredReviewRows(rowsForReview(kind, value), filter)
+  const allRows = rowsForReview(kind, value)
+  const rows = filteredReviewRows(allRows, filter)
+  const counts = reviewQueueCounts(allRows)
   const maximumPage = Math.max(1, Math.ceil(rows.length / filter.pageSize))
-  if (filter.page > maximumPage) {
-    error(res, 416, 'page-out-of-range', '请求页超出当前筛选结果范围。')
-    return
-  }
-  const start = (filter.page - 1) * filter.pageSize
+  const page = Math.min(filter.page, maximumPage)
+  const start = (page - 1) * filter.pageSize
   json(res, 200, ReviewRowsPageV1Schema.parse({
     schemaVersion: 1,
     artifactId,
-    page: filter.page,
+    page,
     pageSize: filter.pageSize,
     total: rows.length,
+    ...counts,
+    facets: reviewFacets(allRows),
+    audit: reviewAudit(kind, value),
     rows: rows.slice(start, start + filter.pageSize),
   }))
 }
@@ -407,7 +563,7 @@ export function createArtifactRouteHandler(services: ArtifactRouteServices) {
     const parts = suffix.split('/').filter(Boolean)
     const artifactId = parts[0]
     const action = parts[1]
-    if (parts.length !== 2 || artifactId === undefined || !/^a_[a-f0-9]{32}$/u.test(artifactId) || (action !== 'rows' && action !== 'review-rows' && action !== 'download' && action !== 'content')) {
+    if (parts.length !== 2 || artifactId === undefined || !/^a_[a-f0-9]{32}$/u.test(artifactId) || (action !== 'rows' && action !== 'review-rows' && action !== 'download' && action !== 'content' && action !== 'report-view')) {
       error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
       return
     }
@@ -442,6 +598,10 @@ export function createArtifactRouteHandler(services: ArtifactRouteServices) {
         error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
         return
       }
+      if (action === 'report-view' && entry.kind !== 'final-snapshot') {
+        error(res, 404, 'artifact-not-found', 'Artifact 不存在或不可访问。')
+        return
+      }
       const bytes = await readManifestArtifact(root, entry, abort.signal)
       if (action === 'rows') {
         await handleRows(res, artifactId, entry.kind, bytes, requestUrl.searchParams)
@@ -455,6 +615,15 @@ export function createArtifactRouteHandler(services: ArtifactRouteServices) {
         if (bytes.byteLength > 2 * 1_024 * 1_024) throw new ArtifactManifestError('规则 Artifact 超出读取上限。')
         const content = RuleArtifactContentV1Schema.parse(JSON.parse(bytes.toString('utf8')) as unknown)
         json(res, 200, content)
+        return
+      }
+      if (action === 'report-view') {
+        const dataset = ReportDatasetSchema.parse(JSON.parse(bytes.toString('utf8')) as unknown)
+        const view = createReportDeliveryView(dataset)
+        if (Buffer.byteLength(JSON.stringify(view), 'utf8') > REPORT_DELIVERY_VIEW_MAX_BYTES) {
+          throw new ArtifactManifestError('交付视图超出读取上限。')
+        }
+        json(res, 200, view)
         return
       }
       res.writeHead(200, {

@@ -142,6 +142,12 @@ export const ClassifiedRowsPageV1Schema = z.object({
   page: z.number().int().positive(),
   pageSize: z.number().int().min(1).max(100),
   total: z.number().int().nonnegative(),
+  datasetTotal: z.number().int().nonnegative(),
+  covered: z.number().int().nonnegative(),
+  conflicts: z.number().int().nonnegative(),
+  rawMatches: z.number().int().nonnegative(),
+  counts: ClassificationCountsV1Schema,
+  ruleImpacts: z.array(RuleImpactV1Schema).max(100),
   rows: z.array(ClassifiedRecordV1Schema).max(100),
 }).strict()
 
