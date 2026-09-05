@@ -36,11 +36,22 @@ const required = [
 const cache = mkdtempSync(join(tmpdir(), 'dsh-tender-pack-'))
 let raw
 try {
-  const command = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-  raw = execFileSync(command, ['pack', '--dry-run', '--json', '--ignore-scripts', '--cache', cache], {
+  const npmArgs = ['pack', '--dry-run', '--json', '--ignore-scripts', '--cache', cache]
+  const npmCli = process.env.npm_execpath?.replaceAll('\\', '/') ?? ''
+  const command = npmCli.endsWith('/npm-cli.js') ? process.execPath : process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  const args = npmCli.endsWith('/npm-cli.js') ? [process.env.npm_execpath, ...npmArgs] : npmArgs
+  raw = execFileSync(command, args, {
     cwd: root,
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      FORCE_COLOR: '0',
+      NO_COLOR: '1',
+      npm_config_color: 'false',
+      npm_config_ignore_scripts: 'true',
+    },
     maxBuffer: 64 * 1024 * 1024,
+    shell: process.platform === 'win32' && !npmCli.endsWith('/npm-cli.js'),
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 } catch (error) {
@@ -51,7 +62,27 @@ try {
   rmSync(cache, { recursive: true, force: true })
 }
 
-const [pack] = JSON.parse(raw)
+function parsePackOutput(output) {
+  const clean = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '').trim()
+  for (let index = clean.lastIndexOf('['); index >= 0; index = clean.lastIndexOf('[', index - 1)) {
+    try {
+      const parsed = JSON.parse(clean.slice(index))
+      if (Array.isArray(parsed) && parsed[0]?.files) return parsed
+    } catch {
+      // npm 10 can emit prepare/build output before its final JSON payload.
+    }
+  }
+  throw new Error('npm pack output did not end with the expected JSON payload')
+}
+
+let pack
+try {
+  pack = parsePackOutput(raw)[0]
+} catch (error) {
+  console.error(`verify-pack failed: ${error.message}`)
+  process.exit(1)
+}
+
 if (!pack || !Array.isArray(pack.files)) {
   console.error('verify-pack failed: npm pack JSON did not contain a file list')
   process.exit(1)
