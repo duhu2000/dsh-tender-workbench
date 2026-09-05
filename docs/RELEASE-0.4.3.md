@@ -2,7 +2,8 @@
 
 - Version: **0.4.3**
 - 发布日期：2026-09-05
-- Status: **release candidate**
+- Status: **published**
+- 发布提交：`57b594c8d1f4bd640919409baed94f96570af749`
 - Git 标签：`v0.4.3`
 - npm 目标：`dsh-tender-workbench@0.4.3`（`latest`）
 
@@ -21,17 +22,17 @@
 
 ## 发布门禁
 
-- [ ] 使用仓库锁文件完成 frozen pnpm install。
-- [ ] TypeScript 类型检查通过。
-- [ ] 完整 Vitest 测试通过。
-- [ ] Host Loader、Client Bundle、source map 和类型声明构建成功。
-- [ ] 中文/英文 README 与 0.4.3 发布状态检查通过。
-- [ ] npm tarball 只包含白名单公开文件。
-- [ ] tag 模式检查确认 `v0.4.3` 与包版本一致。
-- [ ] `main` CI 在 Linux Node 22/24 和 Windows Node 24 全部通过。
-- [ ] npm Trusted Publishing OIDC 自动发布成功，`latest` 指向 0.4.3。
-- [ ] npm provenance 可验证。
-- [ ] GitHub Release 为 latest、非 draft、非 prerelease。
+- [x] 使用仓库锁文件完成 frozen pnpm install。
+- [x] TypeScript 类型检查通过。
+- [x] 完整 Vitest 测试通过。
+- [x] Host Loader、Client Bundle、source map 和类型声明构建成功。
+- [x] 中文/英文 README 与 0.4.3 发布状态检查通过。
+- [x] npm tarball 只包含白名单公开文件。
+- [x] tag 模式检查确认 `v0.4.3` 与包版本一致。
+- [x] `main` CI 在 Linux Node 22/24 和 Windows Node 24 全部通过。
+- [x] npm Trusted Publishing OIDC 自动发布成功，`latest` 指向 0.4.3。
+- [x] npm provenance 可验证。
+- [x] GitHub Release 为 latest、非 draft、非 prerelease。
 
 ## 发布步骤
 
@@ -40,6 +41,13 @@
 3. 等待必需 CI job 通过后，在发布提交上创建 annotated tag `v0.4.3` 并推送。
 4. 由 GitHub Actions 通过 OIDC 自动发布；不使用长期 npm Token。
 5. 核验 npm version、dist-tag、provenance、Git 标签和 GitHub Release。
+
+## 发布结果
+
+- annotated tag `v0.4.3` 指向发布提交 `57b594c8d1f4bd640919409baed94f96570af749`；Release workflow run `33975379206` 的 frozen install、标签检查、完整门禁、npm 发布和 GitHub Release 创建全部成功。
+- npm 发布通过 GitHub Actions OIDC Trusted Publishing 完成并签署 provenance，未使用长期 npm Token。
+- registry 回读确认 `latest` 为 0.4.3，仓库为 `duhu2000/dsh-tender-workbench`。
+- GitHub Release：<https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.4.3>。
 
 ## 安全与回滚
 
