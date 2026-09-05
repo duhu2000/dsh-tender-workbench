@@ -4,6 +4,16 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-09-05
+
+### Fixed
+
+- Bounded the tender-session hero-headline sync so the MutationObserver that keeps the "招投标" headline can only correct the title a finite number of times before disconnecting, preventing an unbounded cross-plugin rewrite loop. The rewrite remains single-session-scoped (`isTenderEntrySessionId`) and the correction budget (`MAX_HERO_CORRECTIONS = 8`) makes the sync bounded.
+
+### Compatibility
+
+- Runtime implementation, public exports, workflow behavior, and Artifact schema are otherwise unchanged from 0.4.2; this patch only adds a correction budget to the tender hero title rewrite.
+
 ## [0.4.2] - 2026-09-05
 
 ### Changed

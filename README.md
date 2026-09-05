@@ -4,7 +4,7 @@
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
 >
-> 当前稳定版本：**0.4.2**（正式版本）
+> 当前稳定版本：**0.4.3**（正式版本）
 
 [![CI](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-tender-workbench)](https://www.npmjs.com/package/dsh-tender-workbench)
@@ -49,10 +49,10 @@ dsh web --no-open
 
 安装或移除插件后，请完整重启 Web Profile。插件通过 `dsh.bundle.patch` 启用 `cordis.patch.yml`，并注册 `dsh-tender-workbench` Loader。
 
-安装指定的 `0.4.2` 版本：
+安装指定的 `0.4.3` 版本：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.4.2
+dsh plugin --profile web add dsh-tender-workbench@0.4.3
 ```
 
 移除插件：
@@ -98,11 +98,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 从已有版本升级：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.4.2
+dsh plugin --profile web add dsh-tender-workbench@0.4.3
 dsh web --no-open
 ```
 
-`0.4.2` 与 `0.4.1` 的运行时代码、公共导出、工作流和 Artifact Schema 保持一致；本补丁用于通过 npm Trusted Publishing 验证 GitHub Actions OIDC 与 provenance 自动发布链路，不迁移会话数据。如部署环境出现特定回归，可重新安装 `dsh-tender-workbench@0.4.1` 并重启 Profile。已发布的 npm 版本和 Git 标签保持不可变，后续修复使用新的补丁版本。
+`0.4.3` 在 `0.4.2` 基础上修复招投标会话 Hero 标题与其它插件互相改写可能导致的无限循环：标题同步改为单一会话所有权 + 有界校正预算（`MAX_HERO_CORRECTIONS = 8`），达到上限即断开观察器。其余运行时代码、公共导出、工作流和 Artifact Schema 与 0.4.2 保持一致，不迁移会话数据。如部署环境出现特定回归，可重新安装 `dsh-tender-workbench@0.4.2` 并重启 Profile。已发布的 npm 版本和 Git 标签保持不可变，后续修复使用新的补丁版本。
 
 ## 本地开发
 
@@ -117,7 +117,7 @@ corepack pnpm@11.7.0 run check
 
 `check` 会执行类型检查、完整 Vitest 测试、生产构建、README/发布状态校验以及 npm tarball 白名单预检。配置 npm Trusted Publishing 后，[发布工作流](.github/workflows/release.yml)可使用 OIDC 和 provenance；手工发布不得声称 provenance。
 
-省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.4.2 发布清单](docs/RELEASE-0.4.2.md)。
+省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.4.3 发布清单](docs/RELEASE-0.4.3.md)。
 
 ## 当前范围
 
