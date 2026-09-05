@@ -45,18 +45,28 @@ export function rewriteTenderHeroHeadline(
   ))
   if (title === undefined) return () => {}
 
-  let original = title.dataset.dshTenderOriginalHeadline ?? title.textContent ?? ''
+  const original = title.dataset.dshTenderOriginalHeadline ?? title.textContent ?? ''
   title.dataset.dshTenderHeroHeadline = 'true'
   title.dataset.dshTenderOriginalHeadline = original
   title.textContent = replacement
   const Observer = anchor.ownerDocument.defaultView?.MutationObserver
-  const observer = Observer === undefined ? undefined : new Observer(() => {
-    if (title.textContent === replacement) return
-    original = title.textContent ?? original
-    title.dataset.dshTenderOriginalHeadline = original
-    title.textContent = replacement
-  })
-  observer?.observe(title, { childList: true, characterData: true, subtree: true })
+  // 单一会话所有权：本桥只在 isTenderEntrySessionId(sessionId) 为真的会话挂载；
+  // 同步同样有界 —— 达到校正上限即断开，杜绝与其它插件互相改写导致的死循环。
+  const MAX_HERO_CORRECTIONS = 8
+  let corrections = 0
+  let observer: MutationObserver | undefined
+  if (Observer !== undefined) {
+    observer = new Observer(() => {
+      if (title.textContent === replacement) return
+      if (corrections >= MAX_HERO_CORRECTIONS) {
+        observer?.disconnect()
+        return
+      }
+      corrections += 1
+      title.textContent = replacement
+    })
+    observer.observe(title, { childList: true, characterData: true, subtree: true })
+  }
   return () => {
     observer?.disconnect()
     if (title.dataset.dshTenderOriginalHeadline !== original) return

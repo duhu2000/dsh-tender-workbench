@@ -163,7 +163,9 @@ describe('S1a tender entries', () => {
     headline.textContent = '访前尽调智能体'
     await waitFor(() => { expect(headline.textContent).toBe('招投标') })
     bridge.unmount()
-    expect(headline.textContent).toBe('访前尽调智能体')
+    // 单一会话所有权 + 有界同步后，桥不再把其它插件随后写入的标题重新捕获为「要恢复的原始值」；
+    // 卸载时恢复的是挂载时刻的原始标题，而不是访前插件在观察期内的短暂写入。
+    expect(headline.textContent).toBe('探索未至之境')
 
     headline.textContent = '探索未至之境'
     const ordinaryOverlay = document.createElement('div')
