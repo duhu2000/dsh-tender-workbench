@@ -2,7 +2,8 @@
 
 - Version: **0.4.2**
 - 发布日期：2026-09-05
-- Status: **release candidate**
+- Status: **published**
+- 发布提交：`830d122881d26e821a8b6f7fd1343ae40181a2ee`
 - Git 标签：`v0.4.2`
 - npm 目标：`dsh-tender-workbench@0.4.2`（`latest`）
 - GitHub Release：<https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.4.2>
@@ -29,12 +30,12 @@
 - [x] 中文/英文 README 与 0.4.2 发布状态检查通过。
 - [x] npm tarball 只包含白名单公开文件，且同时包含 `README.md` 与 `README.en.md`。
 - [x] tag 模式检查确认 `v0.4.2` 与包版本一致。
-- [ ] `main` CI 在 Linux Node 22/24 和 Windows Node 24 全部通过。
-- [ ] npm Trusted Publishing OIDC 自动发布成功，`latest` 指向 0.4.2。
-- [ ] npm provenance 可验证，仓库和工作流身份与 Trusted Publisher 精确匹配。
-- [ ] GitHub Release 为 latest、非 draft、非 prerelease。
+- [x] `main` CI 在 Linux Node 22/24 和 Windows Node 24 全部通过。
+- [x] npm Trusted Publishing OIDC 自动发布成功，`latest` 指向 0.4.2。
+- [x] npm provenance 可验证，仓库和工作流身份与 Trusted Publisher 精确匹配。
+- [x] GitHub Release 为 latest、非 draft、非 prerelease。
 
-未勾选项均为待办，不得报告为已完成。发布成功后在 `main` 上追加不可变发布结果记录，不移动 `v0.4.2` 标签。
+以上发布门禁均已完成；发布结果通过后续文档提交记录在 `main`，`v0.4.2` 标签仍固定指向原发布提交。
 
 ## 发布步骤
 
@@ -54,6 +55,16 @@
 - tarball：170 个文件，全部位于发布白名单内。
 
 上游 `@deepseek-ai/dsh-client-ui-primitives` 仍缺少其声明的 source map，Vitest 会给出提示；本包生成的 source map 完整，构建与门禁通过。
+
+## 发布结果
+
+- 发布提交 `830d122881d26e821a8b6f7fd1343ae40181a2ee` 先通过 `main` CI run `33952279465`：Linux Node 22、Linux Node 24 和 Windows Node 24 全部成功。
+- annotated tag `v0.4.2` 指向同一发布提交；Release workflow run `33952595752` 的 frozen install、标签检查、完整门禁、npm 发布和 GitHub Release 创建全部成功。
+- npm 发布日志确认通过 GitHub Actions 签署 provenance 并写入 Sigstore 透明日志，索引为 `2722264501`；发布过程未使用长期 npm Token。
+- registry 回读确认 `latest` 为 0.4.2，仓库地址为 `duhu2000/dsh-tender-workbench`，中文 description 和维护者信息保持正确。
+- registry tarball SHA-1 为 `ba393e0994054eea4e843a5358fd192810b51b86`，完整性为 `sha512-DgXaJzp+cVZsBjkdrUa6J4iWUqNEEO3tbjX9GmX0aeYjSVikexJGnj33hGrMl+hWOKJ3+Sy9sAy+GYBVaG4/HQ==`。
+- npm attestation：<https://registry.npmjs.org/-/npm/v1/attestations/dsh-tender-workbench@0.4.2>，predicate type 为 `https://slsa.dev/provenance/v1`。
+- GitHub Release `v0.4.2`（ID `383169568`）为当前 latest，且非 draft、非 prerelease。
 
 ## 安全与回滚
 
