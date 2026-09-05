@@ -1,6 +1,6 @@
 {
   "name": "dsh-tender-workbench",
-  "version": "0.3.0-beta.0",
+  "version": "0.3.0-beta.1",
   "description": "Open-source DeepSeek Harness tender Agent workbench with a Session-scoped end-to-end workflow",
   "keywords": [
     "deepseek-harness",
@@ -62,11 +62,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Sunhh3221/dsh-tender-workbench.git"
+    "url": "git+https://github.com/duhu2000/dsh-tender-workbench.git"
   },
-  "homepage": "https://github.com/Sunhh3221/dsh-tender-workbench#readme",
+  "homepage": "https://github.com/duhu2000/dsh-tender-workbench#readme",
   "bugs": {
-    "url": "https://github.com/Sunhh3221/dsh-tender-workbench/issues"
+    "url": "https://github.com/duhu2000/dsh-tender-workbench/issues"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
