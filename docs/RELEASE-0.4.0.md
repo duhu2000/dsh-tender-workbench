@@ -2,11 +2,11 @@
 
 - Version: **0.4.0**
 - Release date: 2026-09-05
-- Status: **release candidate**
-- Release commit: pending
-- Git tag: pending
-- npm publication: pending
-- GitHub Release: pending
+- Status: **published**
+- Release commit: `5f326db258b1f4b8ed1dd27861017c3d3d6471d5`
+- Git tag: `v0.4.0`
+- npm publication: `dsh-tender-workbench@0.4.0` (`latest`)
+- GitHub Release: <https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.4.0>
 
 ## Scope
 
@@ -32,10 +32,11 @@ Install `dsh-tender-workbench@0.4.0` together with compatible Provider plugins, 
 - [x] README and release-state checks pass for 0.4.0.
 - [x] `npm pack --dry-run --json` contains only whitelisted public files.
 - [x] A clean temporary installation imports the packed Host entry and package metadata and registers the Client bundle.
-- [ ] `main` CI passes on Linux Node 22/24 and Windows Node 24.
-- [ ] Tag `v0.4.0` resolves to the reviewed release commit.
-- [ ] npm Trusted Publishing creates `dsh-tender-workbench@0.4.0` with provenance and the `latest` dist-tag.
-- [ ] GitHub Release `v0.4.0` is neither draft nor prerelease.
+- [x] `main` CI passes on Linux Node 22/24 and Windows Node 24.
+- [x] Tag `v0.4.0` resolves to the reviewed release commit.
+- [x] npm publication creates `dsh-tender-workbench@0.4.0` with the `latest` dist-tag.
+- [x] GitHub Release `v0.4.0` is neither draft nor prerelease.
+- [ ] npm Trusted Publishing provenance is active for this repository and workflow.
 
 Unchecked items are pending and must not be reported as completed.
 
@@ -49,6 +50,18 @@ Validated on 2026-09-05 with pnpm 11.7.0:
 - Clean-install smoke test: passed after supplying the same DSH Host peer baseline used by development; the Host entry exported `apply` and `inject`, package metadata reported 0.4.0, and the Client bundle registered with the module loader.
 
 The ordinary npm peer auto-installer currently reports an upstream DSH peer-version conflict between the connector and UI layout packages. The production DSH plugin manager supplies the Host peer set, so the isolated smoke test installs the tarball with peer auto-installation disabled and then injects the compatible 0.1.1-rc.2 Host baseline explicitly. The build also reports an upstream missing source-map warning from `@deepseek-ai/dsh-client-ui-primitives`; generated package source maps are present and the gate passes.
+
+## Publication outcome
+
+- `main` CI run 33946403394 passed on Linux Node 22, Linux Node 24, and Windows Node 24.
+- Tag `v0.4.0` is annotated and resolves to release commit `5f326db258b1f4b8ed1dd27861017c3d3d6471d5`.
+- The tag workflow passed its install, tag/version, test, build, documentation, and package gates. npm then returned `E404` because the Trusted Publisher association was not active for this package, so the workflow did not publish and did not create the GitHub Release.
+- After confirming that 0.4.0 was absent from the registry, npm owner `duhu2000` used the approved browser-authenticated manual fallback to publish the same reviewed package. No second publish was attempted after success.
+- Registry verification reports `latest` as 0.4.0, 169 files, SHA-1 `5b493bfe7577d9c0bc2bd0c039c10a227b393935`, and integrity `sha512-NeYsxbQlp7LKCOaevCFBuxZl0vjhuWgYwD3pbL/MNZYjuozLiGdErOhy+wpjBjbqrlidfy4OLx1DcE99gMBxvw==`.
+- A fresh public-registry download and clean installation passed the Host entry, package metadata, and Client module-loader registration smoke tests.
+- GitHub Release `v0.4.0` was created from the existing tag after npm publication and is neither draft nor prerelease.
+
+The manual fallback cannot claim npm Trusted Publishing provenance. Configure the npm package's Trusted Publisher association for `duhu2000/dsh-tender-workbench` and `.github/workflows/release.yml` before the next release, then verify it with a new version rather than reusing `v0.4.0`.
 
 ## Publication procedure
 
