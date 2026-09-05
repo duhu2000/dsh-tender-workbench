@@ -10,6 +10,7 @@ const escapedVersion = pkg.version.replaceAll('.', '\\.')
 const whitelist = [
   /^package\.json$/u,
   /^README\.md$/u,
+  /^README\.en\.md$/u,
   /^LICENSE$/u,
   /^CHANGELOG\.md$/u,
   /^cordis\.patch\.yml$/u,
@@ -23,6 +24,7 @@ const whitelist = [
 const required = [
   'package.json',
   'README.md',
+  'README.en.md',
   'LICENSE',
   'CHANGELOG.md',
   'cordis.patch.yml',

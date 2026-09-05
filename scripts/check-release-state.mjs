@@ -22,6 +22,7 @@ expect(pkg.repository?.url === 'git+https://github.com/duhu2000/dsh-tender-workb
 expect(pkg.homepage === 'https://github.com/duhu2000/dsh-tender-workbench#readme', 'homepage must target duhu2000/dsh-tender-workbench')
 expect(pkg.bugs?.url === 'https://github.com/duhu2000/dsh-tender-workbench/issues', 'bugs URL must target duhu2000/dsh-tender-workbench')
 expect(Array.isArray(pkg.files) && pkg.files.includes('README.md'), 'npm files must include README.md')
+expect(Array.isArray(pkg.files) && pkg.files.includes('README.en.md'), 'npm files must include README.en.md')
 expect(Array.isArray(pkg.files) && pkg.files.includes('CHANGELOG.md'), 'npm files must include CHANGELOG.md')
 expect(Array.isArray(pkg.files) && pkg.files.includes(releaseDocument), `npm files must include ${releaseDocument}`)
 expect(changelog.includes('## [Unreleased]'), 'CHANGELOG.md must contain an Unreleased section')

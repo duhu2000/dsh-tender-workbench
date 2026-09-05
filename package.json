@@ -1,14 +1,18 @@
 {
   "name": "dsh-tender-workbench",
-  "version": "0.4.0",
-  "description": "Open-source DeepSeek Harness tender Agent workbench with a Session-scoped end-to-end workflow",
+  "version": "0.4.1",
+  "description": "DeepSeek Harness 招投标工作台智能体：支持招投标查询、规则初筛、智能分析、人工复核及 Excel/PDF 报告交付。",
   "keywords": [
     "deepseek-harness",
     "dsh",
     "tender",
     "bidding",
     "procurement",
-    "proposed-projects"
+    "proposed-projects",
+    "招投标",
+    "标讯",
+    "拟建项目",
+    "企查查"
   ],
   "author": "Sunhh3221",
   "type": "module",
@@ -28,9 +32,10 @@
   "files": [
     "LICENSE",
     "README.md",
+    "README.en.md",
     "CHANGELOG.md",
     "cordis.patch.yml",
-    "docs/RELEASE-0.4.0.md",
+    "docs/RELEASE-0.4.1.md",
     "lib/index.js",
     "lib/client.js",
     "lib/client.js.map",
