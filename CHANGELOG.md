@@ -4,6 +4,17 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-05
+
+### Changed
+
+- Advanced the stable release metadata and bilingual installation guidance to 0.4.2 for an end-to-end Trusted Publishing verification release.
+- Kept the runtime implementation, public exports, workflow behavior, and Artifact schema unchanged from 0.4.1.
+
+### Security
+
+- Publishes from the tag workflow through the npm Trusted Publisher binding for `duhu2000/dsh-tender-workbench` and `release.yml`, using GitHub Actions OIDC and npm provenance without a long-lived npm token.
+
 ## [0.4.1] - 2026-09-05
 
 ### Changed
@@ -37,6 +48,7 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 - Release automation uses GitHub OIDC Trusted Publishing and does not require a long-lived npm token in the repository.
 - Runtime credentials remain owned by the authorized MCP connector; Session-private source data and generated Artifacts are not published.
 
-[Unreleased]: https://github.com/duhu2000/dsh-tender-workbench/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/duhu2000/dsh-tender-workbench/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.4.2
 [0.4.1]: https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.4.1
 [0.4.0]: https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.4.0

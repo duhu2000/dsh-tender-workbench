@@ -4,7 +4,7 @@
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current stable version: **0.4.1** (stable release).
+Current stable version: **0.4.2** (stable release).
 
 ## What it does
 
@@ -67,12 +67,12 @@ dsh plugin --profile web add dsh-tender-workbench
 dsh web --no-open
 ```
 
-To install the exact 0.4.1 release:
+To install the exact 0.4.2 release:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add dsh-tender-workbench@0.4.1
+dsh plugin --profile web add dsh-tender-workbench@0.4.2
 ```
 
 To install from an independent checkout, install the required Provider plugins first, then run from this repository:
@@ -91,7 +91,7 @@ To install a packed build:
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add ./dsh-tender-workbench-0.4.1.tgz
+dsh plugin --profile web add ./dsh-tender-workbench-0.4.2.tgz
 dsh web --no-open
 ```
 
@@ -108,11 +108,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 Upgrade an existing installation by installing the stable version and fully restarting the Web profile:
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.4.1
+dsh plugin --profile web add dsh-tender-workbench@0.4.2
 dsh web --no-open
 ```
 
-Version 0.4.1 keeps the workflow and Artifact schema used by 0.4.0; it changes the GitHub/npm presentation language and distribution metadata rather than migrating Session data. If a deployment-specific regression requires rollback, reinstall `dsh-tender-workbench@0.4.0` and restart the profile. Published npm versions and Git tags are immutable; fixes after publication use a new patch version rather than overwriting 0.4.1.
+Version 0.4.2 keeps the runtime code, public exports, workflow, and Artifact schema used by 0.4.1. This patch validates the npm Trusted Publishing path from GitHub Actions through OIDC and provenance without migrating Session data. If a deployment-specific regression requires rollback, reinstall `dsh-tender-workbench@0.4.1` and restart the profile. Published npm versions and Git tags are immutable; fixes after publication use a new patch version rather than overwriting 0.4.2.
 
 ## Using the workbench
 
@@ -137,7 +137,7 @@ The build emits the Host loader at `lib/index.js`, the Client bundle at `lib/cli
 
 The province, city, and district source snapshot is maintained in [resources/area.ts](resources/area.ts).
 
-See [CHANGELOG.md](CHANGELOG.md) and [the 0.4.1 release checklist](docs/RELEASE-0.4.1.md) for the stable-release scope and operational checks.
+See [CHANGELOG.md](CHANGELOG.md) and [the 0.4.2 release checklist](docs/RELEASE-0.4.2.md) for the stable-release scope and operational checks.
 
 ## Current scope
 
