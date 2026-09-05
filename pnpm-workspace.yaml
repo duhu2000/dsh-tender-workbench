@@ -1,0 +1,7 @@
+packages:
+  - '.'
+
+autoInstallPeers: false
+
+allowBuilds:
+  node-pty: false

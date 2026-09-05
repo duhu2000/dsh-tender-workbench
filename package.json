@@ -1,6 +1,6 @@
 {
   "name": "dsh-tender-workbench",
-  "version": "0.3.0-beta.1",
+  "version": "0.4.0",
   "description": "Open-source DeepSeek Harness tender Agent workbench with a Session-scoped end-to-end workflow",
   "keywords": [
     "deepseek-harness",
@@ -27,7 +27,10 @@
   },
   "files": [
     "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
     "cordis.patch.yml",
+    "docs/RELEASE-0.4.0.md",
     "lib/index.js",
     "lib/client.js",
     "lib/client.js.map",
@@ -50,15 +53,19 @@
   },
   "scripts": {
     "build": "tsc --project tsconfig.build.json && tsdown --config tsdown.config.ts",
+    "check": "npm run typecheck && npm run test && npm run build && npm run docs:check && npm run release:check && npm run verify-pack",
+    "docs:check": "node scripts/check-readme-version.mjs",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run typecheck && npm run test",
+    "prepublishOnly": "npm run check",
+    "release:check": "node scripts/check-release-state.mjs",
     "test": "vitest run",
-    "typecheck": "tsc --project tsconfig.json"
+    "typecheck": "tsc --project tsconfig.json",
+    "verify-pack": "node scripts/verify-pack.mjs"
   },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/",
-    "tag": "beta"
+    "tag": "latest"
   },
   "repository": {
     "type": "git",

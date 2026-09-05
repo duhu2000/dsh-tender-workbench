@@ -2,6 +2,8 @@
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
+Current stable version: **0.4.0** (stable release).
+
 ## What it does
 
 The workbench follows four business phases:
@@ -54,27 +56,27 @@ Missing required services, incompatible Better Sidebar capabilities, unavailable
 
 ## Install
 
-The current release is an internal preview published under the `beta` dist-tag:
+Install the current stable release and its required Provider plugins:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add dsh-tender-workbench@beta
+dsh plugin --profile web add dsh-tender-workbench
 dsh web --no-open
 ```
 
-To install the current exact preview version:
+To install the exact 0.4.0 release:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add dsh-tender-workbench@0.3.0-beta.0
+dsh plugin --profile web add dsh-tender-workbench@0.4.0
 ```
 
 To install from an independent checkout, install the required Provider plugins first, then run from this repository:
 
 ```sh
-corepack pnpm@11.7.0 install --ignore-workspace
+corepack pnpm@11.7.0 install --frozen-lockfile
 corepack pnpm@11.7.0 run build
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
@@ -87,7 +89,7 @@ To install a packed build:
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add ./dsh-tender-workbench-0.3.0-beta.0.tgz
+dsh plugin --profile web add ./dsh-tender-workbench-0.4.0.tgz
 dsh web --no-open
 ```
 
@@ -98,6 +100,17 @@ To remove it:
 ```sh
 dsh plugin --profile web remove dsh-tender-workbench
 ```
+
+## Upgrade and rollback
+
+Upgrade an existing beta installation by installing the stable version and fully restarting the Web profile:
+
+```sh
+dsh plugin --profile web add dsh-tender-workbench@0.4.0
+dsh web --no-open
+```
+
+Version 0.4.0 keeps the workflow and Artifact schema used by 0.3.0-beta.1; it changes the release state and distribution metadata rather than migrating Session data. If a deployment-specific regression requires rollback, reinstall `dsh-tender-workbench@0.3.0-beta.1` and restart the profile. Published npm versions and Git tags are immutable; fixes after publication use a new patch version rather than overwriting 0.4.0.
 
 ## Using the workbench
 
@@ -112,15 +125,17 @@ The layout is container-responsive: wide workspaces use master/detail grids, whi
 Use the Node.js and pnpm versions declared by the repository:
 
 ```sh
-corepack pnpm@11.7.0 install --ignore-workspace
-corepack pnpm@11.7.0 run typecheck
-corepack pnpm@11.7.0 run test
-corepack pnpm@11.7.0 run build
+corepack pnpm@11.7.0 install --frozen-lockfile
+corepack pnpm@11.7.0 run check
 ```
 
 The build emits the Host loader at `lib/index.js`, the Client bundle at `lib/client.js`, and declarations under `lib/types/`.
 
+`check` runs type checking, the full Vitest suite, the production build, README/release-state validation, and an npm tarball whitelist preview. Release tags are published by [the release workflow](.github/workflows/release.yml) through npm Trusted Publishing with provenance; the repository must never contain npm tokens, GitHub tokens, QCC credentials, source datasets, or Session-private Artifacts.
+
 The province, city, and district source snapshot is maintained in [resources/area.ts](resources/area.ts).
+
+See [CHANGELOG.md](CHANGELOG.md) and [the 0.4.0 release checklist](docs/RELEASE-0.4.0.md) for the stable-release scope and operational checks.
 
 ## Current scope
 

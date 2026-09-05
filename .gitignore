@@ -5,6 +5,7 @@ lib/
 coverage/
 dist/
 *.tgz
+.package-output/
 
 # Tool caches and logs
 .cache/
@@ -28,5 +29,6 @@ npm-debug.log*
 # Local development instructions and design references
 /AGENTS.md
 /artifacts/
-/docs/
+/docs/*
+!/docs/RELEASE-*.md
 /references/
