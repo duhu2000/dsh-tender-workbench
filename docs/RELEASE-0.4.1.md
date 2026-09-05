@@ -2,11 +2,11 @@
 
 - Version: **0.4.1**
 - 发布日期：2026-09-05
-- Status: **release candidate**
-- 发布提交：待发布门禁与 CI 全部通过后填写
-- Git 标签：`v0.4.1`（待创建）
-- npm 发布：`dsh-tender-workbench@0.4.1`（待发布到 `latest`）
-- GitHub Release：<https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.4.1>（待创建）
+- Status: **published**
+- 发布提交：`92c05c69cccc5dd09c2f81592099808cbdb5feab`
+- Git 标签：`v0.4.1`
+- npm 发布：`dsh-tender-workbench@0.4.1`（`latest`）
+- GitHub Release：<https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.4.1>
 
 ## 发布范围
 
@@ -32,10 +32,10 @@
 - [x] 中文/英文 README 与 0.4.1 发布状态检查通过。
 - [x] npm tarball 只包含白名单公开文件，且同时包含 `README.md` 与 `README.en.md`。
 - [x] 干净临时安装可导入 Host 入口、读取 0.4.1 元数据并注册 Client Bundle。
-- [ ] `main` CI 在 Linux Node 22/24 和 Windows Node 24 全部通过。
-- [ ] annotated tag `v0.4.1` 指向经审查的发布提交。
-- [ ] npm 发布成功，`latest` 指向 0.4.1，description 和 README 均为中文优先。
-- [ ] GitHub 默认 README 与 About 简介均为中文，GitHub Release 非 draft、非 prerelease。
+- [x] `main` CI 在 Linux Node 22/24 和 Windows Node 24 全部通过。
+- [x] annotated tag `v0.4.1` 指向经审查的发布提交。
+- [x] npm 发布成功，`latest` 指向 0.4.1，description 和 README 均为中文优先。
+- [x] GitHub 默认 README 与 About 简介均为中文，GitHub Release 非 draft、非 prerelease。
 - [ ] npm Trusted Publishing provenance 已生效；若采用手工 fallback，本项保持未勾选且不得声称 provenance。
 
 未勾选项均为待办，不得报告为已完成。
@@ -51,6 +51,18 @@
 - 隔离安装：补齐同一 DSH Host peer 基线后，Host 入口导出 `apply` 和 6 项 `inject`，包元数据为 0.4.1 且 description 为中文，Client Bundle 以 `dsh-tender-workbench` 注册，中文 README 标记存在。
 
 上游 `@deepseek-ai/dsh-client-ui-primitives` 仍缺少其声明的 source map，Vitest 会给出提示；本包生成的 source map 完整，构建与门禁通过。普通 npm peer 自动安装仍可能遇到 DSH peer 组合约束，生产 DSH 插件管理器负责提供一致的 Host peer 集合。
+
+## 发布结果
+
+- `main` CI run `33949885871` 在 Linux Node 22、Linux Node 24 和 Windows Node 24 全部通过。
+- annotated tag `v0.4.1` 指向发布提交 `92c05c69cccc5dd09c2f81592099808cbdb5feab`，未移动或重写既有 `v0.4.0`。
+- tag workflow run `33949988648` 的 frozen install、tag/version、测试、构建、双语文档和 tarball 门禁均通过；npm OIDC 发布随后返回 `E404`，说明该包与工作流的 Trusted Publisher 关联仍未生效，因此工作流没有创建 GitHub Release。
+- 在再次确认 registry 中不存在 0.4.1 后，npm owner `duhu2000` 使用官方网页授权的 CLI 手工发布同一经审查版本；成功后未重复发布。
+- registry 回读确认 `latest` 为 0.4.1，中文 description 和中文 README 已生效，仓库地址为 `duhu2000/dsh-tender-workbench`，维护者仍为 `sunhh` 与 `duhu2000`。
+- registry tarball SHA-1 为 `a8e4b72ad772128f1f97cb0b7599483c2aaef032`，完整性为 `sha512-6LDk65hSIQmPH2IbUyPbXhToVOa94o5VYfbBpw3yLkB3SMSQ2FEx3idS0LCig7eZiarzHSgZ40QU6tmD0RD2+g==`。
+- GitHub About 简介已改为中文，主页链接指向 npm 包；GitHub Release `v0.4.1` 已创建并确认为 latest、非 draft、非 prerelease。
+
+手工 fallback 不能声明 npm Trusted Publishing provenance。下一版本发布前，应在 npm 包设置中将 Trusted Publisher 关联到 `duhu2000/dsh-tender-workbench` 和 `.github/workflows/release.yml`，再使用新版本验证，不能复用 `v0.4.1`。
 
 ## 发布步骤
 
