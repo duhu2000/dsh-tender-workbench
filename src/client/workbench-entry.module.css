@@ -40,11 +40,11 @@
   height: 42px;
   min-width: 0;
   margin: 0 0 8px;
-  gap: 5px;
+  gap: 8px;
   padding: 0 10px;
   justify-content: flex-start;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: 6px;
   white-space: nowrap;
 }
 
@@ -74,8 +74,8 @@
 }
 
 .headerButton[data-workbench-status='running'] {
-  border-color: color-mix(in srgb, var(--color-primary, #4f6ef7) 40%, transparent);
-  color: var(--color-primary, #4f6ef7);
+  border-color: var(--qcc-border);
+  color: var(--qcc-action);
 }
 
 .headerButton[data-workbench-status='failed'],
@@ -93,4 +93,71 @@
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+}
+
+.sidebarButton > svg { color: var(--qcc-action); }
+.sidebarButton:hover { color: var(--qcc-action); background: var(--qcc-selected); }
+.sidebarButton[aria-current="page"] { color: var(--qcc-action); background: var(--qcc-selected); }
+.headerButton { color: var(--qcc-action); border-color: var(--qcc-border); border-radius: 6px; }
+.headerButton:hover, .headerButton:focus-visible { color: var(--qcc-hover); background: var(--qcc-selected); }
+.heroMount { width: 100%; min-width: 0; }
+.hero { text-align: center; margin: 0 auto 16px; }
+.heroRow { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.heroRow h1 { margin: 0; color: var(--qcc-text); font-family: inherit; font-size: 28px; font-weight: 650; line-height: 1.3; }
+.heroLogo { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 12px; color: var(--qcc-action); background: var(--qcc-selected); }
+.hero p { margin: 12px 16px 0; color: var(--qcc-muted); font-size: 14px; line-height: 1.6; }
+.shortcutMount { flex: none; width: 100%; min-width: 0; }
+.shortcuts { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 16px 0 0; }
+.shortcuts button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--qcc-border); border-radius: 6px; color: var(--qcc-muted); background: var(--qcc-surface); font: inherit; font-size: 14px; cursor: pointer; }
+.shortcuts button span { color: var(--qcc-action); font-size: 12px; font-weight: 600; }
+.shortcuts button:hover { border-color: var(--qcc-action); color: var(--qcc-action); background: var(--qcc-selected); }
+.promptEntry { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
+:global([data-composer-card]):has(.promptEntry) { padding-top: 48px; }
+.promptEntry .promptTrigger { position: absolute; top: 10px; left: 16px; pointer-events: auto; }
+.promptEntry .promptNotice { position: absolute; top: 16px; left: 140px; right: 16px; }
+.promptTrigger { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--qcc-border); border-radius: 6px; background: var(--qcc-selected); color: var(--qcc-action); font: inherit; font-size: 12px; cursor: pointer; }
+.promptNotice { font-size: 12px; color: var(--qcc-muted); }
+.backdrop { position: fixed; inset: 0; z-index: 2000; pointer-events: auto; background: rgb(10 24 40 / 42%); display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
+.dialog { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(720px, 100%); max-height: calc(100dvh - 48px); min-height: 0; background: var(--qcc-surface); color: var(--qcc-text); border: 1px solid var(--qcc-border); border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgb(0 0 0 / 22%); font: 14px/1.6 "PingFang SC", "Microsoft YaHei", sans-serif; }
+.dialog * { box-sizing: border-box; }
+.dialogHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--qcc-border); }
+.dialogHeader h2 { margin: 0; font-size: 20px; }
+.dialogHeader p { margin: 8px 0 0; font-size: 12px; color: var(--qcc-muted); }
+.dialog button { min-height: 36px; padding: 8px 12px; border: 1px solid var(--qcc-border); border-radius: 6px; color: var(--qcc-text); background: var(--qcc-surface); font: inherit; cursor: pointer; }
+.dialog button:hover { color: var(--qcc-action); background: var(--qcc-selected); }
+.dialog .closeButton { flex: none; width: 36px; font-size: 22px; padding: 0; }
+.dialogBody { overflow: auto; overscroll-behavior: contain; min-height: 0; padding: 24px; display: grid; gap: 20px; }
+.dialogBody fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.dialogBody legend { font-weight: 600; padding: 0 0 8px; }
+.scopeGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.scopeGrid label { display: flex; align-items: center; gap: 8px; padding: 12px; border: 1px solid var(--qcc-border); border-radius: 8px; cursor: pointer; }
+.scopeGrid label[data-selected="true"] { border-color: var(--qcc-action); color: var(--qcc-action); background: var(--qcc-selected); }
+.scopeGrid input { accent-color: var(--qcc-action); margin: 0; }
+.formField { display: flex; flex-wrap: wrap; gap: 8px; font-weight: 600; }
+.formField span { color: var(--qcc-muted); font-size: 12px; font-weight: 400; }
+.formField :where(input, textarea, select) { width: 100%; min-width: 0; border: 1px solid var(--qcc-border); border-radius: 6px; padding: 10px 12px; color: var(--qcc-text); background: var(--qcc-surface); font: inherit; font-weight: 400; }
+.formField textarea { resize: vertical; }
+.fieldGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.formHint { margin: 0; color: var(--qcc-muted); font-size: 12px; }
+.promptPreview { padding: 12px; border: 1px solid var(--qcc-border); border-radius: 8px; background: var(--qcc-page); }
+.promptPreview summary { color: var(--qcc-action); cursor: pointer; }
+.promptPreview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.dialogFooter { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--qcc-border); padding: 16px 24px; }
+.dialogFooter > :where(span,p) { margin: 0; color: var(--qcc-muted); font-size: 12px; }
+.dialogActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.dialog .action { border-color: var(--qcc-action); color: var(--qcc-on-action); background: var(--qcc-action); }
+.dialog .action:hover { border-color: var(--qcc-hover); color: var(--qcc-on-action); background: var(--qcc-hover); }
+@media (max-width: 600px) {
+  .heroRow h1 { font-size: 22px; }
+  .heroLogo { width: 40px; height: 40px; border-radius: 8px; }
+  .heroLogo svg { width: 24px; height: 24px; }
+  .shortcuts { display: grid; grid-template-columns: 1fr 1fr; }
+  .shortcuts button { justify-content: center; padding: 8px; }
+  .backdrop { padding: 12px; }
+  .dialog { max-height: calc(100dvh - 24px); }
+  .dialogHeader, .dialogBody, .dialogFooter { padding: 16px; }
+  .fieldGrid { grid-template-columns: 1fr; }
+  .scopeGrid { gap: 4px; }
+  .scopeGrid label { padding: 8px 4px; font-size: 12px; gap: 4px; }
+  .formField :where(input,textarea,select) { font-size: 16px; }
 }

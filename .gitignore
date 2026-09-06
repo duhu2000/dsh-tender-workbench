@@ -29,6 +29,8 @@ npm-debug.log*
 # Local development instructions and design references
 /AGENTS.md
 /artifacts/
+/_scratch/
 /docs/*
 !/docs/RELEASE-*.md
+!/docs/QCC-BLUE-UI-ACCEPTANCE.md
 /references/

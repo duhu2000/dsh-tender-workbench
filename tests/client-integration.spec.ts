@@ -115,13 +115,14 @@ describe('S1a client integration', () => {
       single: true,
       icon: expect.any(Function),
     }))
-    expect(test.ctx.slots.inject).toHaveBeenCalledWith('conversation.hero.brand.mark', expect.any(Function))
+    expect(test.ctx.slots.inject).not.toHaveBeenCalledWith('conversation.hero.brand.mark', expect.any(Function))
+    expect(test.ctx.slots.inject).toHaveBeenCalledWith('conversation.input.overlay', expect.any(Function))
     expect(test.ctx.slots.inject).toHaveBeenCalledWith('conversation.input.dock', expect.any(Function))
     expect(test.ctx.slots.inject).toHaveBeenCalledWith('sidebar.footer.action', expect.any(Function))
     expect(test.ctx.slots.inject).toHaveBeenCalledWith('conversation.session.header.actions', expect.any(Function))
     expect(test.entries).toHaveLength(4)
     expect(test.entries).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'conversation.hero.brand.mark', priority: -10 }),
+      expect.objectContaining({ name: 'conversation.input.overlay', id: 'dsh-tender-workbench:prompt' }),
       expect.objectContaining({ name: 'conversation.input.dock', id: 'dsh-tender-workbench:hero-title' }),
       expect.objectContaining({ name: 'sidebar.footer.action', id: 'dsh-tender-workbench:sidebar' }),
       expect.objectContaining({ name: 'conversation.session.header.actions', id: 'dsh-tender-workbench:reopen' }),

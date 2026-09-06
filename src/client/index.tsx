@@ -8,13 +8,15 @@ import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
 import type { TenderClientContext } from './client-context.ts'
 import type { TenderTranslate } from './fields/field-props.ts'
 import {
-  TenderHeroBrandMark,
   TenderHeroTitleBridge,
   TenderSessionHeaderEntry,
   TenderSidebarEntry,
   type TenderHeaderEntryInjected,
   type TenderSidebarEntryInjected,
+  type TenderHeroInjected,
 } from './TenderEntry.tsx'
+import { TenderPromptEntry, type TenderPromptInjected } from './TenderPrompt.tsx'
+import { initialTenderPrompt, type TenderPromptMemory } from './tender-prompt.ts'
 import {
   createTenderWorkbenchRevealController,
   openTenderWorkbench,
@@ -102,6 +104,8 @@ export function apply(ctx: TenderClientContext): void {
   const reveal = createTenderWorkbenchRevealController()
   const navigation = createTenderWorkbenchNavigationController()
   const projectionPort = createTenderProjectionPort(sessions)
+  // Scoped to this Client lifetime, not shared between plugin sessions or clients.
+  const promptMemory = new Map<SessionId, TenderPromptMemory>()
   let active = true
   const sendIntent: TenderWorkbenchTabProps['sendIntent'] = (sessionId, intent) => (
     sendSessionTenderWorkbenchIntent(sessions, connection, sessionId, intent)
@@ -152,17 +156,32 @@ export function apply(ctx: TenderClientContext): void {
     size => <IconGoalOutline16 size={size} />,
   ), 'dsh-tender-workbench: Better Sidebar tab')
 
-  ctx.slots.inject('conversation.hero.brand.mark', () => ctx.slots.register({
-    name: 'conversation.hero.brand.mark',
-    priority: -10,
-  }, TenderHeroBrandMark))
-
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock',
     id: 'dsh-tender-workbench:hero-title',
     order: 120,
     locale: NS,
+    inject: (sessionId): TenderHeroInjected => ({ openPhase: phase => openSession(sessionId, phase) }),
   }, TenderHeroTitleBridge))
+
+  ctx.slots.inject('conversation.input.overlay', () => ctx.slots.register({
+    name: 'conversation.input.overlay',
+    id: 'dsh-tender-workbench:prompt',
+    order: 120,
+    inject: (sessionId): TenderPromptInjected => {
+      let memory = promptMemory.get(sessionId)
+      if (!memory) { memory = { draft: initialTenderPrompt() }; promptMemory.set(sessionId, memory) }
+      const input = () => {
+        const scoped = sessions.scope(sessionId)
+        if (!scoped) throw new Error('Tender Session unavailable')
+        return ctx.conversation.input.for(scoped)
+      }
+      return { memory, draftPort: {
+        read: () => input().state.getSnapshot().draft,
+        write: value => { input().setDraft(value) },
+      } }
+    },
+  }, TenderPromptEntry))
 
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
     name: 'sidebar.footer.action',
@@ -182,5 +201,5 @@ export function apply(ctx: TenderClientContext): void {
     }),
   }, TenderSessionHeaderEntry))
 
-  ctx.effect(() => () => { active = false }, 'dsh-tender-workbench: Session entry lifetime')
+  ctx.effect(() => () => { active = false; promptMemory.clear() }, 'dsh-tender-workbench: Session entry lifetime')
 }

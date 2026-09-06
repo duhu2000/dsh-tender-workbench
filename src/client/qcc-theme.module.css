@@ -1,0 +1,23 @@
+/* DSH-UX-001 v1.1.0: business-only tokens; inherit the host color-scheme. */
+.scope {
+  --qcc-brand: light-dark(#128bed, #55adff);
+  --qcc-action: light-dark(#0875d1, #82c3ff);
+  --qcc-hover: light-dark(#0666b7, #acd7ff);
+  --qcc-on-action: light-dark(#fff, #101820);
+  --qcc-selected: light-dark(#e6f4ff, #173449);
+  --qcc-table-head: light-dark(#f2f9fc, #172c3b);
+  --qcc-page: light-dark(#f6f8fa, #101820);
+  --qcc-surface: light-dark(#fff, #18232e);
+  --qcc-text: light-dark(#202c3b, #e7eef6);
+  --qcc-muted: light-dark(#626f80, #a2b1c2);
+  --qcc-border: light-dark(#dce4ec, #344657);
+  --qcc-success: light-dark(#12805c, #78d8b3);
+  --qcc-success-bg: light-dark(#edf8f2, #193a30);
+  --qcc-review: light-dark(#946000, #f3c66c);
+  --qcc-review-bg: light-dark(#fff7e5, #3d321d);
+  color: var(--qcc-text);
+}
+.scope :where(button, input, textarea, select, a, summary):focus-visible {
+  outline: 2px solid var(--qcc-action);
+  outline-offset: 3px;
+}

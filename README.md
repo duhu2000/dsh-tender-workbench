@@ -4,7 +4,7 @@
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
 >
-> 当前稳定版本：**0.4.5**（正式版本）
+> 当前稳定版本：**0.5.0**（正式版本）
 
 [![CI](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-tender-workbench)](https://www.npmjs.com/package/dsh-tender-workbench)
@@ -49,10 +49,10 @@ dsh web --no-open
 
 安装或移除插件后，请完整重启 Web Profile。插件通过 `dsh.bundle.patch` 启用 `cordis.patch.yml`，并注册 `dsh-tender-workbench` Loader。
 
-安装指定的 `0.4.5` 版本：
+安装指定的 `0.5.0` 版本：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.4.5
+dsh plugin --profile web add dsh-tender-workbench@0.5.0
 ```
 
 移除插件：
@@ -98,11 +98,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 从已有版本升级：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.4.5
+dsh plugin --profile web add dsh-tender-workbench@0.5.0
 dsh web --no-open
 ```
 
-`0.4.5` 在 `0.4.4` 基础上补齐旧会话兼容保护：普通「新会话」不再复用旧版本留在工作区中的业务空白会话，恢复「探索未至之境」并收起业务侧栏。旧会话、历史和用户草稿保持不变；并发创建合并处理，插件卸载时撤销保护。公共导出、业务工作流和 Artifact Schema 不变。如部署环境出现特定回归，可重新安装 `dsh-tender-workbench@0.4.4` 并重启 Profile；旧会话误复用问题也会随回滚恢复。已发布的 npm 版本和 Git 标签保持不可变，后续修复使用新的补丁版本。
+本次 0.5.0 对齐企查查蓝交互规范：菜单保留「招投标」与原有图标，首页改为「招投标智能体」，新增下方快捷导航和只回填、不自动发送的提示词向导；支持浅深色与窄屏。已有输入提供追加、替换或取消，关闭保留本会话向导草稿。继续保留 0.4.5 的普通新会话隔离保护；公共业务工作流、历史数据和 Artifact Schema 不变。如遇 UI 回归，可安装 `dsh-tender-workbench@0.4.5` 并重启 Profile。npm 版本与公开 Git 标签保持不可变。
 
 ## 本地开发
 
@@ -117,7 +117,7 @@ corepack pnpm@11.7.0 run check
 
 `check` 会执行类型检查、完整 Vitest 测试、生产构建、README/发布状态校验以及 npm tarball 白名单预检。配置 npm Trusted Publishing 后，[发布工作流](.github/workflows/release.yml)可使用 OIDC 和 provenance；手工发布不得声称 provenance。
 
-省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.4.5 发布清单](docs/RELEASE-0.4.5.md)。
+省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.0 发布清单](docs/RELEASE-0.5.0.md)。
 
 ## 当前范围
 

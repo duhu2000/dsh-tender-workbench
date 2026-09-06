@@ -4,7 +4,7 @@
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current stable version: **0.4.5** (stable release).
+Current stable version: **0.5.0** (stable release).
 
 ## What it does
 
@@ -67,12 +67,12 @@ dsh plugin --profile web add dsh-tender-workbench
 dsh web --no-open
 ```
 
-To install the exact 0.4.5 release:
+To install the exact 0.5.0 release:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add dsh-tender-workbench@0.4.5
+dsh plugin --profile web add dsh-tender-workbench@0.5.0
 ```
 
 To install from an independent checkout, install the required Provider plugins first, then run from this repository:
@@ -91,7 +91,7 @@ To install a packed build:
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add ./dsh-tender-workbench-0.4.5.tgz
+dsh plugin --profile web add ./dsh-tender-workbench-0.5.0.tgz
 dsh web --no-open
 ```
 
@@ -108,11 +108,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 Upgrade an existing installation by installing the stable version and fully restarting the Web profile:
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.4.5
+dsh plugin --profile web add dsh-tender-workbench@0.5.0
 dsh web --no-open
 ```
 
-Version 0.4.5 adds compatibility for legacy business blank sessions still attached to workspaces. Ordinary New Session now selects an ordinary blank session or creates one, restoring the native DSH page with the business sidebar closed. History, registrations and user drafts remain intact. Concurrent fallback creation is coalesced and the guard is reversible on plugin disposal. Public exports, business workflow and Artifact schema are unchanged. To roll back, reinstall `dsh-tender-workbench@0.4.4` and restart the profile; the legacy blank-session reuse issue will return. Published npm versions and Git tags are immutable.
+Version 0.5.0 introduces scoped QCC-blue branding, light/dark business surfaces, a simplified hero, below-composer navigation, and an editable prompt wizard. Filling never sends automatically. Manual input requires an append/replace/cancel choice. The 0.4.5 ordinary-session isolation, workflow and Artifact schemas remain unchanged. Wizard drafts live only in the current Client lifetime. To roll back this UI upgrade, reinstall `dsh-tender-workbench@0.4.5` and restart the profile. Published versions and tags remain immutable.
 
 ## Using the workbench
 
@@ -137,7 +137,7 @@ The build emits the Host loader at `lib/index.js`, the Client bundle at `lib/cli
 
 The province, city, and district source snapshot is maintained in [resources/area.ts](resources/area.ts).
 
-See [CHANGELOG.md](CHANGELOG.md) and [the 0.4.5 release checklist](docs/RELEASE-0.4.5.md) for the stable-release scope and operational checks.
+See [CHANGELOG.md](CHANGELOG.md) and [the 0.5.0 release checklist](docs/RELEASE-0.5.0.md) for the stable-release scope and operational checks.
 
 ## Current scope
 

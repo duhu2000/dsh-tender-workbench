@@ -101,7 +101,7 @@ describe('TenderWorkbench S1a shell', () => {
 
   it('renders the S1a visual shell hierarchy without fabricating later-stage content', () => {
     const { container } = renderWorkbench()
-    expect(container.querySelector('[data-visual-shell="s5-refined"]')).toBeTruthy()
+    expect(container.querySelector('[data-visual-shell="qcc-blue-v1.1"]')).toBeTruthy()
     expect(screen.getByText(zh['workbench.subtitle'])).toBeTruthy()
     expect(screen.getByText(zh['workbench.query.eyebrow'])).toBeTruthy()
     expect(screen.getByRole('form', { name: zh['workbench.query.formTitle'] })).toBeTruthy()

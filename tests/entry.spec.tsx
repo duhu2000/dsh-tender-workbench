@@ -4,11 +4,9 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createEmptyTenderWorkflowProjection } from '../src/contracts/workflow.ts'
 import {
-  TenderHeroBrandMark,
   TenderHeroTitleBridge,
   TenderSidebarEntry,
   TenderSessionHeaderEntry,
-  type TenderHeroBrandMarkProps,
   type TenderHeroTitleBridgeProps,
   type TenderHeaderEntryProps,
   type TenderSidebarEntryProps,
@@ -46,8 +44,8 @@ describe('S1a tender entries', () => {
     const mount = sidebar.querySelector<HTMLElement>('[data-dsh-tender-top-mount="true"]')
 
     expect(mount).toBeTruthy()
-    expect(sidebar.firstElementChild).toBe(mount)
-    expect(mount?.nextElementSibling).toBe(dataCleaning)
+    expect(sidebar.firstElementChild).toBe(dataCleaning)
+    expect(mount?.nextElementSibling).toBe(workspaces)
     expect(screen.getByText(zh['sidebar.label'])).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['sidebar.aria'] }))
     expect(startTenderSession).toHaveBeenCalledTimes(1)
@@ -76,16 +74,16 @@ describe('S1a tender entries', () => {
     } as unknown as Omit<TenderSidebarEntryProps, 'wide'>
     render(<TenderSidebarEntry {...props} wide />)
     const mount = sidebar.querySelector<HTMLElement>('[data-dsh-tender-top-mount="true"]')
-    expect(sidebar.firstElementChild).toBe(mount)
-    expect(mount?.nextElementSibling).toBe(mcp)
+    expect(sidebar.firstElementChild).toBe(mcp)
+    expect(mount?.nextElementSibling).toBe(workspaces)
 
     const dataCleaning = document.createElement('div')
     dataCleaning.dataset.dataCleaningTopMount = 'true'
     sidebar.insertBefore(dataCleaning, mcp)
 
     await waitFor(() => {
-      expect(sidebar.firstElementChild).toBe(mount)
-      expect(mount?.nextElementSibling).toBe(dataCleaning)
+      expect(sidebar.firstElementChild).toBe(dataCleaning)
+      expect(mount?.nextElementSibling).toBe(workspaces)
       expect(dataCleaning.nextElementSibling).toBe(mcp)
       expect(sidebar.querySelectorAll('[data-dsh-tender-top-mount="true"]')).toHaveLength(1)
     })
@@ -120,62 +118,47 @@ describe('S1a tender entries', () => {
     })
   })
 
-  it('uses the tender mark and headline only for Sessions created by the tender entry', async () => {
-    const useSessions = (selector: (value: { current?: string }) => unknown) => selector({ current: 'ordinary-session' })
-    const ordinaryProps = {
-      size: 34,
-      className: 'brand',
-      useSessions,
-      useWorkspaces: vi.fn(),
-    } as unknown as TenderHeroBrandMarkProps
-    const ordinary = render(<TenderHeroBrandMark {...ordinaryProps} />)
-    const nativeMark = ordinary.container.innerHTML
-    ordinary.unmount()
-
-    const tenderUseSessions = (selector: (value: { current?: string }) => unknown) => selector({
-      current: `${TENDER_ENTRY_SESSION_ID_PREFIX}12345678-1234-4234-8234-123456789abc`,
-    })
-    const tenderProps = {
-      ...ordinaryProps,
-      useSessions: tenderUseSessions,
-    } as unknown as TenderHeroBrandMarkProps
-    const tender = render(<TenderHeroBrandMark {...tenderProps} />)
-    expect(tender.container.innerHTML).not.toBe(nativeMark)
-    tender.unmount()
-
+  it('brands only the owned session, preserves native chrome and restores it on exit', () => {
     const hero = document.createElement('div')
     hero.dataset.phase = 'hero'
-    const headline = document.createElement('span')
-    headline.textContent = '探索未至之境'
-    const overlay = document.createElement('div')
-    hero.append(headline, overlay)
+    hero.innerHTML = '<div class="headlineRow"><span class="fishHitbox">native fish</span><span class="headlineText">探索未至之境</span><span>预览版</span></div><div data-composer-seat><div data-testid="dock"></div><div data-composer-card>native input</div></div>'
     document.body.append(hero)
-    const bridgeProps = {
+    const row = hero.querySelector<HTMLElement>('.headlineRow')!
+    const dock = hero.querySelector<HTMLElement>('[data-testid="dock"]')!
+    const native = row.innerHTML
+    const props = {
       sessionId: `${TENDER_ENTRY_SESSION_ID_PREFIX}12345678-1234-4234-8234-123456789abc`,
-      t,
+      t, openPhase: vi.fn(() => true),
       useSession: (selector: (value: { composerPhase: string }) => unknown) => selector({ composerPhase: 'blank' }),
-      useProjection: vi.fn(),
-      useSessions: vi.fn(),
-      useWorkspaces: vi.fn(),
     } as unknown as TenderHeroTitleBridgeProps
-    const bridge = render(<TenderHeroTitleBridge {...bridgeProps} />, { container: overlay })
-    expect(headline.textContent).toBe('招投标')
-    headline.textContent = '访前尽调智能体'
-    await waitFor(() => { expect(headline.textContent).toBe('招投标') })
-    bridge.unmount()
-    // 单一会话所有权 + 有界同步后，桥不再把其它插件随后写入的标题重新捕获为「要恢复的原始值」；
-    // 卸载时恢复的是挂载时刻的原始标题，而不是访前插件在观察期内的短暂写入。
-    expect(headline.textContent).toBe('探索未至之境')
+    const view = render(<TenderHeroTitleBridge {...props} />, { container: dock })
+    expect(screen.getByRole('heading', { name: '招投标智能体' })).toBeTruthy()
+    expect(row.style.display).toBe('none')
+    expect(row.innerHTML).toBe(native)
+    const card = hero.querySelector('[data-composer-card]')!
+    expect(card.nextElementSibling?.getAttribute('data-dsh-tender-shortcuts')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: /规则筛选/ }))
+    expect(props.openPhase).toHaveBeenCalledWith('screening')
+    view.rerender(<TenderHeroTitleBridge {...props} sessionId="ordinary-session" />)
+    expect(row.style.display).toBe('')
+    expect(row.innerHTML).toBe(native)
+    expect(hero.querySelector('[data-dsh-tender-hero]')).toBeNull()
+    expect(hero.querySelector('[data-dsh-tender-shortcuts]')).toBeNull()
+    expect(screen.queryByRole('heading', { name: '招投标智能体' })).toBeNull()
+    view.unmount()
+  })
 
-    headline.textContent = '探索未至之境'
-    const ordinaryOverlay = document.createElement('div')
-    hero.append(ordinaryOverlay)
-    const ordinaryBridge = render(<TenderHeroTitleBridge
-      {...bridgeProps}
-      sessionId="ordinary-session"
-    />, { container: ordinaryOverlay })
-    expect(headline.textContent).toBe('探索未至之境')
-    ordinaryBridge.unmount()
+  it('leaves an unrecognized host hero intact', () => {
+    const hero = document.createElement('div')
+    hero.dataset.phase = 'hero'
+    hero.innerHTML = '<span>Other plugin</span><div></div>'
+    document.body.append(hero)
+    const props = { sessionId: `${TENDER_ENTRY_SESSION_ID_PREFIX}12345678-1234-4234-8234-123456789abc`,
+      t, openPhase: vi.fn(), useSession: () => true } as unknown as TenderHeroTitleBridgeProps
+    const view = render(<TenderHeroTitleBridge {...props} />, { container: hero.lastElementChild as HTMLElement })
+    expect(hero.firstElementChild?.textContent).toBe('Other plugin')
+    expect(hero.querySelector('[data-dsh-tender-hero]')).toBeNull()
+    view.unmount()
   })
 
   it('keeps the Header reopen status usable when only an optional later node failed', () => {
@@ -191,6 +174,7 @@ describe('S1a tender entries', () => {
       },
     }
     const props = {
+      sessionId: TENDER_ENTRY_SESSION_ID_PREFIX + '12345678-1234-4234-8234-123456789abc',
       openWorkbench: vi.fn(() => true),
       t,
       useProjection: vi.fn(() => projection),

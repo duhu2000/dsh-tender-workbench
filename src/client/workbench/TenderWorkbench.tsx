@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { IconGoalOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import theme from '../qcc-theme.module.css'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
 import type { TenderWorkbenchIntentV2 } from '../../contracts/intents.ts'
@@ -120,7 +122,7 @@ const defaultReportDownloader: ReportArtifactDownloader = (sessionId, artifact) 
 
 type WorkbenchIconName = WorkbenchPhaseIcon | 'briefcase' | 'check' | 'clock' | 'warning'
 
-function WorkbenchIcon({ name }: { readonly name: WorkbenchIconName }) {
+export function WorkbenchIcon({ name }: { readonly name: WorkbenchIconName }) {
   const paths: Record<WorkbenchIconName, ReactNode> = {
     search: <><circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 4 4" /></>,
     screening: <><path d="M4 5h16l-6.5 7.2V18l-3 1.5v-7.3z" /><path d="M7 9h10" /></>,
@@ -374,20 +376,21 @@ export function TenderWorkbenchView({
 
   return (
     <section
-      className={css.shell}
+      className={`${theme.scope} ${css.shell}`}
       aria-label={t('workbench.title')}
       data-workbench-status={status}
-      data-visual-shell="s5-refined"
+      data-visual-shell="qcc-blue-v1.1"
     >
       <header className={css.header}>
         <div className={css.brandBlock}>
-          <span className={css.brandIcon} aria-hidden="true"><WorkbenchIcon name="briefcase" /></span>
+          <span className={css.brandIcon} aria-hidden="true"><IconGoalOutline16 size={22} /></span>
           <div className={css.brandCopy}>
             <div className={css.titleRow}>
               <h1 className={css.title}>{t('workbench.title')}</h1>
               <span className={css.liveDot} data-status={status} aria-hidden="true" />
             </div>
             <p className={css.subtitle}>{t('workbench.subtitle')}</p>
+            <p className={css.subtitle}>会话 · {sessionId.slice(-8)}</p>
           </div>
         </div>
         <div className={css.headerMeta}>
