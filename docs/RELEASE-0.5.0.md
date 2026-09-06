@@ -1,7 +1,7 @@
 # dsh-tender-workbench 0.5.0 发布清单
 
 - Version: **0.5.0**
-- Status: **release candidate**
+- Status: **published**
 - 日期：2026-09-06
 - 标签：`v0.5.0`
 - npm：`dsh-tender-workbench@0.5.0`，目标 dist-tag 为 `latest`
@@ -23,3 +23,11 @@
 ## 回退
 
 安装 dsh-tender-workbench@0.4.5 并重启 Profile；保留历史任务与制品，无数据迁移。不得覆盖 npm 已发布版本或移动公开 tag。
+
+## 发布结果
+
+- 发布提交：`0bab6965906b9d06a87bf30cb38f71734de422b9`；annotated tag `v0.5.0` 指向该提交。
+- [CI 34042897899](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34042897899)：Linux Node 22/24、Windows Node 24 全部通过。
+- [Release 34043022011](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34043022011)：完整门禁、Publish to npm with provenance、Create GitHub Release 全部通过。
+- npm Registry 回读：`latest=0.5.0`，`gitHead=0bab6965906b9d06a87bf30cb38f71734de422b9`，发布者 `GitHub Actions <npm-oidc-no-reply@github.com>`，包含 SLSA v1 provenance。
+- [GitHub Release v0.5.0](https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.5.0) 为非 draft、非 prerelease。仅发布招投标，不更新用户本机安装或其它仓库。
