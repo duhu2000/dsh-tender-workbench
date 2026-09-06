@@ -1,7 +1,7 @@
 # dsh-tender-workbench 0.5.1 发布清单
 
 - Version: **0.5.1**
-- Status: **release candidate**
+- Status: **published**
 - 日期：2026-09-06
 - 标签：`v0.5.1`
 - npm：`dsh-tender-workbench@0.5.1`，目标 dist-tag 为 `latest`
@@ -21,3 +21,11 @@
 本次不重装或重启用户本机 DSH，不调用真实 QCC。浏览器测试是实际组件与隔离宿主 DOM，不等同于升级后的真实宿主验收。升级重启后需复测菜单初始页和下方功能按钮。
 
 必要时回退 dsh-tender-workbench@0.5.0 并重启 Profile；菜单自动展开行为会恢复。无需迁移历史数据，不覆盖已发布 npm 版本或移动公开标签。
+
+## 发布结果（北京时间 2026-09-07 核验）
+
+- 发布提交：`b6a3f114609d29888ada5edb88bfffc5d0c5b57a`；annotated tag `v0.5.1` 指向该提交。
+- [CI 34044032023](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34044032023)：Linux Node 22/24、Windows Node 24 全部通过。
+- [Release 34044149570](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34044149570)：完整门禁、npm provenance 发布与 GitHub Release 全部通过。
+- npm Registry 回读：`latest=0.5.1`、`gitHead=b6a3f114609d29888ada5edb88bfffc5d0c5b57a`；发布者为 `GitHub Actions <npm-oidc-no-reply@github.com>`，含 SLSA v1 provenance。
+- [GitHub Release v0.5.1](https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.5.1) 为正式版本，非 draft、非 prerelease。本次未修改用户本机已安装插件或重启 DSH。
