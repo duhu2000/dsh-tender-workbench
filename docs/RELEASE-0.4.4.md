@@ -2,8 +2,8 @@
 
 - Version: **0.4.4**
 - 发布日期：2026-09-06
-- Status: **release candidate**
-- 发布提交：（发布工作流完成后回填 npm gitHead）
+- Status: **published**
+- 发布提交：`d9780946c24986e11ec60cc6ab9cf683f6640693`
 - Git 标签：`v0.4.4`
 - npm 目标：`dsh-tender-workbench@0.4.4`（`latest`）
 
@@ -29,10 +29,10 @@
 - [x] 中文/英文 README 与 0.4.4 发布状态检查通过。
 - [x] npm tarball 只包含白名单公开文件。
 - [x] tag 模式检查确认 `v0.4.4` 与包版本一致。
-- [ ] `main` CI 在 Linux Node 22/24 和 Windows Node 24 全部通过。
-- [ ] npm Trusted Publishing OIDC 自动发布成功，`latest` 指向 0.4.4。
-- [ ] npm provenance 可验证。
-- [ ] GitHub Release 为 latest、非 draft、非 prerelease。
+- [x] `main` CI 在 Linux Node 22/24 和 Windows Node 24 全部通过。
+- [x] npm Trusted Publishing OIDC 自动发布成功，`latest` 指向 0.4.4。
+- [x] npm provenance 可验证。
+- [x] GitHub Release 为 latest、非 draft、非 prerelease。
 
 ## 发布步骤
 
@@ -44,7 +44,11 @@
 
 ## 发布结果
 
-（发布工作流完成后回填。）
+- annotated tag `v0.4.4` 指向发布提交 `d9780946c24986e11ec60cc6ab9cf683f6640693`；Release workflow run `34013433612` 的 frozen install、标签检查、完整门禁、npm 发布和 GitHub Release 创建全部成功。
+- `main` CI run `34013431159` 在 Linux Node 22/24 与 Windows Node 24 全部通过。
+- npm 发布通过 GitHub Actions OIDC Trusted Publishing 完成并签署 provenance，未使用长期 npm Token。
+- registry 回读确认 `latest` 为 0.4.4，仓库为 `duhu2000/dsh-tender-workbench`。
+- GitHub Release：<https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.4.4>。
 
 ## 安全与回滚
 
