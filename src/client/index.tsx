@@ -125,7 +125,8 @@ export function apply(ctx: TenderClientContext): void {
       const sessionId = await createTenderEntrySession(sessions, ctx.workspaces)
       if (!active) return
       sessions.open(sessionId)
-      if (openSession(sessionId)) reveal.request(sessionId)
+      // The menu enters the landing page only. Create/reveal the workbench
+      // on an explicit shortcut (or header recovery) action, never on entry.
     } catch (error: unknown) {
       if (error instanceof TenderSessionEntryError) {
         const key = error.code === 'workspace-unavailable'

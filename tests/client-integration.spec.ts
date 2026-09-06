@@ -132,7 +132,7 @@ describe('S1a client integration', () => {
     ]))
   })
 
-  it('creates a distinct namespaced Session on every launcher action and targets its workbench', async () => {
+  it('enters distinct landing Sessions without opening the workbench; shortcuts explicitly open it', async () => {
     const test = harness()
     apply(test.ctx)
     const header = entryOf<{ inject(sessionId: string): { openWorkbench(): boolean } }>(
@@ -152,15 +152,22 @@ describe('S1a client integration', () => {
     expect(first?.cwd).toBe('C:\\one')
     expect(first?.sessionId).toMatch(new RegExp(`^${TENDER_ENTRY_SESSION_ID_PREFIX}`))
     expect(test.openSession).toHaveBeenLastCalledWith(first?.sessionId)
-    expect(test.openTab).toHaveBeenNthCalledWith(2, { type: TENDER_WORKBENCH_TAB_ID }, {
-      sessionId: first?.sessionId, cwd: 'C:\\one',
-    })
+    expect(test.openTab).toHaveBeenCalledTimes(1)
 
     await sidebar.startTenderSession()
     const second = test.createSession.mock.calls[1]?.[0]
     expect(second?.sessionId).toMatch(new RegExp(`^${TENDER_ENTRY_SESSION_ID_PREFIX}`))
     expect(second?.sessionId).not.toBe(first?.sessionId)
     expect(test.createSession).toHaveBeenCalledTimes(2)
+    expect(test.openTab).toHaveBeenCalledTimes(1)
+
+    const shortcut = entryOf<{ inject(sessionId: string): { openPhase(phase: 'screening'): boolean } }>(
+      test.entries, 'conversation.input.dock',
+    ).inject(second!.sessionId)
+    expect(shortcut.openPhase('screening')).toBe(true)
+    expect(test.openTab).toHaveBeenNthCalledWith(2, { type: TENDER_WORKBENCH_TAB_ID }, {
+      sessionId: second!.sessionId, cwd: second!.cwd,
+    })
   })
 
   it('releases the Tab and all Slot entries with the Client Context', () => {

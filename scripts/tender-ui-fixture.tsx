@@ -22,7 +22,7 @@ function App() {
     <div className="fixtureToolbar"><button id="ordinary" onClick={() => { setOwned(false); setBench(false) }}>普通新会话</button><span>隔离 UI 验证 · 不连接 DSH / MCP</span></div>
     <div className="fixtureLayout">
       <aside className="fixtureSidebar"><button>新会话</button><div data-slot="sidebar.workspaces">工作区</div>
-        <TenderSidebarEntry {...{ wide: true, t, useSessions: () => sessionId, startTenderSession: async () => { setOwned(true); setBench(true) } } as never} />
+        <TenderSidebarEntry {...{ wide: true, t, useSessions: () => sessionId, startTenderSession: async () => { setOwned(true); setBench(false) } } as never} />
       </aside>
       <main><div data-phase="hero" data-composer-seat>
         <div className="nativeHeadline"><span className="fishHitbox">◇</span><span className="headlineText">探索未至之境</span><span className="preview">预览版</span></div>

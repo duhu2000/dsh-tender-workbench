@@ -4,6 +4,12 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-06
+
+### Fixed
+
+- 「招投标」菜单仅进入独立会话初始页，不再自动创建或展开右侧业务工作台；点击输入框下方功能按钮时才打开对应页面，会话头的手动恢复入口保留。
+
 ## [0.5.0] - 2026-09-06
 
 ### Added

@@ -38,6 +38,12 @@ try {
       ${css}</style></head><body><div id="root"></div></body></html>`)
     await page.addScriptTag({ content: js })
     await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor()
+    if (width > 700) {
+      await page.locator('#ordinary').click()
+      await page.locator('[data-dsh-part="top-entry"] button').click()
+      await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor()
+    }
+    assert.equal(await page.locator('[data-visual-shell]').count(), 0, 'entry leaves workbench closed')
     const logo = await page.locator('[data-dsh-tender-hero] svg').boundingBox()
     const heading = await page.getByRole('heading', { name: '招投标智能体', exact: true }).boundingBox()
     assert.ok(Math.abs(logo.y+logo.height/2-heading.y-heading.height/2)<2, 'icon/title same row')
@@ -69,6 +75,12 @@ try {
     const shell = await page.locator('[data-visual-shell]').evaluate(el => ({width:el.clientWidth, scroll:el.scrollWidth, background:getComputedStyle(el).backgroundColor}))
     assert.ok(shell.scroll<=shell.width+1, 'no workbench horizontal overflow')
     assert.equal(shell.background, scheme==='light' ? 'rgb(255, 255, 255)' : 'rgb(24, 35, 46)')
+    if (width > 700) {
+      await page.locator('[data-dsh-part="top-entry"] button').click()
+      await page.locator('[data-visual-shell]').waitFor({ state: 'detached' })
+      await page.getByRole('button', { name: /项目查询/ }).click()
+      await page.locator('[data-visual-shell]').waitFor()
+    }
     await page.locator('#closeBench').click()
     await page.getByRole('button', { name: '提示词生成', exact: true }).click()
     await page.keyboard.press('Escape')
