@@ -11,7 +11,7 @@ import {
   createTenderEntrySession,
   createTenderEntrySessionId,
   isTenderEntrySessionId,
-  resolveTenderEntryWorkspace,
+  resolveTenderEntryWorkspacePath,
 } from '../src/client/tender-session-entry.ts'
 
 const firstWorkspaceId = 'workspace-1' as WorkspaceId
@@ -63,16 +63,16 @@ describe('dedicated tender Session entry', () => {
     expect(isTenderEntrySessionId(sessionId)).toBe(true)
     expect(isTenderEntrySessionId(`${TENDER_ENTRY_SESSION_ID_PREFIX}not-a-uuid`)).toBe(false)
     expect(test.create).toHaveBeenCalledWith({
-      workspaceId: firstWorkspaceId,
+      cwd: 'C:\\one',
       sessionId: createTenderEntrySessionId(uuid),
     })
     expect(test.workspaces.connectWorkspace).not.toHaveBeenCalled()
     expect(test.workspaces.startSession).not.toHaveBeenCalled()
   })
 
-  it('falls back to the recent workspace when no Session is selected', () => {
+  it('falls back to the recent workspace path when no Session is selected', () => {
     const test = runtime(null)
-    expect(resolveTenderEntryWorkspace(test.sessions, test.workspaces)).toBe(recentWorkspaceId)
+    expect(resolveTenderEntryWorkspacePath(test.sessions, test.workspaces)).toBe('C:\\two')
   })
 
   it('rejects a runtime without distinct Session creation instead of reusing a blank Session', async () => {

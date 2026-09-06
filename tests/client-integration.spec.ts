@@ -40,8 +40,7 @@ function harness() {
   const connection = {
     api: { skills: { list: vi.fn(async () => ({ result: { ok: true, value: { skills: [] } } })) } },
   }
-  const createSession = vi.fn(async ({ sessionId, workspaceId }: { sessionId: string; workspaceId: string }) => {
-    const cwd = workspaceId === 'workspace-1' ? 'C:\\one' : 'C:\\two'
+  const createSession = vi.fn(async ({ sessionId, cwd }: { sessionId: string; cwd: string }) => {
     sessionState.ids.unshift(sessionId)
     sessionState.byId[sessionId] = { id: sessionId, cwd }
     return sessionId
@@ -149,7 +148,7 @@ describe('S1a client integration', () => {
 
     await sidebar.startTenderSession()
     const first = test.createSession.mock.calls[0]?.[0]
-    expect(first?.workspaceId).toBe('workspace-1')
+    expect(first?.cwd).toBe('C:\\one')
     expect(first?.sessionId).toMatch(new RegExp(`^${TENDER_ENTRY_SESSION_ID_PREFIX}`))
     expect(test.openSession).toHaveBeenLastCalledWith(first?.sessionId)
     expect(test.openTab).toHaveBeenNthCalledWith(2, { type: TENDER_WORKBENCH_TAB_ID }, {

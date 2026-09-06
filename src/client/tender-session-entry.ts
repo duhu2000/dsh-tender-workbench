@@ -2,7 +2,6 @@ import type {
   ISessions,
   IWorkspaces,
   SessionId,
-  WorkspaceId,
 } from '@deepseek-ai/dsh-client-runtime/client'
 
 export const TENDER_ENTRY_SESSION_ID_PREFIX = 'session-dsh-tender-workbench-'
@@ -20,7 +19,7 @@ export class TenderSessionEntryError extends Error {
 }
 
 interface SessionCreateCapability {
-  create(options: { workspaceId: WorkspaceId; sessionId: SessionId }): Promise<SessionId>
+  create(options: { cwd: string; sessionId: SessionId }): Promise<SessionId>
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
@@ -42,28 +41,38 @@ export function createTenderEntrySessionId(uuid: string): SessionId {
   return `${TENDER_ENTRY_SESSION_ID_PREFIX}${uuid}` as SessionId
 }
 
-export function resolveTenderEntryWorkspace(
+/**
+ * Resolve the owning workspace's canonical directory path to seed a
+ * `cwd`-owned entry Session. A `cwd`-only create deliberately does NOT attach
+ * the Session to the workspace, so DSH's New-Session blank-session reuse skips it.
+ */
+export function resolveTenderEntryWorkspacePath(
   sessions: Pick<ISessions, 'list'>,
   workspaces: Pick<IWorkspaces, 'list'>,
-): WorkspaceId | undefined {
+): string | undefined {
   const current = sessions.list.getSnapshot().current
   const workspaceSnapshot = workspaces.list.getSnapshot()
   const currentWorkspace = current === undefined
     ? undefined
     : workspaceSnapshot.items.find(workspace => workspace.sessionIds.includes(current))
-  return currentWorkspace?.workspaceId
-    ?? workspaceSnapshot.recentWorkspaceId
-    ?? workspaceSnapshot.items[0]?.workspaceId
+  return currentWorkspace?.path
+    ?? workspaceSnapshot.items.find(workspace => workspace.workspaceId === workspaceSnapshot.recentWorkspaceId)?.path
+    ?? workspaceSnapshot.items[0]?.path
 }
 
-/** Create a distinct native Session without falling back to blank-Session reuse. */
+/**
+ * Create a distinct native Session with `cwd` ownership only (no workspace
+ * attachment). This keeps the Session out of the workspace's reusable blank-set,
+ * so DSH's 新会话 action mints a fresh default Session instead of reopening the
+ * workbench Session.
+ */
 export async function createTenderEntrySession(
   sessions: ISessions,
   workspaces: IWorkspaces,
   uuid: () => string = browserUuid,
 ): Promise<SessionId> {
-  const workspaceId = resolveTenderEntryWorkspace(sessions, workspaces)
-  if (workspaceId === undefined) throw new TenderSessionEntryError('workspace-unavailable')
+  const cwd = resolveTenderEntryWorkspacePath(sessions, workspaces)
+  if (cwd === undefined) throw new TenderSessionEntryError('workspace-unavailable')
 
   const capability = sessions as ISessions & Partial<SessionCreateCapability>
   if (typeof capability.create !== 'function') {
@@ -71,7 +80,7 @@ export async function createTenderEntrySession(
   }
 
   const requestedId = createTenderEntrySessionId(uuid())
-  const createdId = await capability.create({ workspaceId, sessionId: requestedId })
+  const createdId = await capability.create({ cwd, sessionId: requestedId })
   if (createdId !== requestedId) throw new TenderSessionEntryError('invalid-session-id')
   return createdId
 }
