@@ -4,7 +4,7 @@
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
 >
-> 当前稳定版本：**0.4.4**（正式版本）
+> 当前稳定版本：**0.4.5**（正式版本）
 
 [![CI](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-tender-workbench)](https://www.npmjs.com/package/dsh-tender-workbench)
@@ -49,10 +49,10 @@ dsh web --no-open
 
 安装或移除插件后，请完整重启 Web Profile。插件通过 `dsh.bundle.patch` 启用 `cordis.patch.yml`，并注册 `dsh-tender-workbench` Loader。
 
-安装指定的 `0.4.4` 版本：
+安装指定的 `0.4.5` 版本：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.4.4
+dsh plugin --profile web add dsh-tender-workbench@0.4.5
 ```
 
 移除插件：
@@ -98,11 +98,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 从已有版本升级：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.4.4
+dsh plugin --profile web add dsh-tender-workbench@0.4.5
 dsh web --no-open
 ```
 
-`0.4.4` 在 `0.4.3` 基础上修复「新会话」误复用招投标工作台会话的问题：招投标入口会话改为仅以 `cwd`（工作区路径）创建、不再挂进工作区，DSH「新会话」的空白会话复用逻辑因此跳过它，恢复默认 DSH 标准页；只有点击「招投标」才进入带标题的工作台初始页。其余运行时代码、公共导出、工作流和 Artifact Schema 与 0.4.3 保持一致，不迁移会话数据。如部署环境出现特定回归，可重新安装 `dsh-tender-workbench@0.4.3` 并重启 Profile。已发布的 npm 版本和 Git 标签保持不可变，后续修复使用新的补丁版本。
+`0.4.5` 在 `0.4.4` 基础上补齐旧会话兼容保护：普通「新会话」不再复用旧版本留在工作区中的业务空白会话，恢复「探索未至之境」并收起业务侧栏。旧会话、历史和用户草稿保持不变；并发创建合并处理，插件卸载时撤销保护。公共导出、业务工作流和 Artifact Schema 不变。如部署环境出现特定回归，可重新安装 `dsh-tender-workbench@0.4.4` 并重启 Profile；旧会话误复用问题也会随回滚恢复。已发布的 npm 版本和 Git 标签保持不可变，后续修复使用新的补丁版本。
 
 ## 本地开发
 
@@ -117,7 +117,7 @@ corepack pnpm@11.7.0 run check
 
 `check` 会执行类型检查、完整 Vitest 测试、生产构建、README/发布状态校验以及 npm tarball 白名单预检。配置 npm Trusted Publishing 后，[发布工作流](.github/workflows/release.yml)可使用 OIDC 和 provenance；手工发布不得声称 provenance。
 
-省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.4.4 发布清单](docs/RELEASE-0.4.4.md)。
+省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.4.5 发布清单](docs/RELEASE-0.4.5.md)。
 
 ## 当前范围
 

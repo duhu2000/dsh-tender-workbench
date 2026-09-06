@@ -24,6 +24,7 @@ import { sendSessionTenderWorkbenchIntent } from './intents/send-session-intent.
 import type { TenderSkillCatalogConnection } from './skill-catalog.ts'
 import { en, zh, type TenderKey } from './locales.ts'
 import { createTenderProjectionPort } from './tender-projection-port.ts'
+import { installOrdinarySessionGuard } from './ordinary-session-guard.ts'
 import { tenderSearchDefinition } from './tender-search-definition.ts'
 import {
   TenderSessionEntryError,
@@ -97,6 +98,7 @@ export function apply(ctx: TenderClientContext): void {
     throw new Error('dsh-tender-workbench requires the public sessions, locale, and connection services')
   }
   const t = locale.bind(NS)
+  ctx.effect(() => installOrdinarySessionGuard(sessions, ctx.workspaces), 'dsh-tender-workbench: ordinary Session reuse')
   const reveal = createTenderWorkbenchRevealController()
   const navigation = createTenderWorkbenchNavigationController()
   const projectionPort = createTenderProjectionPort(sessions)
