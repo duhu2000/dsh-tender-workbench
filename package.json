@@ -1,6 +1,6 @@
 {
   "name": "dsh-tender-workbench",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "DeepSeek Harness 招投标工作台智能体：支持招投标查询、规则初筛、智能分析、人工复核及 Excel/PDF 报告交付。",
   "keywords": [
     "deepseek-harness",
@@ -35,7 +35,7 @@
     "README.en.md",
     "CHANGELOG.md",
     "cordis.patch.yml",
-    "docs/RELEASE-0.4.3.md",
+    "docs/RELEASE-0.4.4.md",
     "lib/index.js",
     "lib/client.js",
     "lib/client.js.map",

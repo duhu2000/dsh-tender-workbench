@@ -26,7 +26,7 @@ expect(Array.isArray(pkg.files) && pkg.files.includes('README.en.md'), 'npm file
 expect(Array.isArray(pkg.files) && pkg.files.includes('CHANGELOG.md'), 'npm files must include CHANGELOG.md')
 expect(Array.isArray(pkg.files) && pkg.files.includes(releaseDocument), `npm files must include ${releaseDocument}`)
 expect(changelog.includes('## [Unreleased]'), 'CHANGELOG.md must contain an Unreleased section')
-expect(changelog.includes(`## [${pkg.version}] - 2026-09-05`), `CHANGELOG.md must contain the dated ${pkg.version} release section`)
+expect(changelog.includes(`## [${pkg.version}] - 2026-09-06`), `CHANGELOG.md must contain the dated ${pkg.version} release section`)
 expect(existsSync(releasePath), `${releaseDocument} must exist`)
 
 if (existsSync(releasePath)) {

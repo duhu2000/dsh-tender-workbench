@@ -4,6 +4,12 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-09-06
+
+### Fixed
+
+- 修复「新会话」误复用招投标工作台会话的问题：招投标入口会话改为仅以 `cwd`（工作区路径）创建、不再挂进工作区，DSH「新会话」的空白会话复用逻辑因此跳过它，恢复默认 DSH 标准页；只有点击「招投标」才进入带标题的工作台初始页。
+
 ## [0.4.3] - 2026-09-05
 
 ### Fixed

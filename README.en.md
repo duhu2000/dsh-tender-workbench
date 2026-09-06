@@ -4,7 +4,7 @@
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current stable version: **0.4.3** (stable release).
+Current stable version: **0.4.4** (stable release).
 
 ## What it does
 
@@ -67,12 +67,12 @@ dsh plugin --profile web add dsh-tender-workbench
 dsh web --no-open
 ```
 
-To install the exact 0.4.3 release:
+To install the exact 0.4.4 release:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add dsh-tender-workbench@0.4.3
+dsh plugin --profile web add dsh-tender-workbench@0.4.4
 ```
 
 To install from an independent checkout, install the required Provider plugins first, then run from this repository:
@@ -91,7 +91,7 @@ To install a packed build:
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add ./dsh-tender-workbench-0.4.3.tgz
+dsh plugin --profile web add ./dsh-tender-workbench-0.4.4.tgz
 dsh web --no-open
 ```
 
@@ -108,11 +108,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 Upgrade an existing installation by installing the stable version and fully restarting the Web profile:
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.4.3
+dsh plugin --profile web add dsh-tender-workbench@0.4.4
 dsh web --no-open
 ```
 
-Version 0.4.3 fixes a potential infinite loop where the tender-session hero headline could rewrite back and forth with other plugins. The headline sync now uses single-session ownership plus a bounded correction budget (`MAX_HERO_CORRECTIONS = 8`) that disconnects the observer at the limit. Other runtime code, public exports, workflow, and Artifact schema are unchanged from 0.4.2, and no Session data is migrated. If a deployment-specific regression requires rollback, reinstall `dsh-tender-workbench@0.4.2` and restart the profile. Published npm versions and Git tags are immutable; fixes after publication use a new patch version rather than overwriting 0.4.3.
+Version 0.4.4 fixes the "New Session" action wrongly reopening the tender workbench session. The tender launcher now creates its entry session with `cwd` (the workspace path) only, without attaching it to the workspace, so DSH's blank-session reuse for New Session skips it and New Session restores the default DSH page; the "招投标" workbench initial page (with its own title) only appears when the launcher is clicked. Other runtime code, public exports, workflow, and Artifact schema are unchanged from 0.4.3, and no Session data is migrated. If a deployment-specific regression requires rollback, reinstall `dsh-tender-workbench@0.4.3` and restart the profile. Published npm versions and Git tags are immutable; fixes after publication use a new patch version rather than overwriting 0.4.4.
 
 ## Using the workbench
 
@@ -137,7 +137,7 @@ The build emits the Host loader at `lib/index.js`, the Client bundle at `lib/cli
 
 The province, city, and district source snapshot is maintained in [resources/area.ts](resources/area.ts).
 
-See [CHANGELOG.md](CHANGELOG.md) and [the 0.4.3 release checklist](docs/RELEASE-0.4.3.md) for the stable-release scope and operational checks.
+See [CHANGELOG.md](CHANGELOG.md) and [the 0.4.4 release checklist](docs/RELEASE-0.4.4.md) for the stable-release scope and operational checks.
 
 ## Current scope
 
