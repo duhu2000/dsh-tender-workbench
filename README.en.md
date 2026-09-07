@@ -116,7 +116,16 @@ Version 0.5.2 aligns below-composer shortcuts with shared UI specification v1.1.
 
 ## Using the workbench
 
-The plugin exposes a top-left “招投标” launcher and a Session Header recovery action. Every top-left activation creates a distinct native Session in the current Session's workspace, the recent workspace, or the first available workspace, gives that blank Session the “招投标” hero label and goal icon, and opens its Better Sidebar workbench. Other Sessions keep their existing host/provider hero label and the fish mark. The composer-bottom shortcuts are intentionally absent; the Header action only reopens the workbench for its existing Session.
+The top-left “招投标” launcher creates a distinct native Session using the current, recent, or first available workspace path. It shows the “招投标智能体” title and goal icon without opening the workbench. Below-composer shortcuts explicitly open the query, screening, review, or delivery view; the Session Header recovery action remains available. Other Sessions retain their original branding.
+
+## Interface examples and marketplace submission
+
+These screenshots show the actual 0.5.2 React components in an isolated host fixture, visibly labeled as isolated UI validation without DSH/MCP connections. They contain no customer information or real business responses. They do not demonstrate live DSH/QCC operation or marketplace one-click installation.
+
+![Light homepage — isolated component demo](assets/market/home-light.png)
+![Dark homepage — isolated component demo](assets/market/home-dark.png)
+
+See [submission status and isolated install/uninstall evidence](docs/MARKET-SUBMISSION.md). An open PR is not a completed marketplace listing.
 
 Navigation only changes the visible workbench phase. It does not mutate business state or run a later action. Criteria are proposed, edited, previewed, and confirmed as distinct steps. Agent recommendations never become user decisions automatically. Report generation always shows the reviewed and pending scope before creating a delivery snapshot.
 

@@ -33,4 +33,5 @@ npm-debug.log*
 /docs/*
 !/docs/RELEASE-*.md
 !/docs/QCC-BLUE-UI-ACCEPTANCE.md
+!/docs/MARKET-SUBMISSION.md
 /references/
