@@ -1,6 +1,11 @@
 # 招投标智能体 · 市场投稿登记
 
-核验日期：2026-09-07。状态：准备投稿，尚未上架；PR 创建后在本文更新链接和检查结果。
+核验日期：2026-09-07。状态：**PR OPEN，非 Draft，检查通过，等待维护者审核；尚未上架。**
+
+- 投稿：[awesome-dsh-plugin/awesome-dsh-plugin #4585](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/4585)。
+- fork 分支：`duhu2000:submit/dsh-tender-workbench-20260907`；提交 `718e60d95027e2f491c222af5cbfd053d0acc709`。
+- 上游基线：`d348d4fd7503d9afd8f24f4b3e3956e38797b1ca`；差异仅新增 `data/plugins/duhu2000__dsh-tender-workbench.yml`，6 行新增、0 行删除。
+- 招投标市场资料提交：`2cebc9dd07caa2a7abc5d22c052ea5bea517280e`。Git 网络连接异常时使用 GitHub Git Data API 上传，逐项核对 blob/tree/commit SHA 一致后非强制更新 main。
 
 ## 公开元数据与准入
 
@@ -41,4 +46,15 @@ dsh plugin --profile web remove dsh-tender-workbench --store-dir <isolated-store
 
 ## 状态判定与下一步
 
-PR URL/Draft/checks：创建后填写。只在维护者合并、目录生成生效、在线可检索且一键安装真实验证通过后，才标记上架完成。当前不得将准备/OPEN/Draft/CI 通过描述为已上架。
+| 检查 | 结果 | 证据 |
+| --- | --- | --- |
+| YAML schema、本地截图相对路径与 PNG 文件 | 通过 | 上游 validateEntries：1 条、0 错误；2 个截图文件存在 |
+| PR check / check | SUCCESS | [run 34130997876](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/actions/runs/34130997876)，含 README 生成、awesome-lint、站点构建 |
+| Submission gate | SUCCESS | [check 101772082469](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/runs/101772082469)，head SHA 与投稿提交一致；1 条准入通过，无未核实项 |
+| 招投标资料提交 CI | SUCCESS | [run 34130950224](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34130950224)，Linux Node 22/24、Windows Node 24 通过；PR 包任务按 main 事件跳过 |
+
+当前阻塞仅为维护者审核/合并；尚未执行合并后目录、在线检索和市场一键安装验收。本轮未请求维护者以外的人合并，也未自动触碰用户生产 DSH。
+
+下一步：维护者合并后核对目录生成与在线可检索，再在获授权的隔离环境验证市场一键安装/卸载及必要依赖。只有这些环节都完成，才标记上架完成。不得将 OPEN/CI 通过描述为已上架。
+
+main 的包版本、业务源码与 v0.5.2 保持一致；main 额外包含市场文档/截图提交，因此不与发布 tag 使用同一提交哈希。npm latest=0.5.2、gitHead=b946e97063ef3de44e6897ce429fc4c4f1d4ca52，公开 tag/npm 未被覆盖或移动。
