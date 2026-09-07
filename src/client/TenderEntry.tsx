@@ -24,6 +24,17 @@ export interface TenderHeroInjected {
 export type TenderHeroTitleBridgeProps = PropsRuntime<'conversation.input.dock'>
   & PropsLocale<'tenderFilter'> & InjectFace<TenderHeroInjected>
 
+/** Keep the whole focused card visible without scrolling the host conversation. */
+function revealShortcut(button: HTMLButtonElement) {
+  const menu = button.parentElement
+  if (!menu || menu.scrollWidth <= menu.clientWidth) return
+  const card = button.getBoundingClientRect()
+  const row = menu.getBoundingClientRect()
+  const inset = 5 // Preserve the keyboard focus ring inside the scroll viewport.
+  if (card.left < row.left + inset) menu.scrollLeft += card.left - row.left - inset
+  else if (card.right > row.right - inset) menu.scrollLeft += card.right - row.right + inset
+}
+
 /** Only this session's own DOM is branded; no root/single brand slot. */
 export function TenderHeroTitleBridge({ sessionId, useSession, openPhase }: TenderHeroTitleBridgeProps) {
   const anchorRef = useRef<HTMLSpanElement>(null)
@@ -43,7 +54,7 @@ export function TenderHeroTitleBridge({ sessionId, useSession, openPhase }: Tend
   }, [owned, sessionId])
   const menu = <nav className={`${theme.scope} ${css.shortcuts}`} aria-label="招投标快捷导航">
     {([['opportunity', '项目查询', 'search'], ['screening', '规则筛选', 'screening'], ['decision', '人工复核', 'decision'], ['delivery', '结果交付', 'delivery']] as const).map(([phase, label, icon]) =>
-      <button key={phase} type="button" onClick={() => openPhase(phase)}><span aria-hidden="true"><WorkbenchIcon name={icon} /></span>{label}</button>)}
+      <button key={phase} type="button" onFocus={event => revealShortcut(event.currentTarget)} onClick={() => openPhase(phase)}><span className={css.shortcutIcon} aria-hidden="true"><WorkbenchIcon name={icon} /></span><span>{label}</span></button>)}
   </nav>
   return <>
     <span ref={anchorRef} hidden data-dsh-tender-hero-anchor="true" />

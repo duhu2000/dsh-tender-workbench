@@ -51,6 +51,54 @@ try {
     const menu = await page.getByRole('navigation', { name: '招投标快捷导航' }).boundingBox()
     assert.ok(menu.y>=card.y+card.height, 'navigation below native composer')
     assert.equal(await page.locator('.nativeHeadline').isVisible(), false)
+    const shortcuts = page.getByRole('navigation', { name: '招投标快捷导航' })
+    const buttons = shortcuts.getByRole('button')
+    const cards = await buttons.evaluateAll(elements => elements.map(el => {
+      const rect = el.getBoundingClientRect(), style = getComputedStyle(el)
+      const icon = el.querySelector('svg').getBoundingClientRect()
+      const label = el.lastElementChild.getBoundingClientRect()
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+        radius: style.borderRadius, border: style.borderTopWidth, color: style.color,
+        background: style.backgroundColor, iconWidth: icon.width,
+        iconColor: getComputedStyle(el.querySelector('svg')).color,
+        verticalGap: label.y-icon.bottom, centered: Math.abs(icon.x+icon.width/2-label.x-label.width/2) }
+    }))
+    assert.equal(cards.length, 4)
+    const muted = scheme==='light' ? 'rgb(98, 111, 128)' : 'rgb(162, 177, 194)'
+    const surface = scheme==='light' ? 'rgb(255, 255, 255)' : 'rgb(24, 35, 46)'
+    for (const [i, item] of cards.entries()) {
+      assert.equal(item.y, cards[0].y, 'all shortcuts stay on one row')
+      assert.ok(item.width >= (width <= 600 ? 92 : 108) && item.height >= 54)
+      assert.equal(item.radius, '8px')
+      assert.equal(item.border, '1px')
+      assert.equal(item.background, surface)
+      assert.equal(item.color, muted)
+      assert.equal(item.iconColor, muted)
+      assert.equal(item.iconWidth, 17)
+      assert.ok(Math.abs(item.verticalGap-5)<1 && item.centered<1, 'icon above centered label')
+      if (i) assert.equal(item.x-cards[i-1].x-cards[i-1].width, 8)
+    }
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no page overflow')
+    const scroll = await shortcuts.evaluate(el => ({ client: el.clientWidth, scroll: el.scrollWidth }))
+    if (width <= 600) assert.ok(scroll.scroll > scroll.client, 'narrow menu scrolls internally')
+    await buttons.first().focus()
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Shift+Tab')
+    for (let i=0; i<4; i++) {
+      if (i) await page.keyboard.press('Tab')
+      assert.equal(await buttons.nth(i).evaluate(el => el === document.activeElement), true)
+      await expectCardVisible(buttons.nth(i), shortcuts)
+    }
+    const focused = await buttons.last().evaluate(el => ({ color:getComputedStyle(el).color, background:getComputedStyle(el).backgroundColor, outline:getComputedStyle(el).outlineWidth }))
+    assert.equal(focused.color, scheme==='light' ? 'rgb(8, 117, 209)' : 'rgb(130, 195, 255)')
+    assert.equal(focused.background, scheme==='light' ? 'rgb(230, 244, 255)' : 'rgb(23, 52, 73)')
+    assert.equal(focused.outline, '2px')
+    await page.locator('#nativeInput').focus()
+    await shortcuts.evaluate(el => { el.scrollLeft = 0 })
+    await buttons.first().hover()
+    assert.equal(await buttons.first().evaluate(el => getComputedStyle(el).backgroundColor), focused.background)
+    await page.mouse.move(0, 0)
+    assert.equal(await page.locator('[data-visual-shell]').count(), 0, 'hover/focus never opens workbench')
     await page.screenshot({ path: join(out, `${scheme}-${width}x${height}-home.png`) })
     await page.getByRole('button', { name: '提示词生成', exact: true }).click()
     const dialog = page.getByRole('dialog')
@@ -100,3 +148,12 @@ try {
   await browser.close()
 }
 assert.equal(results.length, 8)
+
+async function expectCardVisible(button, menu) {
+  await button.page().waitForFunction(el => {
+    const card = el.getBoundingClientRect(), row = el.closest('nav').getBoundingClientRect()
+    return card.x >= row.x && card.right <= row.right+1
+  }, await button.elementHandle(), { timeout: 2000 })
+  const card = await button.boundingBox(), row = await menu.boundingBox()
+  assert.ok(card.x >= row.x && card.x+card.width <= row.x+row.width+1, `keyboard can reach each full card: ${JSON.stringify({card, row})}`)
+}

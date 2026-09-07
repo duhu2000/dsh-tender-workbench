@@ -4,6 +4,12 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-07
+
+### Changed
+
+- 首页输入框下方四个快捷入口对齐共享规范 v1.1.3：上图标、下文字的描边卡片，单行排列、窄屏内部横向滚动，浅深色与悬停/键盘焦点沿用企查查蓝；保留点击才打开工作台的交互。
+
 ## [0.5.1] - 2026-09-06
 
 ### Fixed
