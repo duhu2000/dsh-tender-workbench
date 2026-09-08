@@ -5,7 +5,7 @@
 招投标智能体：支持招投标搜索、招标查询、投标查询、标讯查询、拟建项目与项目筛选，辅助商机发现、人工复核及 Excel/PDF 导出，使用客户自备授权的企查查 MCP。
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.2
+dsh plugin --profile web add dsh-tender-workbench@0.5.3
 ```
 
 请先满足下文的 DSH、连接器及侧边栏依赖要求；安装后完整停止并重启对应 Profile。
@@ -25,7 +25,7 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.2
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
 >
-> 当前稳定版本：**0.5.2**（正式版本）
+> 当前稳定版本：**0.5.3**（正式版本）
 
 [![CI](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-tender-workbench)](https://www.npmjs.com/package/dsh-tender-workbench)
@@ -73,7 +73,7 @@ dsh web --no-open
 安装指定的 `0.5.2` 版本：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.2
+dsh plugin --profile web add dsh-tender-workbench@0.5.3
 ```
 
 移除插件：
@@ -119,7 +119,7 @@ dsh plugin --profile web remove dsh-tender-workbench
 从已有版本升级：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.2
+dsh plugin --profile web add dsh-tender-workbench@0.5.3
 dsh web --no-open
 ```
 

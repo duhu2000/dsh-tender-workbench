@@ -10,7 +10,7 @@ Related agents: [数据清洗补全](https://github.com/duhu2000/dsh-data-cleani
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current stable version: **0.5.2** (stable release).
+Current stable version: **0.5.3** (stable release).
 
 ## What it does
 
@@ -78,7 +78,7 @@ To install the exact 0.5.2 release:
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add dsh-tender-workbench@0.5.2
+dsh plugin --profile web add dsh-tender-workbench@0.5.3
 ```
 
 To install from an independent checkout, install the required Provider plugins first, then run from this repository:
@@ -114,7 +114,7 @@ dsh plugin --profile web remove dsh-tender-workbench
 Upgrade an existing installation by installing the stable version and fully restarting the Web profile:
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.2
+dsh plugin --profile web add dsh-tender-workbench@0.5.3
 dsh web --no-open
 ```
 

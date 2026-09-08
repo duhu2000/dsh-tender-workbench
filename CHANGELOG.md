@@ -4,6 +4,10 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-09-08
+
+- 改善搜索元数据、安装说明、能力边界与四产品互链；无运行时或依赖变更。
+
 ## [0.5.2] - 2026-09-07
 
 ### Changed
