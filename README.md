@@ -1,5 +1,26 @@
 # dsh-tender-workbench
 
+## 安装与三分钟上手
+
+招投标智能体：支持招投标搜索、招标查询、投标查询、标讯查询、拟建项目与项目筛选，辅助商机发现、人工复核及 Excel/PDF 导出，使用客户自备授权的企查查 MCP。
+
+```sh
+dsh plugin --profile web add dsh-tender-workbench@0.5.2
+```
+
+请先满足下文的 DSH、连接器及侧边栏依赖要求；安装后完整停止并重启对应 Profile。
+
+进入“招投标”，设置地区、关键词和时间范围，使用已授权的 qcc-tender 查询。检查规则影响预览并确认筛选条件，人工复核记录后选择导出 Excel 或 PDF。三分钟用于熟悉操作，不承诺查询或报告一定在三分钟完成。
+
+**流程样例（示意，非真实调用结果）：** 地区/日期/关键词 → 标讯与拟建项目 → 规则影响预览 → 人工复核 → Excel/PDF（未完成复核会标注部分交付）。
+
+**能力边界：** 投标查询指已授权数据源内的公开标讯查询，不代办投标。无 Web 搜索兜底、订阅或自动 Bid/No-Bid 决策；不提供在线 PDF 预览。
+
+**升级与回滚：** 升级前停止 Profile 并备份任务目录，记录当前精确版本；使用上面的固定版本命令升级，再完整重启。回滚时将版本号替换为升级前记录的版本，并使用升级前任务目录副本；不以旧版直接读取已迁移任务目录。
+
+相关智能体：[数据清洗补全](https://github.com/duhu2000/dsh-data-cleaning-agent) · [AI填表](https://github.com/duhu2000/dsh-form-fill-agent) · [访前尽调](https://github.com/duhu2000/dsh-pre-duediligence) · [招投标](https://github.com/duhu2000/dsh-tender-workbench)
+
+
 **中文** | [English](README.en.md)
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
