@@ -70,7 +70,7 @@ dsh web --no-open
 
 安装或移除插件后，请完整重启 Web Profile。插件通过 `dsh.bundle.patch` 启用 `cordis.patch.yml`，并注册 `dsh-tender-workbench` Loader。
 
-安装指定的 `0.5.2` 版本：
+安装指定的 `0.5.3` 版本：
 
 ```sh
 dsh plugin --profile web add dsh-tender-workbench@0.5.3
@@ -123,7 +123,7 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.3
 dsh web --no-open
 ```
 
-本次 0.5.2 对齐共享规范 v1.1.3：首页输入框下方四个快捷入口采用上图标、下文字的描边卡片，支持浅深色、窄屏单行横向滚动与键盘聚焦完整可见。延续 0.5.1 的默认收起行为：「招投标」菜单仅进入独立会话，点击下方按钮才打开工作台。不修改宿主全局侧栏偏好、历史布局或业务数据。如需回退，可安装 `dsh-tender-workbench@0.5.1` 并重启 Profile。npm 版本与公开 Git 标签保持不可变。
+0.5.3 更新搜索与安装文档，保留 0.5.2 的运行时行为。0.5.2 对齐共享规范 v1.1.3：首页输入框下方四个快捷入口采用上图标、下文字的描边卡片，支持浅深色、窄屏单行横向滚动与键盘聚焦完整可见。延续 0.5.1 的默认收起行为：「招投标」菜单仅进入独立会话，点击下方按钮才打开工作台。不修改宿主全局侧栏偏好、历史布局或业务数据。如需回退，可安装 `dsh-tender-workbench@0.5.1` 并重启 Profile。npm 版本与公开 Git 标签保持不可变。
 
 ## 本地开发
 
@@ -138,7 +138,7 @@ corepack pnpm@11.7.0 run check
 
 `check` 会执行类型检查、完整 Vitest 测试、生产构建、README/发布状态校验以及 npm tarball 白名单预检。配置 npm Trusted Publishing 后，[发布工作流](.github/workflows/release.yml)可使用 OIDC 和 provenance；手工发布不得声称 provenance。
 
-省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.2 发布清单](docs/RELEASE-0.5.2.md)。
+省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.3 发布清单](docs/RELEASE-0.5.3.md)。
 
 ## 界面演示与市场投稿
 
