@@ -1,10 +1,16 @@
 # dsh-tender-workbench
 
+Tender search and bid intelligence in DeepSeek Harness with proposed project search, rule screening, human review and Excel/PDF exports using user-authorized Qichacha MCP.
+
+Install a pinned release using the command in the [Chinese quick start](README.md), review the preview or evidence before confirming, and keep the previous version and task-directory backup for rollback. Qichacha calls use the customer's authorized account.
+
+Related agents: [数据清洗补全](https://github.com/duhu2000/dsh-data-cleaning-agent) · [AI填表](https://github.com/duhu2000/dsh-form-fill-agent) · [访前尽调](https://github.com/duhu2000/dsh-pre-duediligence) · [招投标](https://github.com/duhu2000/dsh-tender-workbench)
+
 [中文](README.md) | **English**
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current stable version: **0.5.2** (stable release).
+Current stable version: **0.5.3** (stable release).
 
 ## What it does
 
@@ -72,7 +78,7 @@ To install the exact 0.5.2 release:
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add dsh-tender-workbench@0.5.2
+dsh plugin --profile web add dsh-tender-workbench@0.5.3
 ```
 
 To install from an independent checkout, install the required Provider plugins first, then run from this repository:
@@ -108,7 +114,7 @@ dsh plugin --profile web remove dsh-tender-workbench
 Upgrade an existing installation by installing the stable version and fully restarting the Web profile:
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.2
+dsh plugin --profile web add dsh-tender-workbench@0.5.3
 dsh web --no-open
 ```
 
