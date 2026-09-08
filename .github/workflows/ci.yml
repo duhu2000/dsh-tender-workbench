@@ -62,12 +62,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
-      - run: mkdir -p .package-output
-      - run: npm pack --ignore-scripts --pack-destination .package-output
-      - run: sha256sum .package-output/dsh-tender-workbench-*.tgz > .package-output/SHA256SUMS.txt
+      - run: mkdir -p package-output
+      - run: npm pack --ignore-scripts --pack-destination package-output
+      - run: sha256sum package-output/dsh-tender-workbench-*.tgz > package-output/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: dsh-tender-workbench-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
-          path: .package-output/
+          path: package-output/
           if-no-files-found: error
           retention-days: 7
