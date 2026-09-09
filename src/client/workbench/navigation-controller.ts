@@ -4,6 +4,7 @@ import type {
   WorkflowStage,
 } from '../../contracts/workflow.ts'
 import type { TenderKey } from '../locales.ts'
+import { createSessionViewMemory } from './session-view-memory.ts'
 
 export type WorkbenchPhaseIcon = 'search' | 'screening' | 'decision' | 'delivery'
 
@@ -51,6 +52,7 @@ export const TENDER_WORKBENCH_PHASES = [
 }[]
 
 export type WorkbenchPhase = typeof TENDER_WORKBENCH_PHASES[number]['id']
+export type WorkbenchDestination = WorkbenchPhase | 'history'
 export type WorkbenchPhaseProgress = 'not-started' | 'progress' | 'completed' | 'running' | 'failed' | 'blocked' | 'unavailable'
 
 export const WORKBENCH_PHASES: readonly WorkbenchPhase[] = TENDER_WORKBENCH_PHASES.map(phase => phase.id)
@@ -79,20 +81,27 @@ export function tenderWorkbenchPhaseForStage(stage: WorkflowStage | undefined): 
 }
 
 export interface TenderWorkbenchNavigationController {
-  attach(sessionId: string, select: Dispatch<SetStateAction<WorkbenchPhase>>): () => void
-  request(sessionId: string, phase: WorkbenchPhase): void
+  readonly memory: ReturnType<typeof createSessionViewMemory>
+  currentView(sessionId: string): WorkbenchDestination
+  attach(sessionId: string, select: Dispatch<SetStateAction<WorkbenchDestination>>): () => void
+  request(sessionId: string, phase: WorkbenchDestination): void
+  dispose(): void
 }
 
 /** Session-scoped transient navigation; it never represents workflow progress. */
 export function createTenderWorkbenchNavigationController(): TenderWorkbenchNavigationController {
-  const targets = new Map<string, Dispatch<SetStateAction<WorkbenchPhase>>>()
-  const pending = new Map<string, WorkbenchPhase>()
+  const targets = new Map<string, Dispatch<SetStateAction<WorkbenchDestination>>>()
+  const views = new Map<string, WorkbenchDestination>()
+  let disposed = false
+  const memory = createSessionViewMemory()
   return {
+    memory,
+    currentView: sessionId => views.get(sessionId) ?? 'opportunity',
     attach(sessionId, select) {
+      if (disposed) return () => {}
       targets.set(sessionId, select)
-      const requested = pending.get(sessionId)
+      const requested = views.get(sessionId)
       if (requested !== undefined) {
-        pending.delete(sessionId)
         select(requested)
       }
       return () => {
@@ -100,9 +109,16 @@ export function createTenderWorkbenchNavigationController(): TenderWorkbenchNavi
       }
     },
     request(sessionId, phase) {
+      if (disposed || views.get(sessionId) === phase) return
+      views.set(sessionId, phase)
       const select = targets.get(sessionId)
-      if (select === undefined) pending.set(sessionId, phase)
-      else select(phase)
+      select?.(phase)
+    },
+    dispose() {
+      disposed = true
+      targets.clear()
+      views.clear()
+      memory.dispose()
     },
   }
 }
@@ -110,7 +126,7 @@ export function createTenderWorkbenchNavigationController(): TenderWorkbenchNavi
 export function useTenderWorkbenchNavigation(
   controller: TenderWorkbenchNavigationController,
   sessionId: string,
-  select: Dispatch<SetStateAction<WorkbenchPhase>>,
+  select: Dispatch<SetStateAction<WorkbenchDestination>>,
 ): void {
   useEffect(() => controller.attach(sessionId, select), [controller, select, sessionId])
 }

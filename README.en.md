@@ -10,7 +10,7 @@ Related agents: [数据清洗补全](https://github.com/duhu2000/dsh-data-cleani
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current stable version: **0.5.3** (stable release).
+Current stable version: **0.5.4** (stable release).
 
 ## What it does
 
@@ -60,7 +60,7 @@ An installed and authorized `qcc-tender` MCP connection must expose these exact 
 - `mcp__qcc-tender__search_tenders`
 - `mcp__qcc-tender__search_proposed_projects`
 
-Missing required services, incompatible Better Sidebar capabilities, unavailable MCP tools, and non-JSONL Session persistence fail explicitly. There is no Web-search, alternate-persistence, or Workspace-storage fallback.
+Without a compatible Better Sidebar provider, conversation entry points and supported Host tools remain available; shortcuts show actionable install/upgrade, enable-tab and restart guidance. No private sidebar is created. Other missing required services, unavailable MCP tools and non-JSONL persistence fail explicitly, with no Web-search or alternate-storage fallback.
 
 ## Install
 
@@ -73,12 +73,12 @@ dsh plugin --profile web add dsh-tender-workbench
 dsh web --no-open
 ```
 
-To install the exact 0.5.2 release:
+To install the exact 0.5.4 release:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
 dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
-dsh plugin --profile web add dsh-tender-workbench@0.5.3
+dsh plugin --profile web add dsh-tender-workbench@0.5.4
 ```
 
 To install from an independent checkout, install the required Provider plugins first, then run from this repository:
@@ -114,11 +114,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 Upgrade an existing installation by installing the stable version and fully restarting the Web profile:
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.3
+dsh plugin --profile web add dsh-tender-workbench@0.5.4
 dsh web --no-open
 ```
 
-Version 0.5.2 aligns below-composer shortcuts with shared UI specification v1.1.3: outlined cards with an icon above each label, light/dark styling, a single horizontally scrollable row on narrow screens, and fully visible keyboard-focused cards. The workbench stays closed on entry and opens only on an explicit shortcut click, as in 0.5.1. Session isolation, global sidebar preferences, history and Artifact schemas remain unchanged. To roll back, reinstall `dsh-tender-workbench@0.5.1` and restart the profile. Published versions and tags remain immutable.
+Version 0.5.4 aligns the Session singleton Tab adapter with shared UI specification v1.5.0. Five shortcuts open/focus the same Tab and navigate to opportunity, screening, decision, delivery or history, without starting tasks or MCP calls. Capability probes, subscription cleanup and cross-Session reveal guards are strengthened. Tab reopening retains navigation and query drafts within the current Client lifetime. History is limited to the current Session's saved query; cross-Session indexing and live MCP connection checks are not implemented. Actual four-plugin DSH integration remains to be verified. Roll back with `dsh-tender-workbench@0.5.3` and restart the profile; business data schemas are unchanged.
 
 ## Using the workbench
 

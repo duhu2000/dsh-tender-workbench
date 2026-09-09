@@ -32,7 +32,7 @@ try {
       [data-composer-card]{position:relative;border:1px solid #8885;border-radius:20px;padding:16px;background:light-dark(#fff,#18232e)}
       #nativeInput{width:100%;height:100px;resize:none;background:transparent;color:inherit;border:0;font:16px/1.6 inherit}
       .nativeTools{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#8993a0}.nativeTools button{background:#507fe8;color:#fff;border:0;border-radius:8px;padding:8px}
-      .fixtureWorkbench{width:46%;min-width:360px;height:100%;display:grid;grid-template-rows:40px minmax(0,1fr);border-left:1px solid #8885}
+      .fixtureWorkbench{position:relative;z-index:1000;width:46%;min-width:360px;height:100%;display:grid;grid-template-rows:40px minmax(0,1fr);border-left:1px solid #8885}
       .fixtureBenchChrome{display:flex;justify-content:space-between;align-items:center;padding:4px 12px;background:light-dark(#fff,#18232e)}
       @media(max-width:700px){.fixtureSidebar{display:none}main{padding:48px 16px}.fixtureWorkbench{position:fixed;inset:40px 0 0;width:100%;min-width:0;height:calc(100dvh - 40px)}}
       ${css}</style></head><body><div id="root"></div></body></html>`)
@@ -63,7 +63,7 @@ try {
         iconColor: getComputedStyle(el.querySelector('svg')).color,
         verticalGap: label.y-icon.bottom, centered: Math.abs(icon.x+icon.width/2-label.x-label.width/2) }
     }))
-    assert.equal(cards.length, 4)
+    assert.equal(cards.length, 5)
     const muted = scheme==='light' ? 'rgb(98, 111, 128)' : 'rgb(162, 177, 194)'
     const surface = scheme==='light' ? 'rgb(255, 255, 255)' : 'rgb(24, 35, 46)'
     for (const [i, item] of cards.entries()) {
@@ -84,7 +84,7 @@ try {
     await buttons.first().focus()
     await page.keyboard.press('Tab')
     await page.keyboard.press('Shift+Tab')
-    for (let i=0; i<4; i++) {
+    for (let i=0; i<5; i++) {
       if (i) await page.keyboard.press('Tab')
       assert.equal(await buttons.nth(i).evaluate(el => el === document.activeElement), true)
       await expectCardVisible(buttons.nth(i), shortcuts)
@@ -115,7 +115,7 @@ try {
     await page.getByRole('button', { name: '回填输入框' }).click()
     assert.match(await page.locator('#nativeInput').inputValue(), /智慧园区/)
     assert.equal(await page.locator('#send').isEnabled(), true)
-    await page.getByRole('button', { name: /规则筛选/ }).click()
+    await page.getByRole('button', { name: /筛候选/ }).click()
     await page.getByRole('tab', { name: '筛候选', exact: true }).waitFor()
     assert.equal(await page.getByRole('tab', { name: '筛候选', exact: true }).getAttribute('aria-selected'), 'true')
     await page.getByRole('tab', { name: '找机会', exact: true }).click()
@@ -123,10 +123,28 @@ try {
     const shell = await page.locator('[data-visual-shell]').evaluate(el => ({width:el.clientWidth, scroll:el.scrollWidth, background:getComputedStyle(el).backgroundColor}))
     assert.ok(shell.scroll<=shell.width+1, 'no workbench horizontal overflow')
     assert.equal(shell.background, scheme==='light' ? 'rgb(255, 255, 255)' : 'rgb(24, 35, 46)')
+    // Inspect the real component, not the host-shaped fixture chrome.
+    assert.equal(await page.locator('[data-visual-shell] nav[role="tablist"] small').count(), 0)
+    if (width === 1440) {
+      await page.locator('.fixtureWorkbench').evaluate(el => { el.style.width = '320px'; el.style.minWidth = '320px' })
+      const narrow = await page.locator('[data-visual-shell]').evaluate(el => ({ width: el.clientWidth, scroll: el.scrollWidth }))
+      assert.ok(narrow.width <= 320 && narrow.scroll <= narrow.width+1, '320px container stays bounded')
+      const stageBounds = await page.locator('[data-visual-shell] nav[role="tablist"]').evaluate(el => ({ width:el.clientWidth, scroll:el.scrollWidth }))
+      assert.ok(stageBounds.scroll <= stageBounds.width+1, 'stage menu fits 320px')
+      await page.screenshot({ path: join(out, `${scheme}-320-container.png`) })
+      await page.locator('.fixtureWorkbench').evaluate(el => el.removeAttribute('style'))
+    }
+    for (const label of ['找机会', '筛候选', '人工定案', '形成交付', '任务历史']) {
+      await page.locator('#closeBench').click()
+      await shortcuts.getByRole('button', { name: label, exact: true }).click()
+      assert.equal(await page.locator('[data-visual-shell]').count(), 1)
+      if (label === '任务历史') await page.getByRole('heading', { name: label, exact: true }).waitFor()
+      else await page.getByRole('tab', { name: label, exact: true, selected: true }).waitFor()
+    }
     if (width > 700) {
       await page.locator('[data-dsh-part="top-entry"] button').click()
       await page.locator('[data-visual-shell]').waitFor({ state: 'detached' })
-      await page.getByRole('button', { name: /项目查询/ }).click()
+      await page.getByRole('button', { name: /找机会/ }).click()
       await page.locator('[data-visual-shell]').waitFor()
     }
     await page.locator('#closeBench').click()

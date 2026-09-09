@@ -5,7 +5,7 @@ import { TenderHeroTitleBridge, TenderSidebarEntry } from '../src/client/TenderE
 import { TenderPromptEntry } from '../src/client/TenderPrompt.tsx'
 import { initialTenderPrompt, type TenderPromptMemory } from '../src/client/tender-prompt.ts'
 import { TenderWorkbenchView } from '../src/client/workbench/TenderWorkbench.tsx'
-import { createTenderWorkbenchNavigationController, type WorkbenchPhase } from '../src/client/workbench/navigation-controller.ts'
+import { createTenderWorkbenchNavigationController, type WorkbenchDestination } from '../src/client/workbench/navigation-controller.ts'
 import { zh } from '../src/client/locales.ts'
 import { TENDER_ENTRY_SESSION_ID_PREFIX } from '../src/client/tender-session-entry.ts'
 const tenderId = TENDER_ENTRY_SESSION_ID_PREFIX + '12345678-1234-4234-8234-123456789abc'
@@ -17,7 +17,7 @@ function App() {
   const [bench, setBench] = useState(false)
   const [draft, setDraft] = useState('')
   const sessionId = owned ? tenderId : 'ordinary'
-  const openPhase = (phase: WorkbenchPhase) => { setBench(true); setTimeout(() => navigation.request(tenderId, phase), 0); return true }
+  const openPhase = (phase: WorkbenchDestination) => { setBench(true); setTimeout(() => navigation.request(tenderId, phase), 0); return true }
   return <>
     <div className="fixtureToolbar"><button id="ordinary" onClick={() => { setOwned(false); setBench(false) }}>普通新会话</button><span>隔离 UI 验证 · 不连接 DSH / MCP</span></div>
     <div className="fixtureLayout">

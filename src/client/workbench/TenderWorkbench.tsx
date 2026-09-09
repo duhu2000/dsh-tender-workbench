@@ -33,6 +33,7 @@ import {
   type WorkbenchPhaseIcon,
   type TenderWorkbenchNavigationController,
   type WorkbenchPhase,
+  type WorkbenchDestination,
 } from './navigation-controller.ts'
 import {
   hasCompletedLightweightQuery,
@@ -66,6 +67,7 @@ import { TenderReportView, type ReportArtifactDownloader, type ReportDeliveryVie
 import { StatePanel } from './WorkbenchPrimitives.tsx'
 import { TenderQueryWorkspace } from './TenderQueryWorkspace.tsx'
 import css from './tender-workbench.module.css'
+import { useSessionViewState } from './session-view-memory.ts'
 
 export { tenderWorkbenchDisplayStatus }
 export type { TenderWorkbenchDisplayStatus }
@@ -185,15 +187,19 @@ export function TenderWorkbenchView({
   t,
 }: TenderWorkbenchViewProps) {
   const workflow = projectionOf(projection)
-  const [selectedPhase, setSelectedPhase] = useState<WorkbenchPhase>('opportunity')
-  const [scope, setScope] = useState<TenderQueryDraft['scope']>('combined')
-  const [target, setTarget] = useState('')
-  const [filters, setFilters] = useState<TenderFilters>(() => createInitialTenderFilters())
-  const [queryBranch, setQueryBranch] = useState<'tender' | 'proposed'>('tender')
+  const [destination, setDestination] = useState<WorkbenchDestination>(() => navigation.currentView(sessionId))
+  const [lastPhase, setLastPhase] = useSessionViewState<WorkbenchPhase>(navigation.memory, sessionId, 'lastPhase', () => 'opportunity')
+  useEffect(() => { if (destination !== 'history') setLastPhase(destination) }, [destination, setLastPhase])
+  const selectedPhase = destination === 'history' ? lastPhase : destination
+  const setSelectedPhase = (phase: WorkbenchPhase) => navigation.request(sessionId, phase)
+  const [scope, setScope] = useSessionViewState<TenderQueryDraft['scope']>(navigation.memory, sessionId, 'query.scope', () => 'combined')
+  const [target, setTarget] = useSessionViewState(navigation.memory, sessionId, 'query.target', () => '')
+  const [filters, setFilters] = useSessionViewState<TenderFilters>(navigation.memory, sessionId, 'query.filters', createInitialTenderFilters)
+  const [queryBranch, setQueryBranch] = useSessionViewState<'tender' | 'proposed'>(navigation.memory, sessionId, 'query.branch', () => 'tender')
   const [validationError, setValidationError] = useState<string>()
   const [validationField, setValidationField] = useState<'target' | 'keywords' | 'branch'>()
-  const [opportunityView, setOpportunityView] = useState<'form' | 'overview' | 'details'>('overview')
-  const [screeningView, setScreeningView] = useState<'rules' | 'classification' | 'analysis'>('rules')
+  const [opportunityView, setOpportunityView] = useSessionViewState<'form' | 'overview' | 'details'>(navigation.memory, sessionId, 'opportunity.view', () => 'overview')
+  const [screeningView, setScreeningView] = useSessionViewState<'rules' | 'classification' | 'analysis'>(navigation.memory, sessionId, 'screening.view', () => 'rules')
   const [footerTarget, setFooterTarget] = useState<HTMLElement | null>(null)
   const phaseTabs = useRef<Partial<Record<WorkbenchPhase, HTMLButtonElement | null>>>({})
   const screeningTabs = useRef<Partial<Record<'rules' | 'classification' | 'analysis', HTMLButtonElement | null>>>({})
@@ -203,7 +209,7 @@ export function TenderWorkbenchView({
   const queryFormId = useId()
   const queryErrorId = useId()
   const queryDisabledReasonId = useId()
-  useTenderWorkbenchNavigation(navigation, sessionId, setSelectedPhase)
+  useTenderWorkbenchNavigation(navigation, sessionId, setDestination)
   const write = useSessionWriteFlight({ sessionId, workflow, sendIntent, createIntentId })
   const writeStage: PendingTenderIntent['stage'] = write.state.action === 'query.run'
     ? 'query'
@@ -390,7 +396,9 @@ export function TenderWorkbenchView({
               <span className={css.liveDot} data-status={status} aria-hidden="true" />
             </div>
             <p className={css.subtitle}>{t('workbench.subtitle')}</p>
-            <p className={css.subtitle}>会话 · {sessionId.slice(-8)}</p>
+            <p className={css.contextLine}>会话 · {sessionId.slice(-8)}{workflow?.query && <> · 查询 {workflow.query.querySpec.id.slice(-8)}</>}</p>
+            {workflow?.query && <p className={css.contextLine} title={workflow.query.targetSummary}>任务 · {workflow.query.targetSummary}</p>}
+            <p className={css.contextLine}>MCP 连接状态：未在本视图核验</p>
           </div>
         </div>
         <div className={css.headerMeta}>
@@ -401,7 +409,12 @@ export function TenderWorkbenchView({
         </div>
       </header>
 
-      <nav className={css.stages} aria-label={t('workbench.phases')} role="tablist">
+      <div>
+      <nav className={css.primaryTabs} aria-label="任务一级导航">
+        <button type="button" aria-current={destination !== 'history' ? 'page' : undefined} onClick={() => setSelectedPhase(lastPhase)}>当前任务</button>
+        <button type="button" aria-current={destination === 'history' ? 'page' : undefined} onClick={() => navigation.request(sessionId, 'history')}>任务历史</button>
+      </nav>
+      <nav hidden={destination === 'history'} className={css.stages} aria-label={t('workbench.phases')} role="tablist">
         {TENDER_WORKBENCH_PHASES.map(phase => {
           const progress = tenderWorkbenchPhaseProgress(workflow, phase.id)
           const selected = phase.id === selectedPhase
@@ -415,7 +428,6 @@ export function TenderWorkbenchView({
               role="tab"
               className={selected ? `${css.stage} ${css.stageSelected}` : css.stage}
               aria-label={t(phase.labelKey)}
-              aria-describedby={`${navigationId}-${phase.id}-status`}
               aria-selected={selected}
               aria-current={recommended ? 'step' : undefined}
               aria-controls={`${navigationId}-${phase.id}-panel`}
@@ -429,12 +441,12 @@ export function TenderWorkbenchView({
               <span className={css.stageIcon} aria-hidden="true"><WorkbenchIcon name={phase.icon} /></span>
               <span className={css.stageCopy}>
                 <strong>{t(phase.labelKey)}</strong>
-                <small id={`${navigationId}-${phase.id}-status`}>{t(`workbench.phaseStatus.${progress}`)}</small>
               </span>
             </button>
           )
         })}
       </nav>
+      </div>
 
       <div ref={bodyRef} className={css.body}>
         {(projection.status === 'unavailable' || projection.status === 'invalid') && (
@@ -445,7 +457,17 @@ export function TenderWorkbenchView({
           </WorkbenchFeedback>
         )}
 
-        {selectedPhase === 'opportunity' ? (workflow !== undefined && activeDataset !== undefined && opportunityView === 'details' ? (
+        {destination === 'history' ? (
+          <section className={css.stagePanel} aria-label="任务历史">
+            <header className={css.pageHeading}><div><h2>任务历史</h2><p>当前仅提供本 Session 已保存的工作流记录；跨会话历史索引尚未接入。其他任务请从宿主历史会话进入。</p></div></header>
+            {workflow?.query ? <article className={css.emptyState}>
+              <h3>{workflow.query.targetSummary}</h3>
+              <p>会话 {sessionId.slice(-8)} · 查询记录 {workflow.query.querySpec.id.slice(-8)}</p>
+              <p>查询时间 {workflow.query.querySpec.createdAt} · 记录数量 {workflow.query.total} · {t(`workbench.status.${status}`)}</p>
+              <button type="button" className={css.secondary} onClick={() => setSelectedPhase(tenderWorkbenchPhaseForStage(workflow.currentStage))}>查看已保存任务</button>
+            </article> : <p>当前会话暂无可用的已保存查询记录；这不代表其他会话没有历史任务。</p>}
+          </section>
+        ) : selectedPhase === 'opportunity' ? (workflow !== undefined && activeDataset !== undefined && opportunityView === 'details' ? (
           <section
             className={css.stagePanel}
             id={`${navigationId}-opportunity-panel`}
@@ -671,7 +693,7 @@ export function TenderWorkbenchView({
         )}
       </div>
 
-      <footer className={css.footer} data-workbench-phase={selectedPhase}>
+      <footer hidden={destination === 'history'} className={css.footer} data-workbench-phase={selectedPhase}>
         <div className={css.footerPortal} ref={setFooterTarget}>
           {selectedPhase !== 'screening' && selectedPhase !== 'decision' && !(selectedPhase === 'delivery' && workflow !== undefined && activeDataset !== undefined && (workflow.review !== undefined || workflow.report !== undefined)) && <div className={css.footerCopy}>
             <span className={css.footerHint}>{t('workbench.footerHint')}</span>

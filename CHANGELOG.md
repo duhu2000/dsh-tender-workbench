@@ -4,6 +4,11 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-09-10
+
+- 对齐共享交互规范 v1.5.0：强化 Better Sidebar 能力探针、Session 定向展开与订阅清理；五个流程入口复用同一 Tab，增加当前会话记录历史视图与缺失依赖提示。
+- Tab 重开保留会话级阶段、查询草稿及查询/筛选子视图；阶段导航只显示图标和短名称，窄栏保留任务状态文字。真实 DSH 四插件组合回归待验。
+
 ## [0.5.3] - 2026-09-08
 
 - 改善搜索元数据、安装说明、能力边界与四产品互链；无运行时或依赖变更。

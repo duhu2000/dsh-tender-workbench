@@ -2,14 +2,15 @@
 import { cleanup, render } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apply } from '../src/client/index.tsx'
+import { apply, inject } from '../src/client/index.tsx'
+import type { WorkbenchDestination } from '../src/client/workbench/navigation-controller.ts'
 import type { TenderClientContext } from '../src/client/client-context.ts'
 import { TENDER_WORKBENCH_TAB_ID } from '../src/client/better-sidebar-adapter.ts'
 import { TENDER_ENTRY_SESSION_ID_PREFIX } from '../src/client/tender-session-entry.ts'
 
 afterEach(() => { cleanup() })
 
-function harness() {
+function harness(providerAvailable = true) {
   const entries: unknown[] = []
   const effects: Array<() => void> = []
   const disposeEntries: Array<ReturnType<typeof vi.fn>> = []
@@ -54,6 +55,7 @@ function harness() {
     open: openSession,
   }
   const ctx = {
+    inject: vi.fn((_deps: string[], callback: (ctx: TenderClientContext) => void) => { if (providerAvailable) callback(ctx) }),
     effect: vi.fn((factory: () => unknown) => {
       const dispose = factory()
       if (typeof dispose === 'function') effects.push(dispose as () => void)
@@ -88,6 +90,7 @@ function harness() {
       registerTab: vi.fn(() => disposeTab),
       isTabEnabled: vi.fn(() => true),
       openTab,
+      subscribeState: vi.fn(() => vi.fn()),
       getSnapshot: vi.fn(() => ({ sessionId: current, state: undefined, prefs: {} })),
     },
   } as unknown as TenderClientContext
@@ -104,6 +107,62 @@ function entryOf<T>(entries: readonly unknown[], name: string): T {
 }
 
 describe('S1a client integration', () => {
+  it('attaches a late provider and removes only its own subscription/descriptor when that provider unloads', () => {
+    const test = harness(false)
+    apply(test.ctx)
+    const shortcut = entryOf<{ inject(id: string): { openPhase(phase: WorkbenchDestination): boolean } }>(test.entries, 'conversation.input.dock').inject('session-1')
+    expect(shortcut.openPhase('opportunity')).toBe(false)
+    const attachProvider = vi.mocked(test.ctx.inject).mock.calls[0]?.[1]
+    if (!attachProvider) throw new Error('provider dependency scope missing')
+    attachProvider(test.ctx as never, undefined as never)
+    expect(shortcut.openPhase('opportunity')).toBe(true)
+    expect(test.entries).toHaveLength(4)
+    const effect = vi.mocked(test.ctx.effect)
+    for (const label of ['dsh-tender-workbench: Better Sidebar tab', 'dsh-tender-workbench: provider subscription lifetime']) {
+      const index = effect.mock.calls.findIndex(call => call[1] === label)
+      const dispose = effect.mock.results[index]?.value
+      if (typeof dispose !== 'function') throw new Error('provider cleanup missing')
+      dispose()
+    }
+    expect(test.disposeTab).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(test.ctx.betterSidebar.subscribeState).mock.results[0]?.value).toHaveBeenCalledTimes(1)
+    expect(shortcut.openPhase('history')).toBe(false)
+    for (const dispose of test.disposeEntries) expect(dispose).not.toHaveBeenCalled()
+  })
+  it('keeps conversation slots when Better Sidebar is absent or incompatible', () => {
+    expect(inject).not.toContain('betterSidebar')
+    for (const present of [false, true]) {
+      const test = harness(present)
+      if (present) Object.assign(test.ctx.betterSidebar, { subscribeState: undefined })
+      expect(() => apply(test.ctx)).not.toThrow()
+      expect(test.entries).toHaveLength(4)
+      const shortcut = entryOf<{ inject(id: string): { openPhase(phase: WorkbenchDestination): boolean } }>(test.entries, 'conversation.input.dock').inject('session-1')
+      expect(shortcut.openPhase('history')).toBe(false)
+      expect(test.openTab).not.toHaveBeenCalled()
+      expect(test.ctx.betterSidebar.registerTab).not.toHaveBeenCalled()
+    }
+  })
+
+  it('all five shortcuts repeatedly target the same Tab without creating Sessions or invoking tools', () => {
+    const test = harness()
+    apply(test.ctx)
+    const shortcut = entryOf<{ inject(id: string): { openPhase(phase: WorkbenchDestination): boolean } }>(test.entries, 'conversation.input.dock').inject('session-2')
+    for (const phase of ['opportunity', 'screening', 'decision', 'delivery', 'history'] as const) {
+      expect(shortcut.openPhase(phase)).toBe(true)
+      expect(shortcut.openPhase(phase)).toBe(true)
+    }
+    expect(test.openTab).toHaveBeenCalledTimes(10)
+    for (const call of test.openTab.mock.calls) expect(call).toEqual([{ type: TENDER_WORKBENCH_TAB_ID }, { sessionId: 'session-2', cwd: test.ctx.sessions.list.getSnapshot().byId['session-2']?.cwd }])
+    expect(test.ctx.betterSidebar.registerTab).toHaveBeenCalledTimes(1)
+    expect(test.createSession).not.toHaveBeenCalled()
+    expect(test.openSession).not.toHaveBeenCalled()
+    expect(test.ctx.sessions.scope).not.toHaveBeenCalled()
+    const subscriptionDisposer = vi.mocked(test.ctx.betterSidebar.subscribeState).mock.results[0]?.value
+    for (const dispose of [...test.effects].reverse()) dispose()
+    expect(subscriptionDisposer).toHaveBeenCalledTimes(1)
+    expect(shortcut.openPhase('opportunity')).toBe(false)
+    expect(test.openTab).toHaveBeenCalledTimes(10)
+  })
   it('registers one icon-bearing workbench Tab, the dedicated entry, Hero branding, and Header recovery', () => {
     const test = harness()
     apply(test.ctx)
