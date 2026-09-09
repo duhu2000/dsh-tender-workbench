@@ -19,11 +19,23 @@ export interface TenderWorkbenchRevealController {
   attach(sessionId: string, target: RevealTarget): () => void
   /** Consume one explicit user-entry reveal request, now or after first mount. */
   request(sessionId: string): void
+  dispose(): void
 }
 
 function treeContainsTab(node: SidebarState['splits'], tabId: string): boolean {
   if (node.kind === 'leaf') return node.tabs.some(tab => tab.id === tabId)
   return node.children.some(child => treeContainsTab(child, tabId))
+}
+
+function treeFocusesTab(node: SidebarState['splits'], tabId: string): boolean {
+  return node.kind === 'leaf' ? node.active === tabId && node.tabs.some(tab => tab.id === tabId)
+    : node.children.some(child => treeFocusesTab(child, tabId))
+}
+
+function ownsWorkbench(state: SidebarState): boolean {
+  const owns = (node: SidebarState['splits']): boolean => node.kind === 'leaf'
+    ? node.tabs.some(tab => tab.type === TENDER_WORKBENCH_TAB_ID) : node.children.some(owns)
+  return owns(state.splits) || owns(state.bottomSplits) || state.floats.some(item => item.tab.type === TENDER_WORKBENCH_TAB_ID)
 }
 
 /** Reveal only the panel that owns the workbench Tab; floating Tabs are already visible. */
@@ -40,30 +52,57 @@ export function revealTenderWorkbenchState(state: SidebarState, tabId: string): 
 
 /**
  * Session-scoped, non-persistent handshake between an explicit product entry
- * and the mounted Better Sidebar Tab. It owns no business state and becomes
- * unreachable with the Client plugin Context.
+ * and the mounted Better Sidebar Tab. No service means inert (isolated rendering
+ * only). Production binds a probed service and explicitly disposes its listener.
  */
-export function createTenderWorkbenchRevealController(): TenderWorkbenchRevealController {
+export function createTenderWorkbenchRevealController(
+  service?: Pick<BetterSidebarService, 'getSnapshot' | 'subscribeState'>,
+): TenderWorkbenchRevealController {
   const targets = new Map<string, RevealTarget>()
   const pending = new Set<string>()
+  let disposed = false
+  const flush = (sessionId: string) => {
+    if (disposed || !pending.has(sessionId)) return
+    // SidebarStore.reduce mutates the CURRENT Session, not the Tab's scope.
+    // Never use a stale mounted Tab/store to reveal a different Session.
+    if (service === undefined || service.getSnapshot().sessionId !== sessionId) return
+    const snapshot = service.getSnapshot()
+    if (snapshot.state !== undefined && !ownsWorkbench(snapshot.state)) {
+      pending.delete(sessionId) // The host X won the race before the content mounted.
+      return
+    }
+    const target = targets.get(sessionId)
+    if (target === undefined) return
+    pending.delete(sessionId) // Consume before reduce: notifications can be synchronous.
+    target.store.reduce(state => service.getSnapshot().sessionId === sessionId
+      && (treeFocusesTab(state.splits, target.tabId) || treeFocusesTab(state.bottomSplits, target.tabId))
+      ? revealTenderWorkbenchState(state, target.tabId) : state)
+  }
+  const unsubscribe = service?.subscribeState(() => {
+    const sessionId = service.getSnapshot().sessionId
+    if (sessionId !== undefined) flush(sessionId)
+  })
 
   return {
     attach(sessionId, target) {
+      if (disposed) return () => {}
       targets.set(sessionId, target)
-      if (pending.delete(sessionId)) {
-        target.store.reduce(state => revealTenderWorkbenchState(state, target.tabId))
-      }
+      flush(sessionId)
       return () => {
         if (targets.get(sessionId) === target) targets.delete(sessionId)
       }
     },
     request(sessionId) {
-      const target = targets.get(sessionId)
-      if (target === undefined) {
-        pending.add(sessionId)
-        return
-      }
-      target.store.reduce(state => revealTenderWorkbenchState(state, target.tabId))
+      if (disposed) return
+      pending.add(sessionId)
+      flush(sessionId)
+    },
+    dispose() {
+      if (disposed) return
+      disposed = true
+      unsubscribe?.()
+      pending.clear()
+      targets.clear()
     },
   }
 }
@@ -81,7 +120,7 @@ export function useTenderWorkbenchReveal(
 
 /** Fail loudly only when the mandatory provider lacks an exercised capability. */
 export function assertBetterSidebarContract(service: BetterSidebarService): void {
-  const methods = ['registerTab', 'isTabEnabled', 'openTab', 'getSnapshot'] as const
+  const methods = ['registerTab', 'isTabEnabled', 'openTab', 'getSnapshot', 'subscribeState'] as const
   for (const method of methods) {
     if (typeof service[method] !== 'function') {
       throw new Error(`dsh-tender-workbench requires the Better Sidebar ${method}() capability`)
@@ -116,8 +155,7 @@ export function registerTenderWorkbenchTab(
 
 /**
  * Create or focus the workbench Tab in the explicitly supplied Session. A
- * reveal request is emitted only when that Session is currently on screen;
- * inactive targeted opens never alter a hidden Session's panel geometry.
+ * pending reveal is consumed only when its Session becomes current.
  */
 export function openTenderWorkbench(
   service: BetterSidebarService,
@@ -127,6 +165,6 @@ export function openTenderWorkbench(
   assertBetterSidebarContract(service)
   if (!service.isTabEnabled(TENDER_WORKBENCH_TAB_ID)) return false
   service.openTab({ type: TENDER_WORKBENCH_TAB_ID }, scope)
-  if (service.getSnapshot().sessionId === scope.sessionId) reveal.request(scope.sessionId)
+  reveal.request(scope.sessionId)
   return true
 }

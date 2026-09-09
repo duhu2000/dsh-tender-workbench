@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -60,6 +60,77 @@ function expectWriteProgress(action: string, phase: string, label: string): HTML
 }
 
 describe('TenderWorkbench S1a shell', () => {
+  it('retains the query draft and last current phase across host Tab X, but isolates new Sessions', () => {
+    const navigation = createTenderWorkbenchNavigationController()
+    const props = { sessionId: 'session-one', projection: { status: 'empty' } as const, navigation, sendIntent: vi.fn(async () => {}), t }
+    const mounted = render(<TenderWorkbenchView {...props} />)
+    fireEvent.change(screen.getByLabelText(zh['workbench.query.target']), { target: { value: '未提交的查询目标' } })
+    fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.delivery'] }))
+    fireEvent.click(screen.getByRole('button', { name: '任务历史' }))
+    mounted.unmount()
+    const reopened = render(<TenderWorkbenchView {...props} />)
+    expect(screen.getByRole('heading', { name: '任务历史' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '当前任务' }))
+    expect(screen.getByRole('tab', { name: zh['workbench.phase.delivery'] }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.opportunity'] }))
+    expect((screen.getByLabelText(zh['workbench.query.target']) as HTMLTextAreaElement).value).toBe('未提交的查询目标')
+    reopened.unmount()
+    const other = render(<TenderWorkbenchView {...props} sessionId="session-two" />)
+    expect((screen.getByLabelText(zh['workbench.query.target']) as HTMLTextAreaElement).value).toBe('')
+    other.unmount()
+    navigation.dispose()
+    render(<TenderWorkbenchView {...props} />)
+    expect((screen.getByLabelText(zh['workbench.query.target']) as HTMLTextAreaElement).value).toBe('')
+    expect(props.sendIntent).not.toHaveBeenCalled()
+  })
+  it('navigates all five views without writes and restores the view after a host Tab unmount', () => {
+    const navigation = createTenderWorkbenchNavigationController()
+    const sendIntent = vi.fn(async () => {})
+    const createIntentId = vi.fn(() => 'must-not-create')
+    const projection = { status: 'ready', projection: createEmptyTenderWorkflowProjection() } as const
+    const before = JSON.stringify(projection)
+    const props = { sessionId: 'session-1', projection, navigation, sendIntent, createIntentId, t }
+    const view = render(<TenderWorkbenchView {...props} />)
+    const menu = screen.getByRole('tablist', { name: zh['workbench.phases'] })
+    expect(menu.querySelectorAll('small, p').length).toBe(0)
+    for (const phase of TENDER_WORKBENCH_PHASES) {
+      act(() => { navigation.request('session-1', phase.id); navigation.request('session-1', phase.id) })
+      expect(screen.getByRole('tab', { name: zh[phase.labelKey] }).getAttribute('aria-selected')).toBe('true')
+    }
+    fireEvent.click(screen.getByRole('button', { name: '任务历史' }))
+    expect(screen.getByRole('heading', { name: '任务历史' })).toBeTruthy()
+    expect(screen.getByText(/跨会话历史索引尚未接入/)).toBeTruthy()
+    expect(screen.queryByRole('tablist', { name: zh['workbench.phases'] })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^(展开|收起|关闭)工作台$/ })).toBeNull()
+    view.unmount() // Native Tab X removes content, not persisted workflow facts.
+    const reopened = render(<TenderWorkbenchView {...props} />)
+    expect(screen.getByRole('heading', { name: '任务历史' })).toBeTruthy()
+    expect(JSON.stringify(projection)).toBe(before)
+    expect(sendIntent).not.toHaveBeenCalled()
+    expect(createIntentId).not.toHaveBeenCalled()
+    reopened.unmount()
+    navigation.dispose()
+    const select = vi.fn()
+    navigation.attach('session-1', select)
+    navigation.request('session-1', 'delivery')
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it('deduplicates navigation callbacks and retains Session selection through detach/reattach', () => {
+    const navigation = createTenderWorkbenchNavigationController()
+    const select = vi.fn()
+    const detach = navigation.attach('one', select)
+    navigation.request('one', 'screening')
+    navigation.request('one', 'screening')
+    expect(select).toHaveBeenCalledTimes(1)
+    detach()
+    const restored = vi.fn()
+    navigation.attach('one', restored)
+    expect(restored).toHaveBeenCalledWith('screening')
+    const other = vi.fn()
+    navigation.attach('two', other)
+    expect(other).not.toHaveBeenCalled()
+  })
   it('defines the four business phases and all seven internal nodes in one configuration', () => {
     expect(TENDER_WORKBENCH_PHASES.map(phase => phase.id)).toEqual([
       'opportunity', 'screening', 'decision', 'delivery',

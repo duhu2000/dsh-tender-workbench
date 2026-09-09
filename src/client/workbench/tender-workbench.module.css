@@ -60,6 +60,12 @@
   box-sizing: border-box;
 }
 
+.shell [hidden] { display: none !important; }
+.primaryTabs { display: flex; border-bottom: 1px solid var(--tw-line); }
+.primaryTabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 10px 16px; color: var(--tw-muted); cursor: pointer; }
+.primaryTabs button[aria-current="page"] { color: var(--tw-brand); border-bottom-color: var(--tw-brand); }
+.contextLine { margin: 3px 0 0; font-size: 11px; color: var(--tw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .shell :where(button, input, select, textarea) {
   min-width: 0;
   color: inherit;
@@ -1445,7 +1451,7 @@
   .dataView .dataTable tbody tr { grid-template-columns: 1fr; }
   .decisionSegment { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .brandCopy .title { max-width: 128px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .status { font-size: 0; }
+  .status { font-size: 11px; }
   .status > span { margin: 0; }
   .stageCopy strong { font-size: 11px; }
   .metricGrid,

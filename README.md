@@ -5,7 +5,7 @@
 招投标智能体：支持招投标搜索、招标查询、投标查询、标讯查询、拟建项目与项目筛选，辅助商机发现、人工复核及 Excel/PDF 导出，使用客户自备授权的企查查 MCP。
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.3
+dsh plugin --profile web add dsh-tender-workbench@0.5.4
 ```
 
 请先满足下文的 DSH、连接器及侧边栏依赖要求；安装后完整停止并重启对应 Profile。
@@ -25,7 +25,7 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.3
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
 >
-> 当前稳定版本：**0.5.3**（正式版本）
+> 当前稳定版本：**0.5.4**（正式版本）
 
 [![CI](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-tender-workbench)](https://www.npmjs.com/package/dsh-tender-workbench)
@@ -70,10 +70,10 @@ dsh web --no-open
 
 安装或移除插件后，请完整重启 Web Profile。插件通过 `dsh.bundle.patch` 启用 `cordis.patch.yml`，并注册 `dsh-tender-workbench` Loader。
 
-安装指定的 `0.5.3` 版本：
+安装指定的 `0.5.4` 版本：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.3
+dsh plugin --profile web add dsh-tender-workbench@0.5.4
 ```
 
 移除插件：
@@ -84,7 +84,7 @@ dsh plugin --profile web remove dsh-tender-workbench
 
 ## 使用工作台
 
-插件提供左上角“招投标”入口和会话 Header 恢复入口。点击左上角入口会根据当前工作区、最近工作区或第一个可用工作区的路径创建独立原生会话，显示“招投标智能体”标题与目标图标，默认不打开右侧工作台。点击输入框下方的项目查询、规则筛选、人工复核或结果交付按钮时，才打开对应 Better Sidebar 视图；其他会话保留各自原有标题与标识。
+插件提供左上角“招投标”入口和会话 Header 恢复入口。点击左上角入口会根据当前工作区、最近工作区或第一个可用工作区的路径创建独立原生会话，显示“招投标智能体”标题与目标图标，默认不打开右侧工作台。点击输入框下方的找机会、筛候选、人工定案、形成交付或任务历史按钮时，才打开对应 Better Sidebar 视图；其他会话保留各自原有标题与标识。
 
 页面导航只切换可见阶段，不会修改业务状态或自动执行后续动作。规则建议、编辑、影响预览与确认彼此独立；报告生成前始终展示已复核和待复核范围。宽屏使用主从布局，中窄屏保持相同信息顺序，并保留局部表格滚动与可访问的固定操作区。
 
@@ -112,18 +112,18 @@ dsh plugin --profile web remove dsh-tender-workbench
 - `mcp__qcc-tender__search_tenders`
 - `mcp__qcc-tender__search_proposed_projects`
 
-缺少必要服务、Better Sidebar 能力不兼容、MCP 工具不可用或会话持久化不是 JSONL 时，插件会明确失败；不提供 Web 搜索、其他持久化或 Workspace 存储兜底。
+缺少兼容 Better Sidebar 时，对话入口和已支持的 Host 工具保持可用，流程按钮提示安装/升级、启用 Tab 并重启，不创建另一套侧拉。其余必要服务缺失、MCP 工具不可用或会话持久化不是 JSONL 时明确失败；不提供 Web 搜索、其他持久化或 Workspace 存储兜底。
 
 ## 升级与回滚
 
 从已有版本升级：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.3
+dsh plugin --profile web add dsh-tender-workbench@0.5.4
 dsh web --no-open
 ```
 
-0.5.3 更新搜索与安装文档，保留 0.5.2 的运行时行为。0.5.2 对齐共享规范 v1.1.3：首页输入框下方四个快捷入口采用上图标、下文字的描边卡片，支持浅深色、窄屏单行横向滚动与键盘聚焦完整可见。延续 0.5.1 的默认收起行为：「招投标」菜单仅进入独立会话，点击下方按钮才打开工作台。不修改宿主全局侧栏偏好、历史布局或业务数据。如需回退，可安装 `dsh-tender-workbench@0.5.1` 并重启 Profile。npm 版本与公开 Git 标签保持不可变。
+0.5.4 对齐共享规范 v1.5.0：五个流程按钮打开/聚焦同一 Session 单例 Tab 并定位内部视图；补齐能力探针、状态订阅、卸载清理和跨会话展开保护。宿主管理侧拉、Tab X、宽度及停靠，业务内容不提供重复容器控制。Tab 重开保留当前 Client 内的阶段、查询草稿和主要子视图；历史仅展示当前 Session 已保存的查询记录，不是跨会话完整历史。真实 MCP 连接状态尚未接入，页面明确提示未核验；真实 DSH 四插件组合仍待复验。如需回退，可安装 `dsh-tender-workbench@0.5.3` 并重启 Profile；未改变业务数据格式。npm 版本与公开 Git 标签保持不可变。
 
 ## 本地开发
 
@@ -138,7 +138,7 @@ corepack pnpm@11.7.0 run check
 
 `check` 会执行类型检查、完整 Vitest 测试、生产构建、README/发布状态校验以及 npm tarball 白名单预检。配置 npm Trusted Publishing 后，[发布工作流](.github/workflows/release.yml)可使用 OIDC 和 provenance；手工发布不得声称 provenance。
 
-省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.3 发布清单](docs/RELEASE-0.5.3.md)。
+省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.4 发布清单](docs/RELEASE-0.5.4.md)。
 
 ## 界面演示与市场投稿
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-tender-workbench",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Tender search and bid intelligence in DeepSeek Harness with proposed project search, rule screening, human review and Excel/PDF exports using user-authorized Qichacha MCP.",
   "keywords": [
     "deepseek-harness",
@@ -47,7 +47,7 @@
     "README.en.md",
     "CHANGELOG.md",
     "cordis.patch.yml",
-    "docs/RELEASE-0.5.3.md",
+    "docs/RELEASE-0.5.4.md",
     "lib/index.js",
     "lib/client.js",
     "lib/client.js.map",

@@ -4,7 +4,7 @@ import { IconGoalOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
+import type { BetterSidebarService, TabComponentProps } from 'dsh-better-sidebar/client/service'
 import type { TenderClientContext } from './client-context.ts'
 import type { TenderTranslate } from './fields/field-props.ts'
 import {
@@ -19,6 +19,7 @@ import { TenderPromptEntry, type TenderPromptInjected } from './TenderPrompt.tsx
 import { initialTenderPrompt, type TenderPromptMemory } from './tender-prompt.ts'
 import {
   createTenderWorkbenchRevealController,
+  assertBetterSidebarContract,
   openTenderWorkbench,
   registerTenderWorkbenchTab,
 } from './better-sidebar-adapter.ts'
@@ -38,7 +39,7 @@ import {
 } from './workbench/TenderWorkbench.tsx'
 import {
   createTenderWorkbenchNavigationController,
-  type WorkbenchPhase,
+  type WorkbenchDestination,
 } from './workbench/navigation-controller.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -50,9 +51,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 const NS = 'tenderFilter'
 
-/** Required public Client services; Better Sidebar is deliberately mandatory. */
+/** Core conversation stays available while the optional workbench provider is absent. */
 export const inject = [
-  'slots', 'sessions', 'workspaces', 'conversation', 'conversationEvents', 'locale', 'betterSidebar', 'connection',
+  'slots', 'sessions', 'workspaces', 'conversation', 'conversationEvents', 'locale', 'connection',
 ]
 
 function RegisteredTenderWorkbenchTab({
@@ -101,7 +102,8 @@ export function apply(ctx: TenderClientContext): void {
   }
   const t = locale.bind(NS)
   ctx.effect(() => installOrdinarySessionGuard(sessions, ctx.workspaces), 'dsh-tender-workbench: ordinary Session reuse')
-  const reveal = createTenderWorkbenchRevealController()
+  let sidebar: BetterSidebarService | undefined
+  let reveal: ReturnType<typeof createTenderWorkbenchRevealController> | undefined
   const navigation = createTenderWorkbenchNavigationController()
   const projectionPort = createTenderProjectionPort(sessions)
   // Scoped to this Client lifetime, not shared between plugin sessions or clients.
@@ -110,10 +112,11 @@ export function apply(ctx: TenderClientContext): void {
   const sendIntent: TenderWorkbenchTabProps['sendIntent'] = (sessionId, intent) => (
     sendSessionTenderWorkbenchIntent(sessions, connection, sessionId, intent)
   )
-  const openSession = (sessionId: SessionId, phase?: WorkbenchPhase): boolean => {
+  const openSession = (sessionId: SessionId, phase?: WorkbenchDestination): boolean => {
+    if (!active || sidebar === undefined || reveal === undefined) return false
     const summary = sessions.list.getSnapshot().byId[sessionId]
     const opened = openTenderWorkbench(
-      ctx.betterSidebar,
+      sidebar,
       { sessionId, ...(summary?.cwd === undefined ? {} : { cwd: summary.cwd }) },
       reveal,
     )
@@ -140,22 +143,35 @@ export function apply(ctx: TenderClientContext): void {
     }
   }
 
-  ctx.effect(() => registerTenderWorkbenchTab(
-    ctx.betterSidebar,
-    props => (
-      <RegisteredTenderWorkbenchTab
-        {...props}
-        locale={locale}
-        sendIntent={sendIntent}
-        t={t}
-        projectionPort={projectionPort}
-        reveal={reveal}
-        navigation={navigation}
-      />
-    ),
-    () => t('sidebar.label'),
-    size => <IconGoalOutline16 size={size} />,
-  ), 'dsh-tender-workbench: Better Sidebar tab')
+  // A dependency-scoped child follows provider arrival/removal, without taking
+  // down the conversation entry, prompts, or supported Host tools.
+  ctx.inject(['betterSidebar'], providerContext => {
+    const service = providerContext.betterSidebar
+    try { assertBetterSidebarContract(service) } catch { return }
+    const controller = createTenderWorkbenchRevealController(service)
+    sidebar = service
+    reveal = controller
+    providerContext.effect(() => () => {
+      controller.dispose()
+      if (sidebar === service) { sidebar = undefined; reveal = undefined }
+    }, 'dsh-tender-workbench: provider subscription lifetime')
+    providerContext.effect(() => registerTenderWorkbenchTab(
+      service,
+      props => (
+        <RegisteredTenderWorkbenchTab
+          {...props}
+          locale={locale}
+          sendIntent={sendIntent}
+          t={t}
+          projectionPort={projectionPort}
+          reveal={controller}
+          navigation={navigation}
+        />
+      ),
+      () => t('sidebar.label'),
+      size => <IconGoalOutline16 size={size} />,
+    ), 'dsh-tender-workbench: Better Sidebar tab')
+  })
 
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
     name: 'conversation.input.dock',
@@ -202,5 +218,10 @@ export function apply(ctx: TenderClientContext): void {
     }),
   }, TenderSessionHeaderEntry))
 
-  ctx.effect(() => () => { active = false; promptMemory.clear() }, 'dsh-tender-workbench: Session entry lifetime')
+  ctx.effect(() => () => {
+    active = false
+    reveal?.dispose()
+    navigation.dispose()
+    promptMemory.clear()
+  }, 'dsh-tender-workbench: Session entry lifetime')
 }

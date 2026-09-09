@@ -13,14 +13,15 @@ import { tenderWorkbenchDisplayStatus } from './workbench/workbench-status.ts'
 import css from './workbench-entry.module.css'
 import theme from './qcc-theme.module.css'
 import { mountTenderHero, mountTenderShortcuts } from './tender-hero-bridge.ts'
-import type { WorkbenchPhase } from './workbench/navigation-controller.ts'
+import type { WorkbenchDestination } from './workbench/navigation-controller.ts'
 import { WorkbenchIcon } from './workbench/TenderWorkbench.tsx'
 
 const SIDEBAR_WORKSPACES_SELECTOR = '[data-slot="sidebar.workspaces"]'
 const TENDER_TOP_MOUNT_SELECTOR = '[data-dsh-tender-top-mount="true"]'
 export interface TenderHeroInjected {
-  openPhase(phase: WorkbenchPhase): boolean
+  openPhase(phase: WorkbenchDestination): boolean
 }
+const SIDEBAR_UNAVAILABLE = '无法打开招投标 Tab。请安装或升级 dsh-better-sidebar（需 targetedOpen / stateSubscription），在宿主设置中启用招投标 Tab，然后重启 DSH。仍可使用对话和已支持的 Host 工具。'
 export type TenderHeroTitleBridgeProps = PropsRuntime<'conversation.input.dock'>
   & PropsLocale<'tenderFilter'> & InjectFace<TenderHeroInjected>
 
@@ -40,6 +41,8 @@ export function TenderHeroTitleBridge({ sessionId, useSession, openPhase }: Tend
   const anchorRef = useRef<HTMLSpanElement>(null)
   const [heroMount, setHeroMount] = useState<HTMLElement | null>(null)
   const [menuMount, setMenuMount] = useState<HTMLElement | null>(null)
+  const [openError, setOpenError] = useState<string>()
+  useEffect(() => { setOpenError(undefined) }, [sessionId])
   const blank = useSession(snapshot => snapshot.composerPhase === 'blank')
   const owned = isTenderEntrySessionId(sessionId)
   useEffect(() => {
@@ -52,10 +55,13 @@ export function TenderHeroTitleBridge({ sessionId, useSession, openPhase }: Tend
     if (!anchorRef.current || !owned) return
     return mountTenderShortcuts(anchorRef.current, setMenuMount)
   }, [owned, sessionId])
-  const menu = <nav className={`${theme.scope} ${css.shortcuts}`} aria-label="招投标快捷导航">
-    {([['opportunity', '项目查询', 'search'], ['screening', '规则筛选', 'screening'], ['decision', '人工复核', 'decision'], ['delivery', '结果交付', 'delivery']] as const).map(([phase, label, icon]) =>
-      <button key={phase} type="button" onFocus={event => revealShortcut(event.currentTarget)} onClick={() => openPhase(phase)}><span className={css.shortcutIcon} aria-hidden="true"><WorkbenchIcon name={icon} /></span><span>{label}</span></button>)}
-  </nav>
+  const menu = <><nav className={`${theme.scope} ${css.shortcuts}`} aria-label="招投标快捷导航">
+    {([['opportunity', '找机会', 'search'], ['screening', '筛候选', 'screening'], ['decision', '人工定案', 'decision'], ['delivery', '形成交付', 'delivery'], ['history', '任务历史', 'clock']] as const).map(([phase, label, icon]) =>
+      <button key={phase} type="button" onFocus={event => revealShortcut(event.currentTarget)} onClick={() => {
+        try { setOpenError(openPhase(phase) ? undefined : SIDEBAR_UNAVAILABLE) }
+        catch { setOpenError(SIDEBAR_UNAVAILABLE) }
+      }}><span className={css.shortcutIcon} aria-hidden="true"><WorkbenchIcon name={icon} /></span><span>{label}</span></button>)}
+  </nav>{openError && <p className={`${theme.scope} ${css.sidebarError}`} role="alert">{openError}</p>}</>
   return <>
     <span ref={anchorRef} hidden data-dsh-tender-hero-anchor="true" />
     {owned && blank && heroMount && createPortal(<div className={css.hero}>
@@ -171,17 +177,22 @@ export type TenderHeaderEntryProps = PropsRuntime<'conversation.session.header.a
   & PropsLocale<'tenderFilter'>
 
 export function TenderSessionHeaderEntry({ sessionId, openWorkbench, t, useProjection }: TenderHeaderEntryProps) {
+  const [error, setError] = useState<string>()
+  useEffect(() => { setError(undefined) }, [sessionId])
   const state = tenderWorkbenchDisplayStatus(
     readTenderProjectionSnapshot(useProjection('dshTenderWorkflow')),
   )
   if (!isTenderEntrySessionId(sessionId)) return null
   return (
-    <button
+    <><button
       type="button"
       className={`${theme.scope} ${css.headerButton}`}
       data-workbench-status={state}
       title={t(`workbench.status.${state}`)}
-      onClick={openWorkbench}
-    >{t('header.reopen')}</button>
+      onClick={() => {
+        try { setError(openWorkbench() ? undefined : SIDEBAR_UNAVAILABLE) }
+        catch { setError(SIDEBAR_UNAVAILABLE) }
+      }}
+    >{t('header.reopen')}</button>{error && <span role="alert">{error}</span>}</>
   )
 }

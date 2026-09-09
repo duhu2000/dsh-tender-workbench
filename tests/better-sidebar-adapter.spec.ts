@@ -25,6 +25,7 @@ function service(overrides: Partial<BetterSidebarService> = {}): BetterSidebarSe
     registerTab: vi.fn(() => () => {}),
     isTabEnabled: vi.fn(() => true),
     openTab: vi.fn(),
+    subscribeState: vi.fn(() => vi.fn()),
     getSnapshot: vi.fn(() => snapshot('session-1')),
     ...overrides,
   } as unknown as BetterSidebarService
@@ -68,6 +69,96 @@ function store(initial: SidebarState): { readonly store: SidebarStore; read(): S
 }
 
 describe('Better Sidebar workbench adapter', () => {
+  it('honors host Files selection and Tab X before delayed content mount', () => {
+    const target = store(state('right'))
+    let notify = () => {}
+    const sidebar = service({ getSnapshot: () => ({ ...snapshot('session-1'), state: target.read() }), subscribeState: listener => { notify = listener; return vi.fn() } })
+    const reveal = createTenderWorkbenchRevealController(sidebar)
+    openTenderWorkbench(sidebar, { sessionId: 'session-1' }, reveal)
+    const initial = target.read()
+    if (initial.splits.kind !== 'leaf') throw new Error('fixture leaf required')
+    const files = { id: 'files', type: 'explorer', title: 'Files' }
+    target.set({ ...initial, splits: { ...initial.splits, tabs: [...initial.splits.tabs, files], active: 'files' } })
+    const detach = reveal.attach('session-1', { store: target.store, tabId: TENDER_WORKBENCH_TAB_ID })
+    expect(target.read().panelOpen).toBe(false)
+    expect(target.read().splits).toMatchObject({ active: 'files' })
+    detach()
+    openTenderWorkbench(sidebar, { sessionId: 'session-1' }, reveal)
+    target.set({ ...initial, splits: { ...initial.splits, tabs: [files], active: 'files' } })
+    notify() // X cancels pending reveal even before any component can attach.
+    target.set(initial)
+    reveal.attach('session-1', { store: target.store, tabId: TENDER_WORKBENCH_TAB_ID })
+    expect(target.read().panelOpen).toBe(false)
+  })
+  it('requires a callable state subscription, not only its advertised feature', () => {
+    expect(() => assertBetterSidebarContract(service({ subscribeState: undefined as never }))).toThrow('subscribeState()')
+  })
+
+  it('guards the current-session store during delayed mount, then consumes reveal once on return', () => {
+    let current = 'session-1'
+    let notify = () => {}
+    const unsubscribe = vi.fn()
+    const sidebar = service({
+      getSnapshot: () => snapshot(current),
+      subscribeState: vi.fn(listener => { notify = listener; return unsubscribe }),
+    })
+    const reveal = createTenderWorkbenchRevealController(sidebar)
+    const target = store(state('right'))
+    openTenderWorkbench(sidebar, { sessionId: 'session-1' }, reveal)
+    current = 'session-2'
+    reveal.attach('session-1', { store: target.store, tabId: TENDER_WORKBENCH_TAB_ID })
+    notify()
+    expect(target.store.reduce).not.toHaveBeenCalled()
+    current = 'session-1'
+    notify()
+    expect(target.read().panelOpen).toBe(true)
+    expect(target.read().width).toBe(400)
+    target.set(state('right', false)) // Native collapse; a notification is NOT an open request.
+    notify()
+    expect(target.read().panelOpen).toBe(false)
+    reveal.dispose()
+    reveal.dispose()
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('defers inactive targeted intent, leaves the foreground geometry untouched, and disposes pending work', () => {
+    let current = 'session-1'
+    let notify = () => {}
+    const sidebar = service({ getSnapshot: () => snapshot(current), subscribeState: listener => { notify = listener; return vi.fn() } })
+    const reveal = createTenderWorkbenchRevealController(sidebar)
+    const target = store(state('bottom'))
+    reveal.attach('session-2', { store: target.store, tabId: TENDER_WORKBENCH_TAB_ID })
+    openTenderWorkbench(sidebar, { sessionId: 'session-2', cwd: '/two' }, reveal)
+    expect(target.store.reduce).not.toHaveBeenCalled()
+    current = 'session-2'
+    notify()
+    expect(target.read()).toMatchObject({ panelOpen: false, bottomOpen: true, width: 400, bottomHeight: 220 })
+    reveal.request('late-session')
+    reveal.dispose()
+    current = 'late-session'
+    const late = store(state('right'))
+    reveal.attach(current, { store: late.store, tabId: TENDER_WORKBENCH_TAB_ID })
+    reveal.request(current)
+    notify()
+    expect(late.store.reduce).not.toHaveBeenCalled()
+  })
+
+  it('does not revive a closed Tab or change other Tabs, splits, width, docking or floats', () => {
+    const initial = state('right')
+    const files = { id: 'files', type: 'explorer', title: 'Files' }
+    const closed = { ...initial, splits: { kind: 'leaf' as const, id: 'right', tabs: [files], active: 'files' } }
+    expect(revealTenderWorkbenchState(closed, TENDER_WORKBENCH_TAB_ID)).toBe(closed)
+    for (const location of ['right', 'bottom', 'float'] as const) {
+      const before = state(location)
+      const after = revealTenderWorkbenchState(before, TENDER_WORKBENCH_TAB_ID)
+      expect(after.splits).toBe(before.splits)
+      expect(after.bottomSplits).toBe(before.bottomSplits)
+      expect(after.floats).toBe(before.floats)
+      expect(after.width).toBe(before.width)
+      expect(after.bottomHeight).toBe(before.bottomHeight)
+      expect(after.activePane).toBe(before.activePane)
+    }
+  })
   it('registers one public single-instance descriptor and disposes through the provider', () => {
     const dispose = vi.fn()
     const sidebar = service({ registerTab: vi.fn(() => dispose) })
@@ -84,7 +175,7 @@ describe('Better Sidebar workbench adapter', () => {
 
   it('targets the requested Session and does not implement a fallback provider', () => {
     const sidebar = service()
-    const reveal = createTenderWorkbenchRevealController()
+    const reveal = createTenderWorkbenchRevealController(service())
     const scope: SessionScope = { sessionId: 'session-1', cwd: 'C:\\workspace' }
     expect(openTenderWorkbench(sidebar, scope, reveal)).toBe(true)
     expect(sidebar.openTab).toHaveBeenCalledWith({ type: TENDER_WORKBENCH_TAB_ID }, scope)
@@ -98,13 +189,13 @@ describe('Better Sidebar workbench adapter', () => {
 
   it('respects a user-disabled workbench tab without opening it', () => {
     const sidebar = service({ isTabEnabled: vi.fn(() => false) })
-    expect(openTenderWorkbench(sidebar, { sessionId: 'session-1' }, createTenderWorkbenchRevealController())).toBe(false)
+    expect(openTenderWorkbench(sidebar, { sessionId: 'session-1' }, createTenderWorkbenchRevealController(service()))).toBe(false)
     expect(sidebar.openTab).not.toHaveBeenCalled()
   })
 
   it('consumes a first-open request after the current Session Tab mounts', () => {
     const sidebar = service()
-    const reveal = createTenderWorkbenchRevealController()
+    const reveal = createTenderWorkbenchRevealController(service())
     const target = store(state('right'))
     expect(openTenderWorkbench(sidebar, { sessionId: 'session-1' }, reveal)).toBe(true)
     expect(target.read().panelOpen).toBe(false)
@@ -114,7 +205,7 @@ describe('Better Sidebar workbench adapter', () => {
 
   it('reveals an attached existing Tab only on another explicit request', () => {
     const sidebar = service()
-    const reveal = createTenderWorkbenchRevealController()
+    const reveal = createTenderWorkbenchRevealController(service())
     const target = store(state('right', true))
     reveal.attach('session-1', { store: target.store, tabId: TENDER_WORKBENCH_TAB_ID })
     target.set(state('right', false))
@@ -124,7 +215,7 @@ describe('Better Sidebar workbench adapter', () => {
   })
 
   it('detaches the mounted reveal target so unmount and HMR leave no live Store reference', () => {
-    const reveal = createTenderWorkbenchRevealController()
+    const reveal = createTenderWorkbenchRevealController(service())
     const target = store(state('right'))
     const dispose = reveal.attach('session-1', {
       store: target.store,
@@ -146,11 +237,11 @@ describe('Better Sidebar workbench adapter', () => {
     expect(revealTenderWorkbenchState(floating, TENDER_WORKBENCH_TAB_ID)).toBe(floating)
   })
 
-  it('does not queue a reveal for an inactive targeted Session', () => {
+  it('does not reveal an inactive targeted Session', () => {
     const sidebar = service({
       getSnapshot: vi.fn(() => snapshot('session-1')),
     })
-    const reveal = createTenderWorkbenchRevealController()
+    const reveal = createTenderWorkbenchRevealController(service())
     const target = store(state('right'))
     expect(openTenderWorkbench(sidebar, { sessionId: 'session-2' }, reveal)).toBe(true)
     reveal.attach('session-2', { store: target.store, tabId: TENDER_WORKBENCH_TAB_ID })
