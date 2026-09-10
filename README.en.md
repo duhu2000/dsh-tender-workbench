@@ -10,9 +10,9 @@ Related agents: [数据清洗补全](https://github.com/duhu2000/dsh-data-cleani
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current stable version: **0.5.5** (stable release).
+Current stable version: **0.5.6** (stable release).
 
-This release targets the full DSH 0.1.2-rc.1 distribution with Better Sidebar 0.18.1; legacy hosts are no longer supported. Back up the complete Profile and verify dependencies before upgrading; do not overwrite a working local hotfix or an unverified host combination.
+Base mode targets the full DSH 0.1.2-rc.1 distribution; Better Sidebar 0.18.1 is optional and only provides the visual workbench. Legacy hosts remain unsupported. Back up the complete Profile and verify dependencies before upgrading.
 
 ## What it does
 
@@ -53,9 +53,9 @@ This release constrains core peers to `~0.1.2-rc.1`; future combinations require
 
 - DeepSeek Harness public packages: `0.1.2-rc.1`
 - `dsh-mcp-connector`: `0.2.31`
-- `dsh-better-sidebar`: `0.18.1`
+- Optional visual workbench: `dsh-better-sidebar@0.18.1`; the peer range is not an acceptance claim for untested versions
 
-The active Profile must provide one coherent runtime with public Session Projection, JSONL Session Persistence, Tools, Skill, Sessions, and WebServer services. Better Sidebar must expose the public `targetedOpen` and `stateSubscription` features.
+The active Profile must provide one coherent runtime with public Session Projection, JSONL Session Persistence, Tools, Skill, Sessions, and WebServer services. Only the visual workbench needs Better Sidebar and its `targetedOpen` / `stateSubscription` features; missing or incompatible capabilities do not block conversation activation.
 
 Before installing, run `node scripts/check-host-compatibility.mjs --host-root /actual/node_modules/@deepseek-ai/dsh --profile-root /actual/profiles/web`. It only reads package manifests: known incompatible hosts, mixed core packages and old Sidebar fail; unknown combinations are reported as unverified. The Windows mount script requires `-DshHostRoot` and executes this gate before mutation. Upgrade the complete host explicitly after backing up the Profile: `npm install -g @deepseek-ai/dsh@0.1.2-rc.1`.
 
@@ -66,34 +66,35 @@ An installed and authorized `qcc-tender` MCP connection must expose these exact 
 - `mcp__qcc-tender__search_tenders`
 - `mcp__qcc-tender__search_proposed_projects`
 
-Without a compatible Better Sidebar provider, conversation entry points and supported Host tools remain available; shortcuts show actionable install/upgrade, enable-tab and restart guidance. No private sidebar is created. Other missing required services, unavailable MCP tools and non-JSONL persistence fail explicitly, with no Web-search or alternate-storage fallback.
+The default preflight accepts Sidebar-free base mode. Add `--workbench` (Windows mount: `-Workbench`) only when explicitly enabling the visual workbench; the Windows flag also checks its enabled bundle before any Profile write. No script automatically installs Sidebar. An already-installed Sidebar 0.17.1 breaking the new host is still blocked, even in base mode. Runtime capability probes and Tab preferences remain separate from manifest inspection.
+
+Without Sidebar, native Sessions, input drafts, the prompt builder, action Skills and Host tools remain available. Conversation-driven query, rule preview/confirmation, human review and report generation retain their contracts; actual model orchestration and paid MCP are separate acceptance layers. Existing authorized Excel/PDF artifact links can be downloaded, but visual table/detail/filter controls, batch-review controls, history view and download buttons require the workbench. All five shortcuts only explain this boundary, preserving state without starting tasks. No alternate drawer or native-workbench rewrite is implemented. Other missing required services, unavailable MCP tools and non-JSONL persistence fail explicitly.
 
 ## Install
 
-Install the current stable release and its required Provider plugins:
+Install base mode. The connector is needed for authorized QCC queries; Sidebar is not required:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
-dsh plugin --profile web add 'dsh-better-sidebar@0.18.1'
 dsh plugin --profile web add dsh-tender-workbench
 dsh web --no-open
 ```
 
-To install the exact 0.5.5 release:
+Optionally enable the visual workbench with `dsh plugin --profile web add dsh-better-sidebar@0.18.1`, enable the tender Tab and fully restart the Profile.
+
+To install the exact 0.5.6 release:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
-dsh plugin --profile web add 'dsh-better-sidebar@0.18.1'
-dsh plugin --profile web add dsh-tender-workbench@0.5.5
+dsh plugin --profile web add dsh-tender-workbench@0.5.6
 ```
 
-To install from an independent checkout, install the required Provider plugins first, then run from this repository:
+To install base mode from an independent checkout:
 
 ```sh
 corepack pnpm@11.7.0 install --frozen-lockfile
 corepack pnpm@11.7.0 run build
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
-dsh plugin --profile web add 'dsh-better-sidebar@0.18.1'
 dsh plugin --profile web add .
 dsh web --no-open
 ```
@@ -102,8 +103,7 @@ To install a packed build:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
-dsh plugin --profile web add 'dsh-better-sidebar@0.18.1'
-dsh plugin --profile web add ./dsh-tender-workbench-0.5.2.tgz
+dsh plugin --profile web add ./dsh-tender-workbench-0.5.6.tgz
 dsh web --no-open
 ```
 
@@ -120,11 +120,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 Upgrade an existing installation by installing the stable version and fully restarting the Web profile:
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.5
+dsh plugin --profile web add dsh-tender-workbench@0.5.6
 dsh web --no-open
 ```
 
-Version 0.5.5 retains the v1.5.0 singleton Tab, five navigation shortcuts and Client-lifetime draft recovery while migrating the client modules and services to the new host. Business schemas are unchanged; history remains Session-local and live MCP connectivity is not verified. Restore a backed-up, fully verified host/plugin combination for rollback, not the original 0.5.4 or an older package alone on the new host.
+Version 0.5.6 aligns optional Sidebar metadata, installation checks and fallback guidance, and fixes Host Session event reads and current-turn binding. It retains the v1.5.0 singleton Tab, five navigation shortcuts and Client-lifetime draft recovery. Business schemas are unchanged; history remains Session-local and live MCP connectivity is not verified. Restore a backed-up, fully verified host/plugin combination for rollback, not the original 0.5.4 or an older package alone on the new host.
 
 ## Using the workbench
 

@@ -21,7 +21,7 @@ const TENDER_TOP_MOUNT_SELECTOR = '[data-dsh-tender-top-mount="true"]'
 export interface TenderHeroInjected {
   openPhase(phase: WorkbenchDestination): boolean
 }
-const SIDEBAR_UNAVAILABLE = '无法打开招投标 Tab。请安装或升级 dsh-better-sidebar（需 targetedOpen / stateSubscription），在宿主设置中启用招投标 Tab，然后重启 DSH。仍可使用对话和已支持的 Host 工具。'
+const SIDEBAR_UNAVAILABLE = '招投标可视化工作台暂不可用，当前输入和业务记录未改变。仍可使用原生对话、提示词生成和已支持的 Host 工具；流程按钮不会代为执行任务。若需工作台，请选择安装 dsh-better-sidebar@0.18.1（需 targetedOpen / stateSubscription），在宿主设置中启用招投标 Tab，再完整重启 DSH。'
 export type TenderHeroTitleBridgeProps = PropsRuntime<'conversation.input.dock'>
   & PropsLocale<'tenderFilter'> & InjectFace<TenderHeroInjected>
 

@@ -2,8 +2,8 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-export function assessCompatibility({ host, core = {}, sidebar, context, node = process.versions.node }) {
-  const errors = [], warnings = []
+export function assessCompatibility({ host, core = {}, sidebar, context, node = process.versions.node, workbench = false }) {
+  const errors = [], warnings = [], notes = []
   const [major, minor] = node.split('.').map(Number)
   if (!(major >= 24 || major === 22 && minor >= 19)) errors.push('Node must be 22.19+ (22.x) or 24+.')
   const old = v => v === '0.1.1-rc.2'
@@ -15,14 +15,19 @@ export function assessCompatibility({ host, core = {}, sidebar, context, node = 
     else if (old(version)) errors.push('Mixed/legacy host package: ' + name + '@' + version + '. Upgrade the full DSH distribution, not one core package.')
     else if (version !== '0.1.2-rc.1') warnings.push('Unverified host package: ' + name + '@' + version)
   }
-  if (!sidebar) warnings.push('Better Sidebar absent: conversation remains available; workbench requires dsh-better-sidebar@0.18.1 and a full profile restart.')
+  if (!sidebar) {
+    const guidance = 'Better Sidebar absent: base conversation, prompt builder and Host tools remain available; visual workbench requires optional dsh-better-sidebar@0.18.1 and a full profile restart. No automatic Sidebar installation.'
+    if (workbench) errors.push(guidance)
+    else notes.push(guidance)
+  }
   else if (sidebar !== '0.18.1') {
     if (sidebar === '0.17.1' && host === '0.1.2-rc.1') errors.push('Known reverse mismatch: DSH 0.1.2-rc.1 + Better Sidebar 0.17.1 requires removed settingsNamespace. Use dsh plugin --profile web add dsh-better-sidebar@0.18.1 after backing up the full profile.')
     else warnings.push('Better Sidebar combination not verified: ' + sidebar)
   }
   if (context === '0.36.0') errors.push('Installed dsh-context@0.36.0 uses removed settingsNamespace. Back up configuration, then explicitly update it: dsh plugin --profile web add dsh-context@0.48.0')
   else if (context && context !== '0.48.0') warnings.push('Installed context version not verified: ' + context)
-  return { errors, warnings, verifiedBaseline: errors.length === 0 && warnings.length === 0 }
+  if (workbench && sidebar) notes.push('Version preflight only: runtime also probes targetedOpen/stateSubscription and enabled Tab before opening the workbench.')
+  return { errors, warnings, notes, mode: workbench ? 'workbench' : 'base', verifiedBaseline: errors.length === 0 && warnings.length === 0 }
 }
 
 export function inspectInstallation(hostRoot, profileRoot) {
@@ -43,11 +48,11 @@ export function inspectInstallation(hostRoot, profileRoot) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = process.argv.slice(2), at = name => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1] }
   const hostRoot = at('--host-root'), profileRoot = at('--profile-root')
-  if (!hostRoot) { console.error('Read-only preflight: node scripts/check-host-compatibility.mjs --host-root /path/to/@deepseek-ai/dsh [--profile-root /path/to/profile]'); process.exitCode = 2 }
+  if (!hostRoot) { console.error('Read-only preflight: node scripts/check-host-compatibility.mjs --host-root /path/to/@deepseek-ai/dsh [--profile-root /path/to/profile] [--workbench]'); process.exitCode = 2 }
   else {
     try {
       const inventory = inspectInstallation(resolve(hostRoot), profileRoot && resolve(profileRoot))
-      const result = assessCompatibility(inventory)
+      const result = assessCompatibility({ ...inventory, workbench: args.includes('--workbench') })
       console.log(JSON.stringify({ inventory, ...result }, null, 2))
       process.exitCode = result.errors.length ? 1 : 0
     } catch (error) { console.error('Cannot read package manifests: ' + error.message); process.exitCode = 2 }

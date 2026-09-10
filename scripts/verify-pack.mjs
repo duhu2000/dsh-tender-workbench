@@ -6,7 +6,17 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+if (pkg.peerDependenciesMeta?.['dsh-better-sidebar']?.optional !== true || pkg.dependencies?.['dsh-better-sidebar'] || pkg.dsh.client.inject.includes('dsh-better-sidebar')) {
+  throw new Error('verify-pack: Better Sidebar must remain an optional peer, never a mandatory client module')
+}
 const client = readFileSync(join(root, 'lib/client.js'), 'utf8')
+const host = readFileSync(join(root, 'lib/index.js'), 'utf8')
+if (host.includes('.session.events') || !host.includes('.snapshotEvents()')) {
+  throw new Error('verify-pack: Host user-intent binding must use the current Session snapshotEvents API')
+}
+if (/require\(["']dsh-better-sidebar(?:\/[^"']*)?["']\)/u.test(client)) {
+  throw new Error('verify-pack: runtime Sidebar import defeats optional installation')
+}
 if (client.includes('@deepseek-ai/dsh-client-runtime/client') || client.includes('conversationEvents') || client.includes('.api.skills.list')) {
   throw new Error('verify-pack: removed DSH client module/service found in production bundle')
 }

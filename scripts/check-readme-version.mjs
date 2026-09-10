@@ -45,5 +45,5 @@ if (errors.length > 0) {
   for (const error of errors) console.error(`docs:check failed: ${error}`)
   process.exitCode = 1
 } else {
-  console.log(`docs:check passed: Chinese and English READMEs match stable version ${pkg.version}.`)
+  console.log(`docs:check passed: Chinese and English READMEs match ${candidate ? 'candidate' : 'stable'} version ${pkg.version}.`)
 }

@@ -4,6 +4,12 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-09-10
+
+- 统一 Better Sidebar optional peer、基础/工作台安装预检和运行时降级文案；不自动安装侧栏、不重写工作台容器。
+- 修复 DSH 0.1.2-rc.1 Host 工具的 Session.snapshotEvents() 与 turn/start 轮次绑定，补真实 Session 契约，避免错误拒绝直接用户请求。
+- 补无侧栏/兼容侧栏/已知错误组合的最终 tarball 验收与实际 Host 工具业务 fixture。
+
 ## [0.5.5] - 2026-09-10
 
 - 迁移完整 DSH 0.1.2-rc.1 公共接口，移除旧客户端 runtime 与 conversationEvents 硬依赖；补事件定义卸载清理。

@@ -1,34 +1,28 @@
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import { Session, type SessionId, type UserMessage } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import type { TenderWorkbenchIntentV2 } from '../src/contracts/intents.ts'
 import { createEmptyTenderWorkflowProjection, type TenderWorkflowProjectionV2 } from '../src/contracts/workflow.ts'
 import { serializeTenderWorkbenchIntent } from '../src/client/intents/screening-intent.ts'
-import { tenderIntentFingerprint } from '../src/host/intent-fingerprint.ts'
+import { conversationIntentId, tenderIntentFingerprint } from '../src/host/intent-fingerprint.ts'
 import { resolveToolInvocation } from '../src/host/tool-contract.ts'
 
 function execution(intent: TenderWorkbenchIntentV2, laterText?: string): ToolRunContext {
-  const events = [{
-    type: 'user/message', seq: 1, time: 1,
-    data: {
-      turn: 1, source: { kind: 'user' },
-      content: [{ type: 'text', text: serializeTenderWorkbenchIntent(intent) }],
-    },
-  }]
-  if (laterText !== undefined) {
-    events.push({
-      type: 'user/message', seq: 2, time: 2,
-      data: { turn: 2, source: { kind: 'user' }, content: [{ type: 'text', text: laterText }] },
-    })
-  }
+  const session = Session.create('session-1' as SessionId)
+  const messages = [serializeTenderWorkbenchIntent(intent), ...(laterText === undefined ? [] : [laterText])]
+  messages.forEach((text, index) => {
+    session.append('turn/start', { turn: index + 1 })
+    session.append('user/message', {
+      role: 'user', id: `fixture-user-${index}` as UserMessage['id'], source: { kind: 'user' }, content: [{ type: 'text', text }],
+    }, { surfaceOp: 'append' })
+  })
+  expect('events' in session).toBe(false) // Never hide the removed public API behind a fake.
   return {
     callId: 'call-1', rootCallId: 'call-1', token: Symbol('call'),
     signal: new AbortController().signal,
     agent: {
       id: 'agent-1',
-      session: {
-        id: 'session-1', header: { version: 0, isSeeded: false, id: 'session-1', createdAt: 1 },
-        events,
-      },
+      session,
     },
   } as unknown as ToolRunContext
 }
@@ -147,7 +141,7 @@ describe('Host Tool invocation binding', () => {
       exec, state: createEmptyTenderWorkflowProjection(),
       tool: 'tender_workbench_get_rule_drafting_context', intentKind: 'rules.propose', mutation: false,
     })
-    expect(first.intentId).toMatch(/^conversation_/u)
+    expect(first.intentId).toBe(conversationIntentId(2, 'rules.propose'))
     const state: TenderWorkflowProjectionV2 = {
       ...createEmptyTenderWorkflowProjection(),
       pendingIntent: {
@@ -163,10 +157,9 @@ describe('Host Tool invocation binding', () => {
       rawOrigin: { kind: 'conversation' }, rawArgs: { origin: { kind: 'conversation' } },
       exec, state, tool: 'tender_workbench_preview_rules', intentKind: 'rules.propose', mutation: true,
     })).toEqual({ origin: 'conversation', intentId: first.intentId })
-    ;(exec.agent!.session.events as unknown[]).push({
-      type: 'user/message', seq: 3, time: 3,
-      data: { source: { kind: 'user' }, content: [{ type: 'text', text: '查看另一个问题' }] },
-    })
+    exec.agent!.session.append('user/message', {
+      role: 'user', id: 'fixture-later-user' as UserMessage['id'], source: { kind: 'user' }, content: [{ type: 'text', text: '查看另一个问题' }],
+    }, { surfaceOp: 'append' })
     expect(resolveToolInvocation({
       rawOrigin: { kind: 'conversation' }, rawArgs: { origin: { kind: 'conversation' } },
       exec, state, tool: 'tender_workbench_preview_rules', intentKind: 'rules.propose', mutation: true,
@@ -175,5 +168,19 @@ describe('Host Tool invocation binding', () => {
       rawOrigin: { kind: 'conversation' }, rawArgs: { origin: { kind: 'conversation' } },
       exec, state, tool: 'tender_workbench_get_rule_drafting_context', intentKind: 'rules.propose', mutation: false,
     })).toThrow('control.nextTool')
+  })
+
+  it('rejects a direct user message without an actual turn/start instead of inventing a turn', () => {
+    const session = Session.create('session-no-turn' as SessionId)
+    session.append('user/message', {
+      role: 'user', id: 'fixture-no-turn' as UserMessage['id'], source: { kind: 'user' },
+      content: [{ type: 'text', text: '查询数据项目' }],
+    }, { surfaceOp: 'append' })
+    expect(() => resolveToolInvocation({
+      rawOrigin: { kind: 'conversation' }, rawArgs: { origin: { kind: 'conversation' } },
+      exec: { agent: { session } } as unknown as ToolRunContext,
+      state: createEmptyTenderWorkflowProjection(),
+      tool: 'tender_workbench_run_query', intentKind: 'query.run', mutation: true,
+    })).toThrow('turn/start')
   })
 })
