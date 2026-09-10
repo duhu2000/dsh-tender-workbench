@@ -57,3 +57,7 @@
 四产品最终包同装；后台 Session 不抢焦点/几何；宿主折叠、右/底部/浮窗迁移；执行中关闭/切换/卸载；刷新/重启后业务恢复；长表/大报告；真实授权模型/MCP。本轮未实际执行 analysis batch、review revert、report retry 的完整原生路径，保留其单元/契约证据，不以工具注册成功替代业务执行通过。Windows 实际 DSH UI 未跑，由 CI 覆盖 Node24 单元/安装脚本 self-test。
 
 上游 primitives 缺 source map 产生非阻断警告，未伪装为零警告。诊断首次漏 inject 与 fixture MCP 返回封装错误保留失败记录，修正后复跑；不能把测试驱动错误当作产品修复。
+
+## 发布回报
+
+已通过 [PR #4](https://github.com/duhu2000/dsh-tender-workbench/pull/4) 与精确 main CI，于 `4ccf9011539b4c25a9f1ed445654db246fd9afe7` 发布 `v0.5.6` / npm `0.5.6`（latest）。OIDC、provenance、Registry、tag 与 GitHub Release 的完整回读见 [发布清单](RELEASE-0.5.6.md)。本地原始包与 CI 构建的包摘要不同，差异为绝对编译路径相关的 CSS 类名/注释；已独立重算并严格比较 Client 全文，Host 字节一致，未掩盖此构建可重复性限制。

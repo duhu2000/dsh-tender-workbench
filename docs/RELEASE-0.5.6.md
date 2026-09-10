@@ -1,7 +1,7 @@
 # dsh-tender-workbench 0.5.6
 
 Version: **0.5.6**
-Status: **ready for release**
+Status: **published**
 
 用户已追加授权本版 commit、push、tag 与 npm 发布。经本地与远端门禁后发布，不复用版本或移动旧 Tag。
 
@@ -20,3 +20,25 @@ Better Sidebar 统一为 optional peer；基础安装不默认安装侧栏，运
 脚本 scripts/native-host-smoke.mjs 支持 TENDER_TEST_SIDEBAR=absent / compatible / incompatible。测试使用原始 npm pack、隔离 HOME/DSH_HOME 与随机非生产端口，调用实际 DSH 的 initProfile 和 dsh plugin install。官方 Profile 模板使用 hoisted / autoInstallPeers:false，由完整宿主提供核心 peers；脚本不自创或放宽依赖解析参数。坏组合验证升级预检阻断，并在专用隔离 Profile 复现已安装旧侧栏的实际启动故障。空 npm 项目不是完整 DSH Profile，其自动补齐核心 peers 存在连接器旧范围引发的 ERESOLVE，不宣称该路径已通过。
 
 scripts/native-business-fixture.mjs 仅为独立诊断插件：通过实际注册工具、原生 Agent/Session、投影及本地 Artifact 执行流程，QCC 返回和直接用户消息是合成 fixture，没有真实模型或计费 MCP。该诊断代码、临时 Profile 和输出不打入 npm。测试结果、证据与仍待组合回归项登记于本仓 docs/OPTIONAL-SIDEBAR-ADOPTION.md。
+
+## 发布证据（2026-09-10）
+
+- 实现提交：`97e8fc9c006d94ccbdb4c60113d2033526f814ee`；[PR #4](https://github.com/duhu2000/dsh-tender-workbench/pull/4) 已合并。
+- 发布提交 / npm gitHead：`4ccf9011539b4c25a9f1ed445654db246fd9afe7`，与已审核分支 tree 相同。
+- [PR CI](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34438355200)：Linux Node22/24、Windows Node24、PR 安装包全部成功。
+- [main CI](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34438600945)：精确发布提交上的三组门禁全部成功；PR 包作业按设计仅在 PR 触发。
+- [Release 工作流](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34438812573)：安装、tag 校验、全量 check、OIDC npm publish 和 GitHub Release 全部成功。
+- annotated `v0.5.6`：tag object `a3d618703ccc5c209a7bd3e10a623c26dd1edc27`，最终指向上述发布提交；未移动旧 tag。
+- npm 指定版本存在，`latest=0.5.6`；发布者 `GitHub Actions / npm-oidc-no-reply@github.com`，trustedPublisher `github`，配置 ID `oidc:20287148-0db1-42e9-969e-04b4ad02ce41`。
+- [GitHub Release](https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.5.6)：非 draft、非 prerelease，发布时间 `2026-09-10T04:53:17Z`。
+- [Registry attestation](https://registry.npmjs.org/-/npm/v1/attestations/dsh-tender-workbench@0.5.6)：SLSA provenance v1 的仓库、`.github/workflows/release.yml`、`refs/tags/v0.5.6`、commit、invocation 与实际发布工作流一致；subject SHA-512 同时匹配下载 tarball 和 Registry integrity。这里是内容与身份交叉核验，不宣称另行完成 Sigstore 证书链独立验证。
+- Registry integrity：`sha512-XytTYBCkSSB+Qxh2ewXq21No7aeBCXYchJ6zUvxFRFG5kOYa4KeKiwPrTs+cosncbH9RTZQuUmniD1YXQpFDjw==`。
+- 线上 tarball SHA-256：`17ef818b9ab10df13ebc43c90cd62f182498cabc0643da3737860a50159fc1b3`。
+
+本地 `npm run check`：43 文件 / 242 passed + 1 Windows-only skipped；UI 8/8。最终本地原始 tarball 的无侧栏/0.18.1 实际 DSH L2/L3 通过；0.17.1 预检与隔离启动正确失败，详见采用记录和脱敏 RESULTS.json。三组不含 Context，不代表四产品共装或真实模型/MCP 验收。
+
+### 构建可重复性说明
+
+线上包与本地 tarball **不是相同字节摘要**。`tsdown.config.ts` 将绝对 CSS 文件名传给 Lightning CSS，产生路径相关的类名，并保留源码区域路径注释。本轮逐字节核对线上 Host 与本地 Host 相同；使用同版 Lightning CSS 分别按本地路径和 GitHub runner 路径重算类名，替换这些确定差异后，Client 全文完全相同，无其他运行代码差异。该构建可重复性限制已登记，不能把“语义/代码核对通过”写成 Client 原始字节一致。未来可单独规范化 CSS 编译文件名，但不在已发布版本上热改或重发。
+
+文档状态与证据以发布后的独立 docs commit 回写 main；不可变 npm 包内清单保留发布时的 ready-for-release 状态。未修改正式 DSH Profile 或全局宿主，也未操作插件市场。
