@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
-import type { JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { TenderActionToolName } from '../../contracts/orchestration.ts'
 
-export type { JsonValue } from '@deepseek-ai/dsh-session'
+export type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 export interface IntentReceiptV2<Result extends JsonValue = JsonValue> {
   readonly receiptId: string

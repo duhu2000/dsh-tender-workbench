@@ -1,7 +1,8 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolExecutionResult, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -59,7 +60,7 @@ async function harness() {
   await writeFile(transcript, 'transcript-sentinel\n', 'utf8')
   const sessionId = 'session-rules-test' as SessionId
   const events: unknown[] = []
-  const session = { id: sessionId, header: { version: 0, id: sessionId, createdAt: 1 }, events }
+  const session = { id: sessionId, header: { version: 0, isSeeded: false, id: sessionId, createdAt: 1 }, events }
   let projection: TenderWorkflowProjectionV2 | null = null
   const persistence = { locate: () => ({ kind: 'jsonl', path: transcript }) }
   const receipts = new IntentReceiptCoordinator()

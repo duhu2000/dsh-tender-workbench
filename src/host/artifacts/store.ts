@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-import type { SessionHeader, JsonValue } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { z } from 'zod'
 import {
   ArtifactRefV1Schema,

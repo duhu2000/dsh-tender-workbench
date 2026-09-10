@@ -43,7 +43,7 @@ export function TenderHeroTitleBridge({ sessionId, useSession, openPhase }: Tend
   const [menuMount, setMenuMount] = useState<HTMLElement | null>(null)
   const [openError, setOpenError] = useState<string>()
   useEffect(() => { setOpenError(undefined) }, [sessionId])
-  const blank = useSession(snapshot => snapshot.composerPhase === 'blank')
+  const blank = useSession(snapshot => snapshot.blank && !snapshot.running && !snapshot.promptAttempted)
   const owned = isTenderEntrySessionId(sessionId)
   useEffect(() => {
     setHeroMount(null)

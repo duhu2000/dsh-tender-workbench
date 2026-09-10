@@ -2,10 +2,12 @@
 
 ## 安装与三分钟上手
 
+> 本分支为 0.5.5 未发布候选；下列 npm 命令仅在正式发布后执行。目前不要覆盖本机仍可用的 0.5.4 临时补丁安装。
+
 招投标智能体：支持招投标搜索、招标查询、投标查询、标讯查询、拟建项目与项目筛选，辅助商机发现、人工复核及 Excel/PDF 导出，使用客户自备授权的企查查 MCP。
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.4
+dsh plugin --profile web add dsh-tender-workbench@0.5.5
 ```
 
 请先满足下文的 DSH、连接器及侧边栏依赖要求；安装后完整停止并重启对应 Profile。
@@ -25,7 +27,7 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.4
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
 >
-> 当前稳定版本：**0.5.4**（正式版本）
+> 当前候选版本：**0.5.5**（未发布）
 
 [![CI](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-tender-workbench)](https://www.npmjs.com/package/dsh-tender-workbench)
@@ -63,17 +65,17 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.4
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
-dsh plugin --profile web add 'dsh-better-sidebar@>=0.17.1'
+dsh plugin --profile web add 'dsh-better-sidebar@0.18.1'
 dsh plugin --profile web add dsh-tender-workbench
 dsh web --no-open
 ```
 
 安装或移除插件后，请完整重启 Web Profile。插件通过 `dsh.bundle.patch` 启用 `cordis.patch.yml`，并注册 `dsh-tender-workbench` Loader。
 
-安装指定的 `0.5.4` 版本：
+安装指定的 `0.5.5` 版本：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.4
+dsh plugin --profile web add dsh-tender-workbench@0.5.5
 ```
 
 移除插件：
@@ -84,7 +86,7 @@ dsh plugin --profile web remove dsh-tender-workbench
 
 ## 使用工作台
 
-插件提供左上角“招投标”入口和会话 Header 恢复入口。点击左上角入口会根据当前工作区、最近工作区或第一个可用工作区的路径创建独立原生会话，显示“招投标智能体”标题与目标图标，默认不打开右侧工作台。点击输入框下方的找机会、筛候选、人工定案、形成交付或任务历史按钮时，才打开对应 Better Sidebar 视图；其他会话保留各自原有标题与标识。
+插件提供左上角“招投标”入口和会话 Header 恢复入口。点击左上角入口会根据当前工作区、当前 Session 目录或第一个可用工作区的路径创建独立原生会话，显示“招投标智能体”标题与目标图标，默认不打开右侧工作台。点击输入框下方的找机会、筛候选、人工定案、形成交付或任务历史按钮时，才打开对应 Better Sidebar 视图；其他会话保留各自原有标题与标识。
 
 页面导航只切换可见阶段，不会修改业务状态或自动执行后续动作。规则建议、编辑、影响预览与确认彼此独立；报告生成前始终展示已复核和待复核范围。宽屏使用主从布局，中窄屏保持相同信息顺序，并保留局部表格滚动与可访问的固定操作区。
 
@@ -98,14 +100,24 @@ dsh plugin --profile web remove dsh-tender-workbench
 
 ## 环境要求与兼容性
 
-发布包声明以下最低兼容版本，不设置稳定版上限：
+本候选以完整 DSH 0.1.2-rc.1 校准，核心 peer 限定为 `~0.1.2-rc.1`，不再声明旧宿主兼容；后续版本需重新验证：
 
-- DeepSeek Harness 公共包：`0.1.1-rc.2`
+- DeepSeek Harness 公共包：`0.1.2-rc.1`
 - `dsh-mcp-connector`：`0.2.31`
-- `dsh-better-sidebar`：`0.17.1`
+- `dsh-better-sidebar`：`0.18.1`
 - Node.js：`^22.19.0 || >=24.0.0`
 
 当前 Profile 必须提供同一套公共 Session Projection、JSONL Session Persistence、Tools、Skill、Sessions 和 WebServer 服务；Better Sidebar 必须提供公共 `targetedOpen` 与 `stateSubscription` 能力。
+
+先备份完整 Profile，再由用户明确升级完整宿主（`npm install -g @deepseek-ai/dsh@0.1.2-rc.1`），不能只升级某个 Session 包。安装前从本仓运行只读检查：
+
+```sh
+node scripts/check-host-compatibility.mjs --host-root /实际路径/node_modules/@deepseek-ai/dsh --profile-root /实际路径/profiles/web
+```
+
+预检只读包清单，不读凭证、会话或执行安装。已知旧宿主/混装核心包/旧 Sidebar 会阻断；未知版本提示未验证。Windows 挂载脚本需提供 `-DshHostRoot`，预检失败时不得挂载。context 不是必装依赖；仅当已安装时需检查共存条件：0.36.0 的旧 settingsNamespace 已知不兼容，共存基准为 0.48.0，可在备份后由用户执行 `dsh plugin --profile web add dsh-context@0.48.0`。
+
+回滚必须恢复完整已验证的宿主/插件组合，不得在新宿主上单独退回未经修复的 0.5.4 或更早包。真实 QCC、四产品共存与正式环境验收不由启动 smoke 代签。
 
 已安装并授权的 `qcc-tender` MCP 连接必须暴露以下精确工具名：
 
@@ -119,11 +131,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 从已有版本升级：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.4
+dsh plugin --profile web add dsh-tender-workbench@0.5.5
 dsh web --no-open
 ```
 
-0.5.4 对齐共享规范 v1.5.0：五个流程按钮打开/聚焦同一 Session 单例 Tab 并定位内部视图；补齐能力探针、状态订阅、卸载清理和跨会话展开保护。宿主管理侧拉、Tab X、宽度及停靠，业务内容不提供重复容器控制。Tab 重开保留当前 Client 内的阶段、查询草稿和主要子视图；历史仅展示当前 Session 已保存的查询记录，不是跨会话完整历史。真实 MCP 连接状态尚未接入，页面明确提示未核验；真实 DSH 四插件组合仍待复验。如需回退，可安装 `dsh-tender-workbench@0.5.3` 并重启 Profile；未改变业务数据格式。npm 版本与公开 Git 标签保持不可变。
+0.5.5 保留 0.5.4 的 v1.5.0 Session 单例 Tab、五入口导航和 Client 生命周期内草稿恢复，正式迁移新版宿主的客户端模块与服务。查询、筛选、复核和报告业务格式不变；历史仍仅限当前 Session，真实 MCP 连接未核验。回退应恢复备份的完整已验证宿主/插件组合，不能在新版宿主上单独安装原始 0.5.4 或更早版本。
 
 ## 本地开发
 
@@ -138,7 +150,7 @@ corepack pnpm@11.7.0 run check
 
 `check` 会执行类型检查、完整 Vitest 测试、生产构建、README/发布状态校验以及 npm tarball 白名单预检。配置 npm Trusted Publishing 后，[发布工作流](.github/workflows/release.yml)可使用 OIDC 和 provenance；手工发布不得声称 provenance。
 
-省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.4 发布清单](docs/RELEASE-0.5.4.md)。
+省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.5 发布清单](docs/RELEASE-0.5.5.md)。
 
 ## 界面演示与市场投稿
 

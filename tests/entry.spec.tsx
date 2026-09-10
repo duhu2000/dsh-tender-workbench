@@ -129,7 +129,7 @@ describe('S1a tender entries', () => {
     const props = {
       sessionId: `${TENDER_ENTRY_SESSION_ID_PREFIX}12345678-1234-4234-8234-123456789abc`,
       t, openPhase: vi.fn(() => true),
-      useSession: (selector: (value: { composerPhase: string }) => unknown) => selector({ composerPhase: 'blank' }),
+      useSession: (selector: (value: { blank: boolean; running: boolean; promptAttempted: boolean }) => unknown) => selector({ blank: true, running: false, promptAttempted: false }),
     } as unknown as TenderHeroTitleBridgeProps
     const view = render(<TenderHeroTitleBridge {...props} />, { container: dock })
     expect(screen.getByRole('heading', { name: '招投标智能体' })).toBeTruthy()
@@ -148,7 +148,7 @@ describe('S1a tender entries', () => {
     fireEvent.click(screen.getByRole('button', { name: '任务历史' }))
     expect(props.openPhase).toHaveBeenLastCalledWith('history')
     expect(screen.queryByRole('alert')).toBeNull()
-    view.rerender(<TenderHeroTitleBridge {...props} sessionId="ordinary-session" />)
+    view.rerender(<TenderHeroTitleBridge {...props} sessionId={'ordinary-session' as import('@deepseek-ai/dsh-session/types').SessionId} />)
     expect(row.style.display).toBe('')
     expect(row.innerHTML).toBe(native)
     expect(hero.querySelector('[data-dsh-tender-hero]')).toBeNull()

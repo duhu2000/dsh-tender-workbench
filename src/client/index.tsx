@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
-import type { ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { IconGoalOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -53,7 +54,7 @@ const NS = 'tenderFilter'
 
 /** Core conversation stays available while the optional workbench provider is absent. */
 export const inject = [
-  'slots', 'sessions', 'workspaces', 'conversation', 'conversationEvents', 'locale', 'connection',
+  'slots', 'sessions', 'workspaces', 'conversation', 'uiConversation', 'locale', 'remote.skills',
 ]
 
 function RegisteredTenderWorkbenchTab({
@@ -91,17 +92,20 @@ function RegisteredTenderWorkbenchTab({
 
 /** Register the dedicated Session entry, workbench Tab, Hero brand, and Header recovery action. */
 export function apply(ctx: TenderClientContext): void {
-  ctx.conversationEvents.register(tenderSearchDefinition)
+  ctx.effect(() => ctx.uiConversation.events.register(tenderSearchDefinition), 'dsh-tender-workbench: search events')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-tender-workbench: dictionaries')
 
   const sessions = ctx.get('sessions') as ISessions | undefined
   const locale = ctx.get('locale') as TenderClientContext['locale'] | undefined
-  const connection = ctx.get('connection') as TenderSkillCatalogConnection | undefined
-  if (sessions === undefined || locale === undefined || connection === undefined) {
-    throw new Error('dsh-tender-workbench requires the public sessions, locale, and connection services')
+  const skills = ctx.get('remote.skills') as TenderSkillCatalogConnection['skills'] | undefined
+  if (sessions === undefined || locale === undefined || skills === undefined) {
+    throw new Error('dsh-tender-workbench requires the public sessions, locale, and remote.skills services')
   }
+  const connection: TenderSkillCatalogConnection = { skills }
   const t = locale.bind(NS)
-  ctx.effect(() => installOrdinarySessionGuard(sessions, ctx.workspaces), 'dsh-tender-workbench: ordinary Session reuse')
+  ctx.inject(['uiWorkspace'], scope => {
+    scope.effect(() => installOrdinarySessionGuard(sessions, ctx.workspaces, scope.uiWorkspace), 'dsh-tender-workbench: ordinary Session reuse')
+  })
   let sidebar: BetterSidebarService | undefined
   let reveal: ReturnType<typeof createTenderWorkbenchRevealController> | undefined
   const navigation = createTenderWorkbenchNavigationController()

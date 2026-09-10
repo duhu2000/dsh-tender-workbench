@@ -1,5 +1,4 @@
-import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-runtime/client'
-import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { QCC_PROPOSED_SEARCH_TOOL, QCC_TENDER_SEARCH_TOOL, type QccSearchTool } from './qcc-request.ts'
 import { adaptProposedSearchPayload, adaptTenderSearchPayload } from './result-adapters.ts'
 import { extractToolResultText, parseToolResultText, resultPreview } from './result-parser.ts'
@@ -22,7 +21,8 @@ export const tenderSearchDefinition: ConversationNodeDefinition<TenderSearchStat
   match: (event) => {
     if (event.type === 'turn/start') return { id: String(event.data.turn), role: 'start' }
     if (event.type === 'tool/call' && searchTool(event.data.name)) return { id: String(event.data.turn), role: 'update' }
-    if (event.type === 'tool/result' && isAppendSurfaceEvent(event)) return { id: String(event.data.turn), role: 'update' }
+    // Narrow the discriminator before inspecting the append-only surface.
+    if (event.type === 'tool/result' && event.surfaceOp === 'append') return { id: String(event.data.turn), role: 'update' }
     return null
   },
   start: (_context, match) => {

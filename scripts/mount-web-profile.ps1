@@ -3,7 +3,8 @@
 [CmdletBinding()]
 param(
   [switch]$CheckOnly,
-  [switch]$SelfTest
+  [switch]$SelfTest,
+  [string]$DshHostRoot
 )
 
 Set-StrictMode -Version Latest
@@ -11,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 
 $PluginName = 'dsh-tender-workbench'
 $ProfileName = 'web'
-$DshReferenceVersion = '0.1.1-rc.2'
+$DshReferenceVersion = '0.1.2-rc.1'
 $WebPort = 3080
 
 function Assert-True {
@@ -422,6 +423,9 @@ $dshHome = if ($env:DSH_HOME) {
 }
 $profileDirectory = [IO.Path]::GetFullPath((Join-Path $dshHome "profiles\$ProfileName"))
 $profileManifestPath = Join-Path $profileDirectory 'package.json'
+if (-not $DshHostRoot) { throw 'Supply -DshHostRoot pointing to the actual full @deepseek-ai/dsh installation; preflight must run before mounting.' }
+& node (Join-Path $repositoryRoot 'scripts/check-host-compatibility.mjs') --host-root $DshHostRoot --profile-root $profileDirectory
+if ($LASTEXITCODE -ne 0) { throw 'Host compatibility preflight failed. No Profile change was made.' }
 if (-not [IO.File]::Exists($profileManifestPath)) { throw "Missing web Profile: $profileDirectory" }
 $modules = Read-ModulesMetadata (Join-Path $profileDirectory 'node_modules\.modules.yaml')
 $profilePnpm = Get-PnpmVersion $modules.PackageManager

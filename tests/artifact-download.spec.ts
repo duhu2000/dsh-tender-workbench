@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { downloadArtifact, type ArtifactFetch } from '../src/client/artifact-api.ts'
 

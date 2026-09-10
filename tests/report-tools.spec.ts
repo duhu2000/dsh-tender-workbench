@@ -32,7 +32,7 @@ async function harness(options: { readonly pending?: boolean; readonly failExcel
   await writeFile(transcript, 'transcript\n', 'utf8')
   const sessionId = 'session-report-test' as SessionId
   const events: unknown[] = []
-  const session = { id: sessionId, header: { version: 0, id: sessionId, createdAt: 1 }, events }
+  const session = { id: sessionId, header: { version: 0, isSeeded: false, id: sessionId, createdAt: 1 }, events }
   const persistence: SessionPersistenceLocator = { locate: () => ({ kind: 'jsonl', path: transcript }) }
   const transaction = createArtifactTransaction(persistence, session.header)
   await transaction.load()
@@ -270,7 +270,7 @@ describe('S5.6 report context, create, and retry Tools', () => {
     if (report?.finalSnapshot === undefined) throw new Error('missing final snapshot')
     const transaction = createArtifactTransaction(
       { locate: () => ({ kind: 'jsonl', path: join(temporaryRoots.at(-1)!, 'session.jsonl') }) },
-      { version: 0, id: 'session-report-test' as SessionId, createdAt: 1 },
+      { version: 0, isSeeded: false, id: 'session-report-test' as SessionId, createdAt: 1 },
     )
     await transaction.load()
     const snapshot = ReportDatasetSchema.parse(

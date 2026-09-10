@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { closeTenderDrawer, openTenderDrawer, subscribeTenderDrawers } from './drawer-coordinator.ts'
 import { mergeTurnSearchResults } from './result-summary.ts'
 import { TenderResultsPanel, type TenderSearchHistory } from './TenderResultsPanel.tsx'
 import css from './tender-results.module.css'
 
-export type TenderResultsEntryProps = PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'tenderFilter'>
+/** Retired, unregistered presentation fixture; no Session runtime data coupling. */
+export type TenderResultsEntryProps = PropsLocale<'tenderFilter'> & {
+  useTimeline(): ConversationTimelineSnapshot
+}
 
-export function TenderResultsEntry({ useSession, t }: TenderResultsEntryProps) {
-  const timeline = useSession(snapshot => snapshot.chat.timeline)
+export function TenderResultsEntry({ useTimeline, t }: TenderResultsEntryProps) {
+  const timeline = useTimeline()
   const histories = useMemo<TenderSearchHistory[]>(() => timeline.turnOrder.flatMap(turn => {
     const location = timeline.turns.get(turn)
     const data = location?.data.get('tender-search')

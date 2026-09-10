@@ -22,7 +22,9 @@ describe('web Profile mount runner', () => {
   it('contains the stale-write and package-manager guards', () => {
     const body = readFileSync(scriptUrl, 'utf8')
 
-    expect(body).toContain("$DshReferenceVersion = '0.1.1-rc.2'")
+    expect(body).toContain("$DshReferenceVersion = '0.1.2-rc.1'")
+    expect(body).toContain('check-host-compatibility.mjs')
+    expect(body).toContain('No Profile change was made.')
     expect(body).toContain('Profile changed during preparation; refusing stale write.')
     expect(body).toContain('DSH child pnpm is')
     expect(body).toContain('Refusing downgrade')

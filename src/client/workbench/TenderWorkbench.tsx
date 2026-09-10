@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { IconGoalOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import theme from '../qcc-theme.module.css'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TabComponentProps } from 'dsh-better-sidebar/client/service'
 import type { TenderWorkbenchIntentV2 } from '../../contracts/intents.ts'
 import type { TenderWorkflowProjectionV2 } from '../../contracts/workflow.ts'

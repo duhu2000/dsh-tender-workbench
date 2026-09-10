@@ -1,4 +1,5 @@
-import type { ISessions, ObservableSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { describe, expect, it, vi } from 'vitest'
 import { createEmptyTenderWorkflowProjection } from '../src/contracts/workflow.ts'
 import { createTenderProjectionPort } from '../src/client/tender-projection-port.ts'

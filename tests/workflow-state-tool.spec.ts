@@ -13,7 +13,7 @@ function context(): ToolRunContext {
   return {
     callId: 'state-call', rootCallId: 'state-call', token: Symbol('state'),
     signal: new AbortController().signal,
-    agent: { id: 'agent-1', session: { id: 'session-1', header: { version: 0, id: 'session-1', createdAt: 1 } } },
+    agent: { id: 'agent-1', session: { id: 'session-1', header: { version: 0, isSeeded: false, id: 'session-1', createdAt: 1 } } },
   } as unknown as ToolRunContext
 }
 
