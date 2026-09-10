@@ -2,7 +2,7 @@
 
 ## 安装与三分钟上手
 
-> 本分支为 0.5.5 未发布候选；下列 npm 命令仅在正式发布后执行。目前不要覆盖本机仍可用的 0.5.4 临时补丁安装。
+> 0.5.5 面向完整 DSH 0.1.2-rc.1 + Better Sidebar 0.18.1。升级前备份完整 Profile 并核对依赖；不要直接覆盖未经验证的宿主组合或仍可用的本地临时补丁。
 
 招投标智能体：支持招投标搜索、招标查询、投标查询、标讯查询、拟建项目与项目筛选，辅助商机发现、人工复核及 Excel/PDF 导出，使用客户自备授权的企查查 MCP。
 
@@ -27,7 +27,7 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.5
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
 >
-> 当前候选版本：**0.5.5**（未发布）
+> 当前稳定版本：**0.5.5**（正式版本）
 
 [![CI](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-tender-workbench)](https://www.npmjs.com/package/dsh-tender-workbench)
@@ -100,7 +100,7 @@ dsh plugin --profile web remove dsh-tender-workbench
 
 ## 环境要求与兼容性
 
-本候选以完整 DSH 0.1.2-rc.1 校准，核心 peer 限定为 `~0.1.2-rc.1`，不再声明旧宿主兼容；后续版本需重新验证：
+本版本以完整 DSH 0.1.2-rc.1 校准，核心 peer 限定为 `~0.1.2-rc.1`，不再声明旧宿主兼容；后续版本需重新验证：
 
 - DeepSeek Harness 公共包：`0.1.2-rc.1`
 - `dsh-mcp-connector`：`0.2.31`

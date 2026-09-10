@@ -10,9 +10,9 @@ Related agents: [数据清洗补全](https://github.com/duhu2000/dsh-data-cleani
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current candidate version: **0.5.5** (unpublished).
+Current stable version: **0.5.5** (stable release).
 
-Do not execute the candidate npm install commands before release or overwrite the currently working local hotfix. This branch targets the full DSH 0.1.2-rc.1 distribution with Better Sidebar 0.18.1; legacy hosts are no longer supported.
+This release targets the full DSH 0.1.2-rc.1 distribution with Better Sidebar 0.18.1; legacy hosts are no longer supported. Back up the complete Profile and verify dependencies before upgrading; do not overwrite a working local hotfix or an unverified host combination.
 
 ## What it does
 
@@ -49,7 +49,7 @@ Excel is organized for analysis and verification, with separate overview, distri
 
 ## Requirements and compatibility
 
-The candidate constrains core peers to `~0.1.2-rc.1`; future combinations require verification:
+This release constrains core peers to `~0.1.2-rc.1`; future combinations require verification:
 
 - DeepSeek Harness public packages: `0.1.2-rc.1`
 - `dsh-mcp-connector`: `0.2.31`

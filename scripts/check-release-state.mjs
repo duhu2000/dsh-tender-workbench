@@ -33,7 +33,7 @@ expect(existsSync(releasePath), `${releaseDocument} must exist`)
 if (existsSync(releasePath)) {
   const release = readFileSync(releasePath, 'utf8')
   expect(release.includes(`Version: **${pkg.version}**`), `${releaseDocument} must identify version ${pkg.version}`)
-  expect(/Status: \*\*(release candidate|published)\*\*/u.test(release), `${releaseDocument} must declare release candidate or published status`)
+  expect(/Status: \*\*(release candidate|ready for release|published)\*\*/u.test(release), `${releaseDocument} must declare release candidate, ready for release or published status`)
 }
 
 const releaseMode = process.env.DSH_RELEASE_MODE === '1' || process.env.GITHUB_REF_TYPE === 'tag'

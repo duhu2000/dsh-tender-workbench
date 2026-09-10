@@ -1,9 +1,9 @@
 # dsh-tender-workbench 0.5.5
 
 Version: **0.5.5**
-Status: **release candidate**
+Status: **ready for release**
 
-尚未合并、打 tag 或 npm 发布。对应招投标 P0 新宿主兼容加固任务。
+招投标 P0 新宿主兼容加固版本。2026-09-10 已获用户本次 commit、push、tag 和 npm 发布授权；此为发布准备记录，实际结果以 GitHub Release 工作流和 npm registry 为准。
 
 ## 修复范围
 
@@ -37,4 +37,4 @@ Status: **release candidate**
 
 ## 发布与回滚
 
-需本次候选的新增发布授权以及 PR/main CI/不可变新 tag/OIDC 门禁。不得重新发布 0.5.4 或移动已有 tag。新宿主不能单独回滚为原始 0.5.4（有已知启动故障）；若需回滚，应还原备份的完整宿主/插件组合和 Profile，禁止覆盖仍可用的临时补丁安装。
+已获本版本发布授权，仍须通过 PR/main CI/不可变新 tag/OIDC 门禁。不得重新发布 0.5.4 或移动已有 tag。新宿主不能单独回滚为原始 0.5.4（有已知启动故障）；若需回滚，应还原备份的完整宿主/插件组合和 Profile，禁止覆盖仍可用的临时补丁安装。

@@ -6,7 +6,7 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [0.5.5] - 2026-09-10
 
-- 候选：迁移完整 DSH 0.1.2-rc.1 公共接口，移除旧客户端 runtime 与 conversationEvents 硬依赖；补事件定义卸载清理。
+- 迁移完整 DSH 0.1.2-rc.1 公共接口，移除旧客户端 runtime 与 conversationEvents 硬依赖；补事件定义卸载清理。
 - 更新类型、Session 空白状态和 Workspace 导航适配；收窄兼容声明，增加最终产物真实宿主加载回归，避免旧模块测试替身掩盖启动故障。
 
 ## [0.5.4] - 2026-09-10
