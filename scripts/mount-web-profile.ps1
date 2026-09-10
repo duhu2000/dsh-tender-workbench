@@ -4,6 +4,7 @@
 param(
   [switch]$CheckOnly,
   [switch]$SelfTest,
+  [switch]$Workbench,
   [string]$DshHostRoot
 )
 
@@ -289,10 +290,11 @@ function Assert-Installed {
   $bundles = @($manifest.dsh.profile.bundles)
   Assert-True (@($bundles | Where-Object { $_ -eq $PluginName }).Count -eq 1) 'Workbench bundle is duplicated or missing.'
   $sidebarIndex = [Array]::IndexOf($bundles, 'dsh-better-sidebar')
-  $pluginIndex = [Array]::IndexOf($bundles, $PluginName)
-  Assert-True (
-    $sidebarIndex -ge 0 -and $pluginIndex -ge 0 -and $sidebarIndex -lt $pluginIndex
-  ) 'Better Sidebar must precede the workbench.'
+  # Base mode does not install or require a third-party workbench container.
+  # Runtime uses a dependency-scoped callback and accepts either bundle order.
+  if ($Workbench) {
+    Assert-True ($sidebarIndex -ge 0) 'Workbench requested: enable the optional Better Sidebar bundle and restart.'
+  }
   $installedRoot = Join-Path $ProfileDirectory "node_modules\$PluginName"
   foreach ($relative in @('lib\index.js', 'lib\client.js')) {
     Assert-True (
@@ -424,9 +426,15 @@ $dshHome = if ($env:DSH_HOME) {
 $profileDirectory = [IO.Path]::GetFullPath((Join-Path $dshHome "profiles\$ProfileName"))
 $profileManifestPath = Join-Path $profileDirectory 'package.json'
 if (-not $DshHostRoot) { throw 'Supply -DshHostRoot pointing to the actual full @deepseek-ai/dsh installation; preflight must run before mounting.' }
-& node (Join-Path $repositoryRoot 'scripts/check-host-compatibility.mjs') --host-root $DshHostRoot --profile-root $profileDirectory
+$preflightArguments = @('--host-root', $DshHostRoot, '--profile-root', $profileDirectory)
+if ($Workbench) { $preflightArguments += '--workbench' }
+& node (Join-Path $repositoryRoot 'scripts/check-host-compatibility.mjs') @preflightArguments
 if ($LASTEXITCODE -ne 0) { throw 'Host compatibility preflight failed. No Profile change was made.' }
 if (-not [IO.File]::Exists($profileManifestPath)) { throw "Missing web Profile: $profileDirectory" }
+if ($Workbench) {
+  $preflightManifest = Get-Content -LiteralPath $profileManifestPath -Raw | ConvertFrom-Json
+  Assert-True (@($preflightManifest.dsh.profile.bundles) -contains 'dsh-better-sidebar') 'Workbench requested: Better Sidebar must be enabled before mounting. No Profile change was made.'
+}
 $modules = Read-ModulesMetadata (Join-Path $profileDirectory 'node_modules\.modules.yaml')
 $profilePnpm = Get-PnpmVersion $modules.PackageManager
 $corepack = Resolve-Corepack

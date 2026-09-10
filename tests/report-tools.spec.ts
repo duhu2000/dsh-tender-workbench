@@ -32,7 +32,7 @@ async function harness(options: { readonly pending?: boolean; readonly failExcel
   await writeFile(transcript, 'transcript\n', 'utf8')
   const sessionId = 'session-report-test' as SessionId
   const events: unknown[] = []
-  const session = { id: sessionId, header: { version: 0, isSeeded: false, id: sessionId, createdAt: 1 }, events }
+  const session = { id: sessionId, header: { version: 0, isSeeded: false, id: sessionId, createdAt: 1 }, snapshotEvents: () => events }
   const persistence: SessionPersistenceLocator = { locate: () => ({ kind: 'jsonl', path: transcript }) }
   const transaction = createArtifactTransaction(persistence, session.header)
   await transaction.load()
@@ -119,9 +119,9 @@ async function harness(options: { readonly pending?: boolean; readonly failExcel
   const createTool = createTenderWorkbenchCreateReportTool(dependencies)
   const retryTool = createTenderWorkbenchRetryReportTool(dependencies)
   const setUser = (seq: number, text: string) => {
-    events.splice(0, events.length, {
+    events.splice(0, events.length, { type: 'turn/start', data: { turn: seq } }, {
       type: 'user/message', seq, time: seq,
-      data: { turn: seq, source: { kind: 'user' }, content: [{ type: 'text', text }] },
+      data: { source: { kind: 'user' }, content: [{ type: 'text', text }] },
     })
   }
   const runContext = (label: string): ToolRunContext => ({

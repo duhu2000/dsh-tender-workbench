@@ -10,6 +10,9 @@ describe('deployment compatibility metadata', () => {
       if (name.startsWith('@deepseek-ai/dsh-')) expect(range).toBe('~0.1.2-rc.1')
     }
     expect(manifest.peerDependencies['dsh-better-sidebar']).toBe('~0.18.1')
+    expect(manifest.peerDependenciesMeta['dsh-better-sidebar']).toEqual({ optional: true })
+    expect(manifest.dependencies['dsh-better-sidebar']).toBeUndefined()
+    expect(manifest.dsh.client.inject).not.toContain('dsh-better-sidebar')
     expect(manifest.devDependencies['dsh-better-sidebar']).toBe('0.18.1')
     expect(manifest.devDependencies['@deepseek-ai/dsh-client-ui-conversation']).toBe('0.1.2-rc.1')
     expect(manifest.dsh.client.inject).not.toContain('@deepseek-ai/dsh-client-runtime')

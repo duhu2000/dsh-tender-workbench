@@ -2,12 +2,12 @@
 
 ## 安装与三分钟上手
 
-> 0.5.5 面向完整 DSH 0.1.2-rc.1 + Better Sidebar 0.18.1。升级前备份完整 Profile 并核对依赖；不要直接覆盖未经验证的宿主组合或仍可用的本地临时补丁。
+> 基础智能体要求完整 DSH 0.1.2-rc.1，Better Sidebar 0.18.1 仅用于可选可视化工作台；升级前备份完整 Profile。
 
 招投标智能体：支持招投标搜索、招标查询、投标查询、标讯查询、拟建项目与项目筛选，辅助商机发现、人工复核及 Excel/PDF 导出，使用客户自备授权的企查查 MCP。
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.5
+dsh plugin --profile web add dsh-tender-workbench@0.5.6
 ```
 
 请先满足下文的 DSH、连接器及侧边栏依赖要求；安装后完整停止并重启对应 Profile。
@@ -18,7 +18,7 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.5
 
 **能力边界：** 投标查询指已授权数据源内的公开标讯查询，不代办投标。无 Web 搜索兜底、订阅或自动 Bid/No-Bid 决策；不提供在线 PDF 预览。
 
-**升级与回滚：** 升级前停止 Profile 并备份任务目录，记录当前精确版本；使用上面的固定版本命令升级，再完整重启。回滚时将版本号替换为升级前记录的版本，并使用升级前任务目录副本；不以旧版直接读取已迁移任务目录。
+**升级与回滚：** 升级前停止 Profile 并备份完整宿主/插件组合及任务目录，记录精确版本；升级后完整重启。回滚需恢复已验证的整套组合和目录副本，不能在新宿主上单独退回原始 0.5.4。
 
 相关智能体：[数据清洗补全](https://github.com/duhu2000/dsh-data-cleaning-agent) · [AI填表](https://github.com/duhu2000/dsh-form-fill-agent) · [访前尽调](https://github.com/duhu2000/dsh-pre-duediligence) · [招投标](https://github.com/duhu2000/dsh-tender-workbench)
 
@@ -27,7 +27,7 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.5
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
 >
-> 当前稳定版本：**0.5.5**（正式版本）
+> 当前稳定版本：**0.5.6**（正式版本）
 
 [![CI](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-tender-workbench)](https://www.npmjs.com/package/dsh-tender-workbench)
@@ -61,21 +61,22 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.5
 
 ## 30 秒开始
 
-先安装连接器、侧边栏能力和本插件：
+基础智能体不要求 Better Sidebar。查询企查查数据时还需已安装、已授权的 MCP 连接器；基础安装不默认强装第三方侧栏：
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
-dsh plugin --profile web add 'dsh-better-sidebar@0.18.1'
 dsh plugin --profile web add dsh-tender-workbench
 dsh web --no-open
 ```
 
 安装或移除插件后，请完整重启 Web Profile。插件通过 `dsh.bundle.patch` 启用 `cordis.patch.yml`，并注册 `dsh-tender-workbench` Loader。
 
-安装指定的 `0.5.5` 版本：
+需要可视化工作台时，再自选安装 `dsh plugin --profile web add dsh-better-sidebar@0.18.1`、在宿主设置启用招投标 Tab，并完整重启。无需侧栏也可使用下方列明的基础功能。
+
+安装指定的 `0.5.6` 版本：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.5
+dsh plugin --profile web add dsh-tender-workbench@0.5.6
 ```
 
 移除插件：
@@ -104,10 +105,10 @@ dsh plugin --profile web remove dsh-tender-workbench
 
 - DeepSeek Harness 公共包：`0.1.2-rc.1`
 - `dsh-mcp-connector`：`0.2.31`
-- `dsh-better-sidebar`：`0.18.1`
+- 可选工作台依赖 `dsh-better-sidebar`：已验证版本 `0.18.1`，optional peer `~0.18.1` 不是整个区间已验收的承诺
 - Node.js：`^22.19.0 || >=24.0.0`
 
-当前 Profile 必须提供同一套公共 Session Projection、JSONL Session Persistence、Tools、Skill、Sessions 和 WebServer 服务；Better Sidebar 必须提供公共 `targetedOpen` 与 `stateSubscription` 能力。
+当前 Profile 必须提供同一套公共 Session Projection、JSONL Session Persistence、Tools、Skill、Sessions 和 WebServer 服务。只有启用可视化工作台才需要 Better Sidebar，运行时探测公共 `targetedOpen` 与 `stateSubscription` 能力；缺少或能力不全时不等待、不创建自有抽屉。
 
 先备份完整 Profile，再由用户明确升级完整宿主（`npm install -g @deepseek-ai/dsh@0.1.2-rc.1`），不能只升级某个 Session 包。安装前从本仓运行只读检查：
 
@@ -115,7 +116,7 @@ dsh plugin --profile web remove dsh-tender-workbench
 node scripts/check-host-compatibility.mjs --host-root /实际路径/node_modules/@deepseek-ai/dsh --profile-root /实际路径/profiles/web
 ```
 
-预检只读包清单，不读凭证、会话或执行安装。已知旧宿主/混装核心包/旧 Sidebar 会阻断；未知版本提示未验证。Windows 挂载脚本需提供 `-DshHostRoot`，预检失败时不得挂载。context 不是必装依赖；仅当已安装时需检查共存条件：0.36.0 的旧 settingsNamespace 已知不兼容，共存基准为 0.48.0，可在备份后由用户执行 `dsh plugin --profile web add dsh-context@0.48.0`。
+预检默认是基础模式，缺少侧栏只提示功能边界，不阻断、不自动安装。显式传 `--workbench` 才要求侧栏已安装，版本检查不代替运行时 capability 与 Tab 启用检查。已装 Sidebar 0.17.1 在新宿主上的硬故障仍阻断；未知组合提示未验证。Windows 挂载需 `-DshHostRoot`，默认基础模式；`-Workbench` 额外要求侧栏 bundle 已启用，所有预检均在 Profile 写入前执行。context 不是必装依赖；已装 0.36.0 的 settingsNamespace 故障仍阻断，共存基准为 0.48.0。
 
 回滚必须恢复完整已验证的宿主/插件组合，不得在新宿主上单独退回未经修复的 0.5.4 或更早包。真实 QCC、四产品共存与正式环境验收不由启动 smoke 代签。
 
@@ -126,16 +127,28 @@ node scripts/check-host-compatibility.mjs --host-root /实际路径/node_modules
 
 缺少兼容 Better Sidebar 时，对话入口和已支持的 Host 工具保持可用，流程按钮提示安装/升级、启用 Tab 并重启，不创建另一套侧拉。其余必要服务缺失、MCP 工具不可用或会话持久化不是 JSONL 时明确失败；不提供 Web 搜索、其他持久化或 Workspace 存储兜底。
 
+### 无侧栏功能边界
+
+| 能力 | 无侧栏 | 可视化工作台 |
+| --- | --- | --- |
+| 独立原生会话、普通会话切换、输入草稿、提示词生成/回填 | 可用，不因打开工作台失败而清空 | 相同 |
+| 行为 Skill、工作流状态工具、对话驱动查询 | 可用；实际数据仍需模型和已授权 MCP | 表单配置并显式提交 |
+| 规则预览/确认、人工复核、报告生成工具 | Host 工具保留；需对话明确请求，仍受版本绑定与确认约束 | 规则编辑、表格、批量复核和导出控件 |
+| Excel/PDF Artifact 下载接口 | 已生成的授权下载链接可用；无可视化下载按钮 | 下载按钮可用 |
+| 五个流程按钮、任务历史、表格详情 | 仅明确提示；不执行任务，不创建 Tab | 定位同一 Session 单例 Tab |
+
+工具 fixture 通过不等于真实模型自动编排或付费 QCC 全链路通过；完整工作台原生化仅为后续评估，本版本未实施。
+
 ## 升级与回滚
 
 从已有版本升级：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.5
+dsh plugin --profile web add dsh-tender-workbench@0.5.6
 dsh web --no-open
 ```
 
-0.5.5 保留 0.5.4 的 v1.5.0 Session 单例 Tab、五入口导航和 Client 生命周期内草稿恢复，正式迁移新版宿主的客户端模块与服务。查询、筛选、复核和报告业务格式不变；历史仍仅限当前 Session，真实 MCP 连接未核验。回退应恢复备份的完整已验证宿主/插件组合，不能在新版宿主上单独安装原始 0.5.4 或更早版本。
+0.5.6 统一可选侧栏声明、安装预检和降级提示，并修复新版宿主 Session 事件读取及当前轮次绑定。保留 v1.5.0 Session 单例 Tab、五入口导航和 Client 生命周期内草稿恢复。查询、筛选、复核和报告业务格式不变；历史仍仅限当前 Session，真实 MCP 连接未核验。回退应恢复备份的完整已验证宿主/插件组合，不能在新版宿主上单独安装原始 0.5.4 或更早版本。
 
 ## 本地开发
 
@@ -150,7 +163,7 @@ corepack pnpm@11.7.0 run check
 
 `check` 会执行类型检查、完整 Vitest 测试、生产构建、README/发布状态校验以及 npm tarball 白名单预检。配置 npm Trusted Publishing 后，[发布工作流](.github/workflows/release.yml)可使用 OIDC 和 provenance；手工发布不得声称 provenance。
 
-省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.5 发布清单](docs/RELEASE-0.5.5.md)。
+省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.6 发布清单](docs/RELEASE-0.5.6.md)。
 
 ## 界面演示与市场投稿
 

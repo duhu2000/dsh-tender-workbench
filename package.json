@@ -1,6 +1,6 @@
 {
   "name": "dsh-tender-workbench",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "Tender search and bid intelligence in DeepSeek Harness with proposed project search, rule screening, human review and Excel/PDF exports using user-authorized Qichacha MCP.",
   "keywords": [
     "deepseek-harness",
@@ -47,7 +47,7 @@
     "README.en.md",
     "CHANGELOG.md",
     "cordis.patch.yml",
-    "docs/RELEASE-0.5.5.md",
+    "docs/RELEASE-0.5.6.md",
     "lib/index.js",
     "lib/client.js",
     "lib/client.js.map",
@@ -124,8 +124,14 @@
     "dsh-better-sidebar": "~0.18.1",
     "dsh-mcp-connector": ">=0.2.31"
   },
+  "peerDependenciesMeta": {
+    "dsh-better-sidebar": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-agent": "0.1.2-rc.1",
     "@deepseek-ai/dsh-api-session-controller": "0.1.2-rc.1",
     "@deepseek-ai/dsh-api-workspace-controller": "0.1.2-rc.1",
     "@deepseek-ai/dsh-client-connection": "0.1.2-rc.1",
@@ -141,6 +147,7 @@
     "@deepseek-ai/dsh-client-ui-workspace": "0.1.2-rc.1",
     "@deepseek-ai/dsh-host-webserver": "0.1.2-rc.1",
     "@deepseek-ai/dsh-invariants": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-scope": "0.1.2-rc.1",
     "@deepseek-ai/dsh-session": "0.1.2-rc.1",
     "@deepseek-ai/dsh-session-projection": "0.1.2-rc.1",
     "@deepseek-ai/dsh-skill": "0.1.2-rc.1",

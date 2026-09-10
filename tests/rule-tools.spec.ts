@@ -60,7 +60,7 @@ async function harness() {
   await writeFile(transcript, 'transcript-sentinel\n', 'utf8')
   const sessionId = 'session-rules-test' as SessionId
   const events: unknown[] = []
-  const session = { id: sessionId, header: { version: 0, isSeeded: false, id: sessionId, createdAt: 1 }, events }
+  const session = { id: sessionId, header: { version: 0, isSeeded: false, id: sessionId, createdAt: 1 }, snapshotEvents: () => events }
   let projection: TenderWorkflowProjectionV2 | null = null
   const persistence = { locate: () => ({ kind: 'jsonl', path: transcript }) }
   const receipts = new IntentReceiptCoordinator()
@@ -74,9 +74,9 @@ async function harness() {
   const confirm = createTenderWorkbenchConfirmRulesTool(dependencies)
   const drafting = createTenderWorkbenchRuleDraftingContextTool(dependencies)
   const setUser = (seq: number, text: string) => {
-    events.splice(0, events.length, {
+    events.splice(0, events.length, { type: 'turn/start', data: { turn: seq } }, {
       type: 'user/message', seq, time: seq,
-      data: { turn: seq, source: { kind: 'user' }, content: [{ type: 'text', text }] },
+      data: { source: { kind: 'user' }, content: [{ type: 'text', text }] },
     })
   }
   const context = (label: string): ToolRunContext => ({

@@ -24,6 +24,10 @@ describe('web Profile mount runner', () => {
 
     expect(body).toContain("$DshReferenceVersion = '0.1.2-rc.1'")
     expect(body).toContain('check-host-compatibility.mjs')
+    expect(body).toContain('[switch]$Workbench')
+    expect(body).toContain("if ($Workbench) { $preflightArguments += '--workbench' }")
+    expect(body).not.toContain('Better Sidebar must precede the workbench.')
+    expect(body).not.toMatch(/'add',\s*'dsh-better-sidebar/u)
     expect(body).toContain('No Profile change was made.')
     expect(body).toContain('Profile changed during preparation; refusing stale write.')
     expect(body).toContain('DSH child pnpm is')

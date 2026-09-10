@@ -118,7 +118,7 @@ export function useTenderWorkbenchReveal(
   useEffect(() => controller.attach(sessionId, { store, tabId }), [controller, sessionId, store, tabId])
 }
 
-/** Fail loudly only when the mandatory provider lacks an exercised capability. */
+/** Probe the optional provider before registering or opening its workbench. */
 export function assertBetterSidebarContract(service: BetterSidebarService): void {
   const methods = ['registerTab', 'isTabEnabled', 'openTab', 'getSnapshot', 'subscribeState'] as const
   for (const method of methods) {

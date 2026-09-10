@@ -1,4 +1,5 @@
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { Session } from '@deepseek-ai/dsh-session'
 import {
   orchestrationFor,
   type TenderToolNameV2,
@@ -15,7 +16,8 @@ export interface ResolvedToolInvocation {
 }
 
 function latestDirectUserEvent(exec: ToolRunContext) {
-  const events = exec.agent?.session.events
+  const session: Session | undefined = exec.agent?.session
+  const events = session?.snapshotEvents()
   if (events === undefined) return undefined
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
@@ -47,7 +49,8 @@ function matchingWorkbenchIntent(
   intentId: string,
   intentFingerprint: string,
 ): TenderWorkbenchIntentV2 | undefined {
-  const events = exec.agent?.session.events
+  const session: Session | undefined = exec.agent?.session
+  const events = session?.snapshotEvents()
   if (events === undefined) return undefined
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
@@ -207,7 +210,8 @@ function assertWorkbenchArguments(
 }
 
 function latestConversationUserEvent(exec: ToolRunContext) {
-  const events = exec.agent?.session.events
+  const session: Session | undefined = exec.agent?.session
+  const events = session?.snapshotEvents()
   if (events === undefined) return undefined
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
@@ -217,6 +221,16 @@ function latestConversationUserEvent(exec: ToolRunContext) {
     return event
   }
   return undefined
+}
+
+function currentTurn(exec: ToolRunContext): number {
+  const session: Session | undefined = exec.agent?.session
+  const events = session?.snapshotEvents() ?? []
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type === 'turn/start') return event.data.turn
+  }
+  throw new Error('普通对话 Tool 需要当前 Session 的 turn/start；用户消息不携带轮次。')
 }
 
 export function resolveToolInvocation(input: {
@@ -260,7 +274,7 @@ export function resolveToolInvocation(input: {
   if (text === '' || text.includes('<dsh_tender_workbench_intent>')) {
     throw new Error('普通对话 origin 必须对应非工作台 Intent 的直接用户请求。')
   }
-  const turn = pending?.origin === 'conversation' ? pending.turn : event.data.turn
+  const turn = pending?.origin === 'conversation' ? pending.turn : currentTurn(input.exec)
   const intentId = conversationIntentId(turn, input.intentKind)
   if (pending !== undefined && (pending.origin !== 'conversation'
     || pending.intentId !== intentId

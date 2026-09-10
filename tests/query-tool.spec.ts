@@ -74,9 +74,9 @@ async function harness(execute: (name: string) => Promise<ToolExecutionResult>) 
   const session = {
     id: sessionId,
     header: { version: 0, isSeeded: false, id: sessionId, createdAt: 1 },
-    events: [{
+    snapshotEvents: () => [{ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }, {
       type: 'user/message', seq: 1, time: 1,
-      data: { turn: 1, source: { kind: 'user' }, content: [{ type: 'text', text: '查询数据项目' }] },
+      data: { source: { kind: 'user' }, content: [{ type: 'text', text: '查询数据项目' }] },
     }],
   }
   let projection: TenderWorkflowProjectionV2 | null = null
