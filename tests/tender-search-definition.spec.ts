@@ -1,13 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import type {
-  ConversationContextReader,
-  ConversationEventInput,
-  ConversationLocationData,
-  ConversationMatch,
-  ConversationNodeContext,
-  ConversationNodeDefinition,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationContextReader, ConversationLocationData, ConversationMatch, ConversationNodeContext, ConversationNodeDefinition, ConversationStartMatch } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { SessionEventLikeEntry as ConversationEventInput } from '@deepseek-ai/dsh-api-session-controller/client'
 import { tenderSearchDefinition } from '../src/client/tender-search-definition.ts'
 import type { TenderSearchTurnData } from '../src/client/result-types.ts'
 import { tenderPayload } from './result-fixtures.ts'
@@ -29,7 +23,7 @@ class DefinitionHarness<State> {
     this.matches.push(match)
     if (accepted.role === 'start') {
       const reader: ConversationContextReader = { previous: () => undefined }
-      this.state = this.definition.start(this.context(), match, reader)
+      this.state = this.definition.start(this.context(), match as ConversationStartMatch, reader)
     } else if (this.state !== undefined) {
       this.state = this.definition.update(this.context() as ConversationNodeContext<State> & { readonly state: State }, match)
     }
@@ -42,7 +36,7 @@ class DefinitionHarness<State> {
   }
 
   turnData(): TenderSearchTurnData | undefined {
-    const published = this.definition.buildLocationData?.(this.context(), 'turn') as ConversationLocationData | null | undefined
+    const published = this.definition.buildLocationData?.(this.context(), 'turn', null) as ConversationLocationData | null | undefined
     return published?.value as TenderSearchTurnData | undefined
   }
 
@@ -60,7 +54,7 @@ class DefinitionHarness<State> {
 }
 
 function event(seq: number, type: string, data: unknown, append = false): ConversationEventInput {
-  return { event: { seq, time: seq * 1000, type, data, ...(append ? { surfaceOp: 'append' } : {}) } as ConversationEventInput['event'], view: undefined }
+  return { type: 'event', event: { seq, time: seq * 1000, type, data, ...(append ? { surfaceOp: 'append' } : {}) } } as ConversationEventInput
 }
 function result(seq: number, callId: string, text: string, isError = false, append = true): ConversationEventInput {
   return event(seq, 'tool/result', { turn: 1, step: 1, message: { source: { type: 'tool-result', callId }, content: [{ type: 'tool-result', content: [{ type: 'text', text }], isError }] } }, append)
@@ -86,6 +80,11 @@ function fixtureEntries(): readonly ConversationEventInput[] {
 }
 
 describe('tenderSearchDefinition', () => {
+  it.each([undefined, 'replace', 'append', null, 'APPEND'])('accepts only the append tool/result surface: %s', surfaceOp => {
+    const input = result(1, 'qcc', '{}')
+    const event = { ...input.event, surfaceOp } as ConversationEventInput['event']
+    expect(tenderSearchDefinition.match(event)).toEqual(surfaceOp === 'append' ? { id: '1', role: 'update' } : null)
+  })
   it('pairs exact qcc tools by callId and publishes normalized Turn data', () => {
     const data = assemble(fixtureEntries())
     expect(data?.calls).toHaveLength(1)

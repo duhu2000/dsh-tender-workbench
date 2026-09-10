@@ -6,14 +6,6 @@ import { formatTenderPromptDraft, planTenderDraftFill, type TenderDraftPort, typ
 import theme from './qcc-theme.module.css'
 import css from './workbench-entry.module.css'
 
-// rc.2 exposes this session/list slot at runtime but omits it from SlotMap.
-// Verified against ui-conversation/lib/client.js (renderSlot overlay with {}).
-declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface SlotMap {
-    'conversation.input.overlay': { kind: 'list'; scope: 'session'; owner: object }
-  }
-}
-
 export interface TenderPromptInjected {
   draftPort: TenderDraftPort
   memory: TenderPromptMemory

@@ -1,22 +1,27 @@
-import type { ISessions, IWorkspaces, SessionId, WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Compatibility for legacy workbench Sessions still attached to a Workspace.
  * Keep their history/drafts intact; exclude them only from New Session reuse.
  * DSH's public connectWorkspace currently has no candidate-filter extension.
  */
-export function installOrdinarySessionGuard(sessions: ISessions, workspaces: IWorkspaces): () => void {
-  const original = workspaces.connectWorkspace
+export interface WorkspaceNavigation {
+  connectWorkspace?(workspaceId: WorkspaceId): Promise<SessionId>
+}
+export function installOrdinarySessionGuard(sessions: ISessions, workspaces: IWorkspaces, navigation: WorkspaceNavigation = workspaces as IWorkspaces & WorkspaceNavigation): () => void {
+  const original = navigation.connectWorkspace
   if (typeof original !== 'function') return () => {}
   const businessSession = (id: string) => /^session-dsh-(?:tender-workbench|pre-duediligence|data-cleaning-agent)-/u.test(id)
   const pending = new Map<WorkspaceId, Promise<SessionId>>()
   let active = true
-  const guarded = async function (this: IWorkspaces, workspaceId: WorkspaceId): Promise<SessionId> {
+  const guarded = async function (this: WorkspaceNavigation, workspaceId: WorkspaceId): Promise<SessionId> {
     const selected = await original.call(this, workspaceId)
     if (!active || !businessSession(selected)) return selected
     const existing = pending.get(workspaceId)
     if (existing !== undefined) return existing
     const resolve = async (): Promise<SessionId> => {
-      const workspace = this.list.getSnapshot()
+      const workspace = workspaces.list.getSnapshot()
       const target = workspace.items.find(item => item.workspaceId === workspaceId)
       if (target === undefined) throw new Error('New Session workspace is unavailable')
       const snapshot = sessions.list.getSnapshot()
@@ -35,9 +40,9 @@ export function installOrdinarySessionGuard(sessions: ISessions, workspaces: IWo
     pending.set(workspaceId, attempt)
     return attempt
   }
-  workspaces.connectWorkspace = guarded
+  navigation.connectWorkspace = guarded
   return () => {
     active = false
-    if (workspaces.connectWorkspace === guarded) workspaces.connectWorkspace = original
+    if (navigation.connectWorkspace === guarded) navigation.connectWorkspace = original
   }
 }

@@ -1,4 +1,4 @@
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionLogOffset, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import type { TenderWorkbenchIntentV2 } from '../src/contracts/intents.ts'
 import type { TenderToolNameV2 } from '../src/contracts/orchestration.ts'
@@ -103,7 +103,7 @@ function readMeta(tool: TenderToolNameV2, intentId: string, revision: number) {
 function fold(events: readonly SessionEvent[]): TenderWorkflowProjectionV2 | null {
   return events.reduce<TenderWorkflowProjectionV2 | null>(
     (state, event) => tenderWorkflowProjectionDefinition.apply(state, event),
-    tenderWorkflowProjectionDefinition.init(),
+    tenderWorkflowProjectionDefinition.init({ version: 0, id: 'fixture' as SessionId, createdAt: 1, isSeeded: false }, 0 as SessionLogOffset),
   )
 }
 

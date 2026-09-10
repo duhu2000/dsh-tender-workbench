@@ -62,7 +62,7 @@ function expectWriteProgress(action: string, phase: string, label: string): HTML
 describe('TenderWorkbench S1a shell', () => {
   it('retains the query draft and last current phase across host Tab X, but isolates new Sessions', () => {
     const navigation = createTenderWorkbenchNavigationController()
-    const props = { sessionId: 'session-one', projection: { status: 'empty' } as const, navigation, sendIntent: vi.fn(async () => {}), t }
+    const props = { sessionId: 'session-one' as import('@deepseek-ai/dsh-session/types').SessionId, projection: { status: 'empty' } as const, navigation, sendIntent: vi.fn(async () => {}), t }
     const mounted = render(<TenderWorkbenchView {...props} />)
     fireEvent.change(screen.getByLabelText(zh['workbench.query.target']), { target: { value: '未提交的查询目标' } })
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.delivery'] }))
@@ -75,7 +75,7 @@ describe('TenderWorkbench S1a shell', () => {
     fireEvent.click(screen.getByRole('tab', { name: zh['workbench.phase.opportunity'] }))
     expect((screen.getByLabelText(zh['workbench.query.target']) as HTMLTextAreaElement).value).toBe('未提交的查询目标')
     reopened.unmount()
-    const other = render(<TenderWorkbenchView {...props} sessionId="session-two" />)
+    const other = render(<TenderWorkbenchView {...props} sessionId={'session-two' as import('@deepseek-ai/dsh-session/types').SessionId} />)
     expect((screen.getByLabelText(zh['workbench.query.target']) as HTMLTextAreaElement).value).toBe('')
     other.unmount()
     navigation.dispose()
@@ -89,7 +89,7 @@ describe('TenderWorkbench S1a shell', () => {
     const createIntentId = vi.fn(() => 'must-not-create')
     const projection = { status: 'ready', projection: createEmptyTenderWorkflowProjection() } as const
     const before = JSON.stringify(projection)
-    const props = { sessionId: 'session-1', projection, navigation, sendIntent, createIntentId, t }
+    const props = { sessionId: 'session-1' as import('@deepseek-ai/dsh-session/types').SessionId, projection, navigation, sendIntent, createIntentId, t }
     const view = render(<TenderWorkbenchView {...props} />)
     const menu = screen.getByRole('tablist', { name: zh['workbench.phases'] })
     expect(menu.querySelectorAll('small, p').length).toBe(0)

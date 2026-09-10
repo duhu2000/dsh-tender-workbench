@@ -1,7 +1,8 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolExecutionResult, ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NormalizedDatasetV1Schema } from '../src/contracts/dataset.ts'
@@ -72,7 +73,7 @@ async function harness(execute: (name: string) => Promise<ToolExecutionResult>) 
   const sessionId = 'session-query-test' as SessionId
   const session = {
     id: sessionId,
-    header: { version: 0, id: sessionId, createdAt: 1 },
+    header: { version: 0, isSeeded: false, id: sessionId, createdAt: 1 },
     events: [{
       type: 'user/message', seq: 1, time: 1,
       data: { turn: 1, source: { kind: 'user' }, content: [{ type: 'text', text: '查询数据项目' }] },

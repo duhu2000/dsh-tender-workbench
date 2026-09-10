@@ -66,7 +66,7 @@ export interface TenderSearchTurnData {
   readonly lastResultSeq?: number
 }
 
-declare module '@deepseek-ai/dsh-client-runtime/client' {
+declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ConversationTurnDataMap {
     /** Persisted qcc-tender search calls and results scoped to one Turn. */
     readonly 'tender-search': TenderSearchTurnData

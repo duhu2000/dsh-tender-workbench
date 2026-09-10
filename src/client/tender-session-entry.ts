@@ -1,8 +1,6 @@
-import type {
-  ISessions,
-  IWorkspaces,
-  SessionId,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { IWorkspaces } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 export const TENDER_ENTRY_SESSION_ID_PREFIX = 'session-dsh-tender-workbench-'
 
@@ -56,7 +54,7 @@ export function resolveTenderEntryWorkspacePath(
     ? undefined
     : workspaceSnapshot.items.find(workspace => workspace.sessionIds.includes(current))
   return currentWorkspace?.path
-    ?? workspaceSnapshot.items.find(workspace => workspace.workspaceId === workspaceSnapshot.recentWorkspaceId)?.path
+    ?? (current === undefined ? undefined : sessions.list.getSnapshot().byId[current]?.cwd)
     ?? workspaceSnapshot.items[0]?.path
 }
 

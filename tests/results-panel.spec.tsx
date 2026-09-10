@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { ConversationLocationDataStore, ConversationTurnDataMap, TurnLocation } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationLocationDataStore, ConversationTurnDataMap, TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { adaptTenderSearchPayload } from '../src/client/result-adapters.ts'

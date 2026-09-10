@@ -10,6 +10,17 @@ import { TENDER_ENTRY_SESSION_ID_PREFIX } from '../src/client/tender-session-ent
 
 afterEach(() => { cleanup() })
 
+it('requires the current conversation service and disposes the event definition', () => {
+  const test = harness()
+  expect(inject).toContain('uiConversation')
+  expect(inject).not.toContain('conversationEvents')
+  apply(test.ctx)
+  const stop = vi.mocked(test.ctx.uiConversation.events.register).mock.results[0]?.value
+  expect(stop).toBeTypeOf('function')
+  for (const dispose of [...test.effects].reverse()) dispose()
+  expect(stop).toHaveBeenCalledTimes(1)
+})
+
 function harness(providerAvailable = true) {
   const entries: unknown[] = []
   const effects: Array<() => void> = []
@@ -39,7 +50,7 @@ function harness(providerAvailable = true) {
     getSnapshot: vi.fn(() => localeSnapshot),
   }
   const connection = {
-    api: { skills: { list: vi.fn(async () => ({ result: { ok: true, value: { skills: [] } } })) } },
+    skills: { list: vi.fn(async () => ({ ok: true, value: { skills: [] } })) },
   }
   const createSession = vi.fn(async ({ sessionId, cwd }: { sessionId: string; cwd: string }) => {
     sessionState.ids.unshift(sessionId)
@@ -55,7 +66,7 @@ function harness(providerAvailable = true) {
     open: openSession,
   }
   const ctx = {
-    inject: vi.fn((_deps: string[], callback: (ctx: TenderClientContext) => void) => { if (providerAvailable) callback(ctx) }),
+    inject: vi.fn((deps: string[], callback: (ctx: TenderClientContext) => void) => { if (providerAvailable && deps.includes('betterSidebar')) callback(ctx) }),
     effect: vi.fn((factory: () => unknown) => {
       const dispose = factory()
       if (typeof dispose === 'function') effects.push(dispose as () => void)
@@ -63,7 +74,7 @@ function harness(providerAvailable = true) {
     }),
     get: vi.fn((name: string) => name === 'sessions'
       ? sessions
-      : name === 'locale' ? locale : name === 'connection' ? connection : undefined),
+      : name === 'locale' ? locale : name === 'remote.skills' ? connection.skills : undefined),
     locale,
     slots: {
       inject: vi.fn((_name: string, callback: () => unknown) => {
@@ -73,7 +84,7 @@ function harness(providerAvailable = true) {
       }),
       register,
     },
-    conversationEvents: { register: vi.fn() },
+    uiConversation: { events: { register: vi.fn(() => vi.fn()) } },
     sessions,
     workspaces: {
       list: { getSnapshot: () => ({
@@ -112,7 +123,7 @@ describe('S1a client integration', () => {
     apply(test.ctx)
     const shortcut = entryOf<{ inject(id: string): { openPhase(phase: WorkbenchDestination): boolean } }>(test.entries, 'conversation.input.dock').inject('session-1')
     expect(shortcut.openPhase('opportunity')).toBe(false)
-    const attachProvider = vi.mocked(test.ctx.inject).mock.calls[0]?.[1]
+    const attachProvider = vi.mocked(test.ctx.inject).mock.calls.find(call => call[0].includes('betterSidebar'))?.[1]
     if (!attachProvider) throw new Error('provider dependency scope missing')
     attachProvider(test.ctx as never, undefined as never)
     expect(shortcut.openPhase('opportunity')).toBe(true)
@@ -152,7 +163,7 @@ describe('S1a client integration', () => {
       expect(shortcut.openPhase(phase)).toBe(true)
     }
     expect(test.openTab).toHaveBeenCalledTimes(10)
-    for (const call of test.openTab.mock.calls) expect(call).toEqual([{ type: TENDER_WORKBENCH_TAB_ID }, { sessionId: 'session-2', cwd: test.ctx.sessions.list.getSnapshot().byId['session-2']?.cwd }])
+    for (const call of test.openTab.mock.calls) expect(call).toEqual([{ type: TENDER_WORKBENCH_TAB_ID }, { sessionId: 'session-2', cwd: test.ctx.sessions.list.getSnapshot().byId['session-2' as import('@deepseek-ai/dsh-session/types').SessionId]?.cwd }])
     expect(test.ctx.betterSidebar.registerTab).toHaveBeenCalledTimes(1)
     expect(test.createSession).not.toHaveBeenCalled()
     expect(test.openSession).not.toHaveBeenCalled()
@@ -167,7 +178,7 @@ describe('S1a client integration', () => {
     const test = harness()
     apply(test.ctx)
 
-    expect(test.ctx.conversationEvents.register).toHaveBeenCalledTimes(1)
+    expect(test.ctx.uiConversation.events.register).toHaveBeenCalledTimes(1)
     expect(test.ctx.betterSidebar.registerTab).toHaveBeenCalledTimes(1)
     expect(test.ctx.betterSidebar.registerTab).toHaveBeenCalledWith(expect.objectContaining({
       id: TENDER_WORKBENCH_TAB_ID,

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { IconCloseOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { TurnLocation } from '@deepseek-ai/dsh-client-runtime/client'
+import type { TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { TenderTranslate } from './fields/field-props.ts'
 import { deriveLoadedSummary, mergeTurnSearchResults, type DistributionItem } from './result-summary.ts'
 import type { ProposedItem, SearchEntity, TenderItem, TenderSearchTurnData } from './result-types.ts'

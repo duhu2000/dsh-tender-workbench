@@ -1,9 +1,6 @@
-import type {
-  ISessions,
-  IWorkspaces,
-  SessionId,
-  WorkspaceId,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { describe, expect, it, vi } from 'vitest'
 import {
   TENDER_ENTRY_SESSION_ID_PREFIX,
@@ -38,7 +35,6 @@ function runtime(current: SessionId | null = 'ordinary-session' as SessionId) {
     phase: 'ready' as const,
     error: null,
     baselinesReady: true,
-    recentWorkspaceId,
   }
   const create = vi.fn(async ({ sessionId }: { sessionId: SessionId }) => sessionId)
   const sessions = {
@@ -49,7 +45,7 @@ function runtime(current: SessionId | null = 'ordinary-session' as SessionId) {
     list: { getSnapshot: () => workspaceSnapshot },
     connectWorkspace: vi.fn(),
     startSession: vi.fn(),
-  } as unknown as IWorkspaces
+  } as unknown as IWorkspaces & { connectWorkspace: ReturnType<typeof vi.fn>; startSession: ReturnType<typeof vi.fn> }
   return { create, sessions, workspaces, workspaceSnapshot }
 }
 
@@ -70,9 +66,9 @@ describe('dedicated tender Session entry', () => {
     expect(test.workspaces.startSession).not.toHaveBeenCalled()
   })
 
-  it('falls back to the recent workspace path when no Session is selected', () => {
+  it('falls back to the first registered workspace when no Session is selected', () => {
     const test = runtime(null)
-    expect(resolveTenderEntryWorkspacePath(test.sessions, test.workspaces)).toBe('C:\\two')
+    expect(resolveTenderEntryWorkspacePath(test.sessions, test.workspaces)).toBe('C:\\one')
   })
 
   it('rejects a runtime without distinct Session creation instead of reusing a blank Session', async () => {
@@ -89,7 +85,6 @@ describe('dedicated tender Session entry', () => {
   it('rejects missing workspaces and malformed or mismatched ids', async () => {
     const test = runtime(null)
     test.workspaceSnapshot.items = []
-    test.workspaceSnapshot.recentWorkspaceId = undefined
     await expect(createTenderEntrySession(test.sessions, test.workspaces))
       .rejects.toMatchObject({ code: 'workspace-unavailable' } satisfies Partial<TenderSessionEntryError>)
 

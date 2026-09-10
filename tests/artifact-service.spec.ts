@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
-import type { JsonValue, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, describe, expect, it } from 'vitest'
 import { emptyIntentReceiptManifest } from '../src/host/artifacts/intent-receipts.ts'
 import { createArtifactRouteHandler } from '../src/host/artifacts/artifact-route.ts'
@@ -63,7 +64,7 @@ async function sessionFixture(id: string) {
   roots.push(root)
   const transcript = join(root, 'session.jsonl.zstd')
   await writeFile(transcript, 'transcript-sentinel', 'utf8')
-  const header: SessionHeader = { version: 0, id: id as SessionId, createdAt: 1 }
+  const header: SessionHeader = { version: 0, isSeeded: false, id: id as SessionId, createdAt: 1 }
   return { root, transcript, header, session: { id: header.id, header } }
 }
 

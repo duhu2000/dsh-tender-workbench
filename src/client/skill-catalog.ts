@@ -1,4 +1,4 @@
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   TENDER_ACTION_SKILLS,
   TENDER_SKILL_CONTRACT_MARKER,
@@ -16,13 +16,11 @@ type SkillCatalogResult =
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
 export interface TenderSkillCatalogConnection {
-  readonly api: {
-    readonly skills: {
-      list(
-        payload: { readonly sessionId: SessionId },
-        signal?: AbortSignal,
-      ): Promise<{ readonly result: SkillCatalogResult }>
-    }
+  readonly skills: {
+    list(
+      payload: { readonly sessionId: SessionId },
+      signal?: AbortSignal,
+    ): Promise<SkillCatalogResult>
   }
 }
 
@@ -52,20 +50,20 @@ export async function assertTenderActionSkillAvailable(
   signal?: AbortSignal,
 ): Promise<void> {
   assertActionSkillName(requestedSkill)
-  let response: { readonly result: SkillCatalogResult }
+  let response: SkillCatalogResult
   try {
-    response = await connection.api.skills.list({ sessionId }, signal)
+    response = await connection.skills.list({ sessionId }, signal)
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'unknown error'
     throw new TenderSkillPreflightError('catalog-unavailable', `无法读取当前 Session 的 Skill 目录：${reason}`)
   }
-  if (!response.result.ok) {
+  if (!response.ok) {
     throw new TenderSkillPreflightError(
       'catalog-unavailable',
-      `无法读取当前 Session 的 Skill 目录：${response.result.error.code}`,
+      `无法读取当前 Session 的 Skill 目录：${response.error.code}`,
     )
   }
-  const skill = response.result.value.skills.find(entry => entry.name === requestedSkill)
+  const skill = response.value.skills.find(entry => entry.name === requestedSkill)
   if (skill === undefined) {
     throw new TenderSkillPreflightError('skill-missing', `当前 Session 缺少行为 Skill：${requestedSkill}`)
   }

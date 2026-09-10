@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ISessions, IWorkspaces, SessionId, WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { installOrdinarySessionGuard } from '../src/client/ordinary-session-guard.ts'
 
 const legacy = 'session-dsh-tender-workbench-12345678-1234-4234-8234-123456789abc'
@@ -27,6 +29,18 @@ function fixture(selected = legacy) {
 }
 
 describe('ordinary New Session compatibility', () => {
+  it('wraps the new uiWorkspace navigation without modifying the bare workspace controller', async () => {
+    const f = fixture()
+    f.release()
+    const controller = { list: f.workspaces.list } as unknown as IWorkspaces
+    const navigation = { connectWorkspace: vi.fn(async (_id: WorkspaceId) => legacy as SessionId) }
+    const original = navigation.connectWorkspace
+    const stop = installOrdinarySessionGuard(f.sessions as unknown as ISessions, controller, navigation)
+    expect(await navigation.connectWorkspace('w' as never)).toBe('ordinary')
+    expect('connectWorkspace' in controller).toBe(false)
+    stop()
+    expect(navigation.connectWorkspace).toBe(original)
+  })
   it('does not select a legacy business blank or alter its history/registration', async () => {
     const f = fixture()
     const before = structuredClone(f.workspace)

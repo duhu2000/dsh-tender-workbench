@@ -41,7 +41,7 @@ async function harness(count = 13, action: TenderRuleV1['action'] = 'include') {
   await writeFile(transcript, 'transcript\n', 'utf8')
   const sessionId = 'session-analysis-test' as SessionId
   const events: unknown[] = []
-  const session = { id: sessionId, header: { version: 0, id: sessionId, createdAt: 1 }, events }
+  const session = { id: sessionId, header: { version: 0, isSeeded: false, id: sessionId, createdAt: 1 }, events }
   const persistence: SessionPersistenceLocator = { locate: () => ({ kind: 'jsonl', path: transcript }) }
   const transaction = createArtifactTransaction(persistence, session.header)
   await transaction.load()

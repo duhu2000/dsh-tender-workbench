@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
-import type { ConversationLocationDataStore, ConversationTimelineSnapshot, ConversationTurnDataMap, TurnLocation } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationLocationDataStore, ConversationTimelineSnapshot, ConversationTurnDataMap, TurnLocation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it } from 'vitest'
 import { adaptTenderSearchPayload } from '../src/client/result-adapters.ts'
@@ -30,8 +30,7 @@ afterEach(cleanup)
 describe('TenderResultsEntry', () => {
   it('establishes a historical baseline and auto-opens a later closed search once', () => {
     let current = timeline(turn(1))
-    const useSession = (<T,>(selector: (snapshot: { chat: { timeline: ConversationTimelineSnapshot } }) => T): T => selector({ chat: { timeline: current } }))
-    const props = { useSession, t } as unknown as TenderResultsEntryProps
+    const props: TenderResultsEntryProps = { useTimeline: () => current, t }
     const view = render(<TenderResultsEntry {...props} />)
     expect(screen.getByRole('button', { name: '招投标结果 · 2' })).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()

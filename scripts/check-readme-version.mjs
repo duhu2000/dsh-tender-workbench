@@ -8,8 +8,9 @@ const readme = readFileSync(join(root, 'README.md'), 'utf8')
 const englishReadme = readFileSync(join(root, 'README.en.md'), 'utf8')
 const errors = []
 
-const versionMarker = `当前稳定版本：**${pkg.version}**（正式版本）`
-const englishVersionMarker = `Current stable version: **${pkg.version}** (stable release).`
+const candidate = readFileSync(join(root, `docs/RELEASE-${pkg.version}.md`), 'utf8').includes('Status: **release candidate**')
+const versionMarker = candidate ? `当前候选版本：**${pkg.version}**（未发布）` : `当前稳定版本：**${pkg.version}**（正式版本）`
+const englishVersionMarker = candidate ? `Current candidate version: **${pkg.version}** (unpublished).` : `Current stable version: **${pkg.version}** (stable release).`
 const exactInstall = `dsh-tender-workbench@${pkg.version}`
 
 if (!readme.includes(versionMarker)) {

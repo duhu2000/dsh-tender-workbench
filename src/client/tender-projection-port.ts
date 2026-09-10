@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
-import type { ISessions, ObservableSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   TenderWorkflowProjectionV2Schema,
   type TenderWorkflowProjectionV2,

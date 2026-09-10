@@ -1,4 +1,4 @@
-import type { ISessions } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import { describe, expect, it, vi } from 'vitest'
 import { TENDER_SKILL_CONTRACT_MARKER } from '../src/contracts/orchestration.ts'
 import { createTenderQueryIntent, serializeTenderQueryIntent } from '../src/client/intents/query-intent.ts'
@@ -21,14 +21,12 @@ import { createInitialTenderFilters } from '../src/client/types.ts'
 
 function connection(skills = ['tender-workbench-query']): TenderSkillCatalogConnection {
   return {
-    api: { skills: { list: vi.fn(async () => ({
-      result: {
+    skills: { list: vi.fn(async () => ({
         ok: true as const,
         value: { skills: skills.map(name => ({
           name, description: `[${TENDER_SKILL_CONTRACT_MARKER}] test`, modelInvocable: true,
         })) },
-      },
-    })) } },
+    })) },
   }
 }
 
@@ -124,7 +122,7 @@ describe('typed V2 Session Intent', () => {
     }, 'intent-send', 0)
     await sendSessionTenderWorkbenchIntent(scoped.value, catalog, 'session-2' as never, intent)
     expect(scoped.value.scope).toHaveBeenCalledWith('session-2')
-    expect(catalog.api.skills.list).toHaveBeenCalledWith({ sessionId: 'session-2' }, undefined)
+    expect(catalog.skills.list).toHaveBeenCalledWith({ sessionId: 'session-2' }, undefined)
     expect(scoped.send).toHaveBeenCalledOnce()
   })
 
@@ -137,9 +135,9 @@ describe('typed V2 Session Intent', () => {
     await expect(sendSessionTenderWorkbenchIntent(scoped.value, connection([]), 'session-1' as never, intent))
       .rejects.toMatchObject({ code: 'skill-missing' })
     const incompatible = {
-      api: { skills: { list: vi.fn(async () => ({
-        result: { ok: true as const, value: { skills: [{ name: intent.skill, description: 'other provider', modelInvocable: true }] } },
-      })) } },
+      skills: { list: vi.fn(async () => ({
+        ok: true as const, value: { skills: [{ name: intent.skill, description: 'other provider', modelInvocable: true }] },
+      })) },
     }
     await expect(sendSessionTenderWorkbenchIntent(scoped.value, incompatible, 'session-1' as never, intent))
       .rejects.toMatchObject({ code: 'skill-incompatible' })

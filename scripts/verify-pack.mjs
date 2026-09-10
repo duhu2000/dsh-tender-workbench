@@ -6,6 +6,13 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+const client = readFileSync(join(root, 'lib/client.js'), 'utf8')
+if (client.includes('@deepseek-ai/dsh-client-runtime/client') || client.includes('conversationEvents') || client.includes('.api.skills.list')) {
+  throw new Error('verify-pack: removed DSH client module/service found in production bundle')
+}
+if (!client.includes('uiConversation.events.register')) {
+  throw new Error('verify-pack: current conversation event registration is missing')
+}
 const escapedVersion = pkg.version.replaceAll('.', '\\.')
 const whitelist = [
   /^package\.json$/u,

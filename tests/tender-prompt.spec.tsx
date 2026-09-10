@@ -17,7 +17,7 @@ function harness(text = '') {
 describe('tender prompt wizard', () => {
   it('never mounts on ordinary sessions', () => {
     const test = harness()
-    render(<TenderPromptEntry {...test.props} sessionId="ordinary" />)
+    render(<TenderPromptEntry {...test.props} sessionId={'ordinary' as import('@deepseek-ai/dsh-session/types').SessionId} />)
     expect(screen.queryByText('提示词生成')).toBeNull()
     expect(test.write).not.toHaveBeenCalled()
   })
@@ -69,7 +69,7 @@ describe('tender prompt wizard', () => {
     const view = render(<TenderPromptEntry {...test.props} />)
     fireEvent.click(screen.getByText('提示词生成'))
     fireEvent.change(screen.getByLabelText(/关键词/), { target: { value: '招标' } })
-    view.rerender(<TenderPromptEntry {...other.props} sessionId={other.props.sessionId.slice(0, -1) + '2'} />)
+    view.rerender(<TenderPromptEntry {...other.props} sessionId={(other.props.sessionId.slice(0, -1) + '2') as TenderPromptProps['sessionId']} />)
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByText('提示词生成'))
     expect((screen.getByLabelText(/关键词/) as HTMLInputElement).value).toBe('')

@@ -26,7 +26,7 @@ function execution(intent: TenderWorkbenchIntentV2, laterText?: string): ToolRun
     agent: {
       id: 'agent-1',
       session: {
-        id: 'session-1', header: { version: 0, id: 'session-1', createdAt: 1 },
+        id: 'session-1', header: { version: 0, isSeeded: false, id: 'session-1', createdAt: 1 },
         events,
       },
     },
