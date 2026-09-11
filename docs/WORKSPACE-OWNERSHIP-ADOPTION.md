@@ -1,6 +1,6 @@
-# v1.5.2 Workspace 归组采用记录 — 0.5.7 候选
+# v1.5.2 Workspace 归组采用记录 — 0.5.7
 
-日期：2026-09-11。base main `aee2ead740724a40c2931314b8f01233b71465a4`；独立分支 `fix/workspace-session-ownership`。本轮交付 commit/PR，**无合并、tag、npm、Release 授权**。npm 仍为 0.5.6，不修改生产 Profile/全局宿主或其他工作树。
+日期：2026-09-11。base main `aee2ead740724a40c2931314b8f01233b71465a4`；独立分支 `fix/workspace-session-ownership`。初始仅授权 commit/PR；用户随后追加授权 commit、push、tag、npm 发布，按完整门禁推进 0.5.7，实际发布状态见 RELEASE-0.5.7.md。不修改生产 Profile/全局宿主或其他工作树。
 
 ## 修复与不变边界
 

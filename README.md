@@ -27,9 +27,9 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.7
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
 >
-> 当前候选版本：**0.5.7**（未发布）
+> 当前稳定版本：**0.5.7**（正式版本）
 
-本分支用于 Workspace 归组修复审查；以下 0.5.7 npm 安装命令须待另行授权正式发布后执行。当前线上稳定版仍是 0.5.6。
+0.5.7 修复新建业务 Session 的 Workspace 归组；发布状态及验收边界见 [发布记录](docs/RELEASE-0.5.7.md)。
 
 [![CI](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-tender-workbench)](https://www.npmjs.com/package/dsh-tender-workbench)
@@ -150,7 +150,7 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.7
 dsh web --no-open
 ```
 
-0.5.7 候选修复新建业务 Session 的 Workspace 归组，不自动搬迁已有未分组历史。保留 0.5.6 可选侧栏、`snapshotEvents()` / `turn/start` 授权绑定、Session 单例 Tab、五入口及草稿恢复。业务数据格式不变，历史仍仅限当前 Session，真实 MCP 连接未核验。回退应恢复备份的完整已验证宿主/插件组合，不能在新版宿主上单独安装原始 0.5.4 或更早版本。
+0.5.7 修复新建业务 Session 的 Workspace 归组，不自动搬迁已有未分组历史。保留 0.5.6 可选侧栏、`snapshotEvents()` / `turn/start` 授权绑定、Session 单例 Tab、五入口及草稿恢复。业务数据格式不变，历史仍仅限当前 Session，真实 MCP 连接未核验。回退应恢复备份的完整已验证宿主/插件组合，不能在新版宿主上单独安装原始 0.5.4 或更早版本。
 
 ## 本地开发
 

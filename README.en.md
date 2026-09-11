@@ -10,9 +10,9 @@ Related agents: [数据清洗补全](https://github.com/duhu2000/dsh-data-cleani
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current candidate version: **0.5.7** (unpublished).
+Current stable version: **0.5.7** (stable release).
 
-This Workspace-ownership fix is for PR review only. Version-specific npm commands below apply after a separately authorized release; npm stable remains 0.5.6.
+Version 0.5.7 fixes Workspace ownership for new business Sessions. See the [release record](docs/RELEASE-0.5.7.md) for publication status and verification boundaries.
 
 Base mode targets the full DSH 0.1.2-rc.1 distribution; Better Sidebar 0.18.1 is optional and only provides the visual workbench. Legacy hosts remain unsupported. Back up the complete Profile and verify dependencies before upgrading.
 
@@ -126,7 +126,7 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.7
 dsh web --no-open
 ```
 
-Candidate 0.5.7 creates business Sessions with workspaceId plus a namespaced sessionId, not cwd-only. Current membership wins; a legacy ungrouped Session must match a registered path, and an unregistered selected directory is rejected rather than redirected. Existing ungrouped history is not automatically migrated. The ordinary Session guard and 0.5.6 snapshotEvents/turn-start authorization contract remain intact. Business schemas are unchanged; history remains Session-local and live MCP is not verified. Roll back the complete backed-up host/plugin combination, not an old plugin alone on the new host.
+Version 0.5.7 creates business Sessions with workspaceId plus a namespaced sessionId, not cwd-only. Current membership wins; a legacy ungrouped Session must match a registered path, and an unregistered selected directory is rejected rather than redirected. Existing ungrouped history is not automatically migrated. The ordinary Session guard and 0.5.6 snapshotEvents/turn-start authorization contract remain intact. Business schemas are unchanged; history remains Session-local and live MCP is not verified. Roll back the complete backed-up host/plugin combination, not an old plugin alone on the new host.
 
 ## Using the workbench
 

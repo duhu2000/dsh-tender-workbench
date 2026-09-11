@@ -1,9 +1,9 @@
 # dsh-tender-workbench 0.5.7
 
 Version: **0.5.7**
-Status: **release candidate**
+Status: **ready for release**
 
-本轮仅授权修复、commit/PR。0.5.6 的发布授权已执行完毕；本候选不合并、不打 tag、不发布 npm/Release，不变更生产环境。
+用户于 2026-09-11 追加授权 commit、push、tag 与 npm 发布。通过精确提交的完整门禁后合并 PR #5，推送新的 v0.5.7 tag，由 release.yml 通过 OIDC 发布；不移动旧 tag，不变更生产 Profile 或全局宿主。
 
 ## 范围与边界
 
@@ -17,4 +17,4 @@ Status: **release candidate**
 
 复用最终 npm pack + 实际 DSH 0.1.2-rc.1 隔离 Profile，三路径 absent / Sidebar 0.18.1 / 已知坏 0.17.1。新测试以两个 Workspace 验证选中组而非首组，断言业务与普通 Session 均保持归组；入口不建 Tab、不展开侧栏，五流程单例，Tab X、Files、宿主收起恢复，合成业务及 Excel/PDF 下载仍通过。
 
-采用记录、实际结果与限制登记于 docs/WORKSPACE-OWNERSHIP-ADOPTION.md；没有实际通过前不把计划写成验收结论。安装包仅供 PR 审查，不是 npm 已发布版本。
+本地 check：43 文件、245 passed / 1 Windows-only skipped；UI 8/8。实际 DSH 无侧栏和 Sidebar 0.18.1 路径通过，旧 Sidebar 0.17.1 预检与实际启动按预期阻断。采用记录、实际结果与限制登记于 docs/WORKSPACE-OWNERSHIP-ADOPTION.md。此清单为发布前状态；发布工作流与 Registry 验证完成后以独立文档提交补充证据。
