@@ -2,7 +2,7 @@ import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
-/** Compatibility for legacy workbench Sessions still attached to a Workspace.
+/** Business workbench Sessions are explicitly attached to a Workspace.
  * Keep their history/drafts intact; exclude them only from New Session reuse.
  * DSH's public connectWorkspace currently has no candidate-filter extension.
  */

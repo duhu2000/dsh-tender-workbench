@@ -4,6 +4,11 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-09-11
+
+- 按 DSH-UX-001 v1.5.2，以 workspaceId + 命名空间 sessionId 创建业务会话，修复新会话落入“未分组”；保留普通会话防复用守卫及 0.5.6 Host 授权契约。
+- 新增所选 Workspace 归组、普通新会话、入口默认关闭、Tab X/宿主收起恢复与三侧栏路径的真实隔离回归；不自动迁移历史会话。
+
 ## [0.5.6] - 2026-09-10
 
 - 统一 Better Sidebar optional peer、基础/工作台安装预检和运行时降级文案；不自动安装侧栏、不重写工作台容器。

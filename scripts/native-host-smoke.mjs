@@ -18,6 +18,7 @@ const { chromium } = await import(pathToFileURL(process.env.TENDER_PLAYWRIGHT).h
 const home = await mkdtemp(join(tmpdir(), 'tender-native-'))
 const profile = join(home, 'profiles/web'), workspace = join(home, 'synthetic-workspace')
 await mkdir(profile, { recursive: true }); await mkdir(workspace)
+await mkdir(join(home, 'first-workspace'))
 const env = { PATH: process.env.PATH, HOME: home, DSH_HOME: home, TMPDIR: tmpdir(), NO_COLOR: '1' }
 env.TENDER_FIXTURE_HOME = home
 const hostVersion = execFileSync(process.execPath, [bin, '--version'], { cwd: workspace, env, encoding: 'utf8' }).trim()
@@ -120,13 +121,36 @@ try {
     if (a.calls[0].status !== 'success' || JSON.stringify(a) !== JSON.stringify(b)) throw Error('Official assembler replay differs')
     return { status: 'PASS', data: a, scope: 'synthetic event stream through real host assembler; no MCP call' }
   })
-  await page.evaluate(path => window.__tenderNativeProbe.workspaces.create({ path }), workspace)
+  const workspaceSetup = await page.evaluate(async ({ first, selected }) => {
+    const ctx = window.__tenderNativeProbe
+    await ctx.workspaces.create({ path: first })
+    const target = await ctx.workspaces.create({ path: selected })
+    const seed = await ctx.sessions.create({ workspaceId: target.workspaceId })
+    ctx.sessions.open(seed)
+    return { workspaceId: target.workspaceId, seed }
+  }, { first: join(home, 'first-workspace'), selected: workspace })
+  const selectedWorkspace = workspaceSetup.workspaceId
   phase = 'entry'
   await page.getByRole('button', { name: '新建招投标会话', exact: true }).click()
   await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor()
   const session = await page.evaluate(() => window.__tenderNativeProbe.sessions.list.getSnapshot().current)
+  // Leave only the blank business Session reusable in this Workspace, so the
+  // later native New Session click necessarily exercises the ordinary guard.
+  await page.evaluate(id => window.__tenderNativeProbe.workspaces.archiveSession(id), workspaceSetup.seed)
+  await page.waitForFunction(id => window.__tenderNativeProbe.workspaces.list.getSnapshot().archivedSessionIds.includes(id), workspaceSetup.seed)
   const sessionIdsBefore = await page.evaluate(() => window.__tenderNativeProbe.sessions.list.getSnapshot().ids)
   assert.ok(session.startsWith('session-dsh-tender-workbench-'))
+  await page.waitForFunction(({ session, workspaceId }) => window.__tenderNativeProbe.workspaces.list.getSnapshot().items.some(w => w.workspaceId === workspaceId && w.sessionIds.includes(session)), { session, workspaceId: selectedWorkspace })
+  const memberships = await page.evaluate(id => window.__tenderNativeProbe.workspaces.list.getSnapshot().items.filter(w => w.sessionIds.includes(id)).map(w => w.workspaceId), session)
+  assert.deepEqual(memberships, [selectedWorkspace], 'Entry must attach to selected Workspace, not first or ungrouped')
+  if (sidebarMode === 'compatible') {
+    await page.waitForFunction(id => window.__tenderNativeProbe.betterSidebar.getSnapshot().sessionId === id, session)
+    const initial = await page.evaluate(() => window.__tenderNativeProbe.betterSidebar.getSnapshot().state)
+    assert.ok(!initial?.panelOpen && !initial?.bottomOpen, 'Entry must not reveal any workbench panel')
+    assert.equal(JSON.stringify(initial ?? {}).includes('dsh-tender-workbench:agent'), false, 'Entry must not create a business Tab')
+  }
+  report.workspaceOwnership = { status: 'PASS', workspaceId: selectedWorkspace, memberships, entryPanelClosed: true }
+  await page.screenshot({ path: join(home, 'workspace-entry.png') })
   phase = 'native-skill-catalog'
   const skills = await page.evaluate(async sessionId => {
     const result = await window.__tenderNativeProbe.get('remote.skills').list({ sessionId })
@@ -189,13 +213,37 @@ try {
   await shortcuts.getByRole('button', { name: '找机会', exact: true }).click()
   assert.equal(await page.getByLabel('本次分析目标', { exact: true }).inputValue(), '隔离未提交草稿')
   report.tabCloseFilesAndDraft = 'PASS'
+  phase = 'host-collapse-and-restore'
+  const beforeCollapse = await page.evaluate(() => window.__tenderNativeProbe.betterSidebar.getSnapshot().state)
+  await page.getByRole('button', { name: '折叠侧边栏', exact: true }).click()
+  await page.waitForFunction(() => window.__tenderNativeProbe.betterSidebar.getSnapshot().state.panelOpen === false)
+  const collapsed = await page.evaluate(() => window.__tenderNativeProbe.betterSidebar.getSnapshot().state)
+  assert.deepEqual(collapsed.splits, beforeCollapse.splits, 'Host collapse must retain Tabs')
+  assert.equal(collapsed.width, beforeCollapse.width)
+  await shortcuts.getByRole('button', { name: '找机会', exact: true }).click()
+  await page.waitForFunction(() => window.__tenderNativeProbe.betterSidebar.getSnapshot().state.panelOpen === true)
+  assert.equal(await page.getByLabel('本次分析目标', { exact: true }).inputValue(), '隔离未提交草稿')
+  report.hostCollapseAndRestore = 'PASS'
   }
   phase = 'ordinary-session'
+  const eligibleBlanks = await page.evaluate(workspaceId => {
+    const ctx = window.__tenderNativeProbe, ws = ctx.workspaces.list.getSnapshot()
+    const target = ws.items.find(w => w.workspaceId === workspaceId)
+    const list = ctx.sessions.list.getSnapshot()
+    return list.ids.filter(id => list.byId[id]?.blank && list.byId[id]?.cwd === target.path && target.sessionIds.includes(id) && !ws.archivedSessionIds.includes(id))
+  }, selectedWorkspace)
+  assert.deepEqual(eligibleBlanks, [session], 'Fixture must prove the sole blank candidate is the business Session')
   assert.deepEqual(await page.evaluate(() => window.__tenderNativeProbe.sessions.list.getSnapshot().ids), sessionIdsBefore, 'Navigation must not create Sessions')
   await page.getByRole('button', { name: /新会话|新建会话/ }).first().click()
   await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor({ state: 'hidden' })
   const ordinary = await page.evaluate(() => window.__tenderNativeProbe.sessions.list.getSnapshot().current)
   assert.notEqual(ordinary, session)
+  assert.ok(!ordinary.startsWith('session-dsh-'), 'Ordinary New Session must not reuse any business Session')
+  await page.waitForFunction(({ ordinary, business, workspaceId }) => {
+    const target = window.__tenderNativeProbe.workspaces.list.getSnapshot().items.find(w => w.workspaceId === workspaceId)
+    return target?.sessionIds.includes(ordinary) && target.sessionIds.includes(business)
+  }, { ordinary, business: session, workspaceId: selectedWorkspace })
+  report.ordinaryKeepsBusinessMembership = 'PASS'
   await page.evaluate(id => window.__tenderNativeProbe.sessions.open(id), session)
   await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor()
   phase = 'real-host-business-fixture'

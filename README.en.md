@@ -10,7 +10,9 @@ Related agents: [数据清洗补全](https://github.com/duhu2000/dsh-data-cleani
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current stable version: **0.5.6** (stable release).
+Current stable version: **0.5.7** (stable release).
+
+Version 0.5.7 fixes Workspace ownership for new business Sessions. See the [release record](docs/RELEASE-0.5.7.md) for publication status and verification boundaries.
 
 Base mode targets the full DSH 0.1.2-rc.1 distribution; Better Sidebar 0.18.1 is optional and only provides the visual workbench. Legacy hosts remain unsupported. Back up the complete Profile and verify dependencies before upgrading.
 
@@ -82,11 +84,11 @@ dsh web --no-open
 
 Optionally enable the visual workbench with `dsh plugin --profile web add dsh-better-sidebar@0.18.1`, enable the tender Tab and fully restart the Profile.
 
-To install the exact 0.5.6 release:
+To install the exact 0.5.7 release:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
-dsh plugin --profile web add dsh-tender-workbench@0.5.6
+dsh plugin --profile web add dsh-tender-workbench@0.5.7
 ```
 
 To install base mode from an independent checkout:
@@ -103,7 +105,7 @@ To install a packed build:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
-dsh plugin --profile web add ./dsh-tender-workbench-0.5.6.tgz
+dsh plugin --profile web add ./dsh-tender-workbench-0.5.7.tgz
 dsh web --no-open
 ```
 
@@ -120,11 +122,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 Upgrade an existing installation by installing the stable version and fully restarting the Web profile:
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.6
+dsh plugin --profile web add dsh-tender-workbench@0.5.7
 dsh web --no-open
 ```
 
-Version 0.5.6 aligns optional Sidebar metadata, installation checks and fallback guidance, and fixes Host Session event reads and current-turn binding. It retains the v1.5.0 singleton Tab, five navigation shortcuts and Client-lifetime draft recovery. Business schemas are unchanged; history remains Session-local and live MCP connectivity is not verified. Restore a backed-up, fully verified host/plugin combination for rollback, not the original 0.5.4 or an older package alone on the new host.
+Version 0.5.7 creates business Sessions with workspaceId plus a namespaced sessionId, not cwd-only. Current membership wins; a legacy ungrouped Session must match a registered path, and an unregistered selected directory is rejected rather than redirected. Existing ungrouped history is not automatically migrated. The ordinary Session guard and 0.5.6 snapshotEvents/turn-start authorization contract remain intact. Business schemas are unchanged; history remains Session-local and live MCP is not verified. Roll back the complete backed-up host/plugin combination, not an old plugin alone on the new host.
 
 ## Using the workbench
 
