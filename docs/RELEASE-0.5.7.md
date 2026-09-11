@@ -1,7 +1,7 @@
 # dsh-tender-workbench 0.5.7
 
 Version: **0.5.7**
-Status: **ready for release**
+Status: **published**
 
 用户于 2026-09-11 追加授权 commit、push、tag 与 npm 发布。通过精确提交的完整门禁后合并 PR #5，推送新的 v0.5.7 tag，由 release.yml 通过 OIDC 发布；不移动旧 tag，不变更生产 Profile 或全局宿主。
 
@@ -17,4 +17,22 @@ Status: **ready for release**
 
 复用最终 npm pack + 实际 DSH 0.1.2-rc.1 隔离 Profile，三路径 absent / Sidebar 0.18.1 / 已知坏 0.17.1。新测试以两个 Workspace 验证选中组而非首组，断言业务与普通 Session 均保持归组；入口不建 Tab、不展开侧栏，五流程单例，Tab X、Files、宿主收起恢复，合成业务及 Excel/PDF 下载仍通过。
 
-本地 check：43 文件、245 passed / 1 Windows-only skipped；UI 8/8。实际 DSH 无侧栏和 Sidebar 0.18.1 路径通过，旧 Sidebar 0.17.1 预检与实际启动按预期阻断。采用记录、实际结果与限制登记于 docs/WORKSPACE-OWNERSHIP-ADOPTION.md。此清单为发布前状态；发布工作流与 Registry 验证完成后以独立文档提交补充证据。
+本地 check：43 文件、245 passed / 1 Windows-only skipped；UI 8/8。实际 DSH 无侧栏和 Sidebar 0.18.1 路径通过，旧 Sidebar 0.17.1 预检与实际启动按预期阻断。采用记录、实际结果与限制登记于 docs/WORKSPACE-OWNERSHIP-ADOPTION.md。
+
+## 发布证据（2026-09-11）
+
+- 实现提交 `b45df25601a8550488feb00600cab719aeae6b4c`；发布准备提交 `cc52297c7fd01d532ee583276c9ba4411df445a7` 仅改文档；[PR #5](https://github.com/duhu2000/dsh-tender-workbench/pull/5) 已合并。
+- 发布提交 / npm gitHead：`75d93cddb9388f2307e5ff2830551cb6cfd2ddfc`，与已通过 PR 门禁的分支 tree 完全相同。
+- [PR CI](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34565099236)：Linux Node 22/24、Windows Node 24、PR 可安装包全部通过。
+- [main CI](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34565286062)：精确发布提交的三组门禁通过；PR 安装包作业按设计跳过。
+- annotated tag `v0.5.7` object：`115e594ce6347c4b3ca1ba3d1088b8e9e59ea63c`，指向上述发布提交，未移动旧 tag。
+- [Release 工作流](https://github.com/duhu2000/dsh-tender-workbench/actions/runs/34565443651)：安装、tag 校验、全量检查、npm provenance 发布和 GitHub Release 创建全部成功。
+- [GitHub Release](https://github.com/duhu2000/dsh-tender-workbench/releases/tag/v0.5.7)：非 draft、非 prerelease，发布时间 `2026-09-11T05:19:52Z`。
+- Registry 指定版本可读、`latest=0.5.7`；发布者为 `GitHub Actions / npm-oidc-no-reply@github.com`，trustedPublisher=`github`，配置 ID=`oidc:20287148-0db1-42e9-969e-04b4ad02ce41`。npm 接受发布后曾提示后台处理，已等待至版本、latest 和 tarball 均可读取；未重复发布。
+- [Registry attestation](https://registry.npmjs.org/-/npm/v1/attestations/dsh-tender-workbench@0.5.7)：SLSA provenance v1 的仓库、`.github/workflows/release.yml`、`refs/tags/v0.5.7`、commit 与 invocation 均匹配本次发布；subject SHA-512 匹配实际下载 tarball 与 Registry integrity。此为身份、内容和摘要交叉核验，不宣称独立完成 Sigstore 证书链验证。
+- Registry integrity：`sha512-94XT9euUviMlHj8ZoS6XehAkqBtmHyI0i1IZLM5qC2v89udCtG3VQ9wJLLcv/MSN0Hyh0+LNIAKh9rci18z5jA==`。
+- 线上 tarball SHA-256：`95a335569d3d5ac7eb91929552e3023380373dbae595e187785c8c2d6d8bb3bb`，180 文件。
+
+实际 DSH/UI 回归对应发布前本地构建；正式 npm tarball 已下载并核对 provenance/摘要，未把本地 UI 验证表述为正式包重新跑完整矩阵。沿用既有 CSS 绝对编译路径相关哈希限制，不承诺本地与 CI 包字节一致。真实模型/计费 MCP、Context 与四产品共装仍待组合回归。上游 sourcemap 缺失、pnpm/action-setup 的 Node 20 运行时弃用提示为非阻断告警，不在本次修改依赖。
+
+证据以独立 docs commit 回写 main；不可变 npm 包内清单保留发布时 ready-for-release 状态。未修改生产 Profile、全局宿主或其他工作树，未操作插件市场。
