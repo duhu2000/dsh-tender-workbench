@@ -52,9 +52,15 @@ function harness(providerAvailable = true) {
   const connection = {
     skills: { list: vi.fn(async () => ({ ok: true, value: { skills: [] } })) },
   }
-  const createSession = vi.fn(async ({ sessionId, cwd }: { sessionId: string; cwd: string }) => {
+  const workspaceItems = [
+    { workspaceId: 'workspace-1', path: 'C:\\one', title: 'one', sessionIds: ['session-1'] },
+    { workspaceId: 'workspace-2', path: 'C:\\two', title: 'two', sessionIds: ['session-2'] },
+  ]
+  const createSession = vi.fn(async ({ sessionId, workspaceId }: { sessionId: string; workspaceId: string }) => {
+    const workspace = workspaceItems.find(item => item.workspaceId === workspaceId)!
     sessionState.ids.unshift(sessionId)
-    sessionState.byId[sessionId] = { id: sessionId, cwd }
+    sessionState.byId[sessionId] = { id: sessionId, cwd: workspace.path }
+    workspace.sessionIds.push(sessionId)
     return sessionId
   })
   const openSession = vi.fn((sessionId: string) => { current = sessionId })
@@ -88,10 +94,7 @@ function harness(providerAvailable = true) {
     sessions,
     workspaces: {
       list: { getSnapshot: () => ({
-        items: [
-          { workspaceId: 'workspace-1', path: 'C:\\one', title: 'one', sessionIds: ['session-1'] },
-          { workspaceId: 'workspace-2', path: 'C:\\two', title: 'two', sessionIds: ['session-2'] },
-        ],
+        items: workspaceItems,
         recentWorkspaceId: 'workspace-2',
       }) },
     },
@@ -219,7 +222,8 @@ describe('S1a client integration', () => {
 
     await sidebar.startTenderSession()
     const first = test.createSession.mock.calls[0]?.[0]
-    expect(first?.cwd).toBe('C:\\one')
+    expect(first?.workspaceId).toBe('workspace-1')
+    expect(first).not.toHaveProperty('cwd')
     expect(first?.sessionId).toMatch(new RegExp(`^${TENDER_ENTRY_SESSION_ID_PREFIX}`))
     expect(test.openSession).toHaveBeenLastCalledWith(first?.sessionId)
     expect(test.openTab).toHaveBeenCalledTimes(1)
@@ -236,7 +240,7 @@ describe('S1a client integration', () => {
     ).inject(second!.sessionId)
     expect(shortcut.openPhase('screening')).toBe(true)
     expect(test.openTab).toHaveBeenNthCalledWith(2, { type: TENDER_WORKBENCH_TAB_ID }, {
-      sessionId: second!.sessionId, cwd: second!.cwd,
+      sessionId: second!.sessionId, cwd: 'C:\\one',
     })
   })
 

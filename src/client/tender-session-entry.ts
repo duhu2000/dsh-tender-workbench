@@ -1,5 +1,5 @@
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { IWorkspaces } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { IWorkspaces, WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 export const TENDER_ENTRY_SESSION_ID_PREFIX = 'session-dsh-tender-workbench-'
@@ -17,7 +17,7 @@ export class TenderSessionEntryError extends Error {
 }
 
 interface SessionCreateCapability {
-  create(options: { cwd: string; sessionId: SessionId }): Promise<SessionId>
+  create(options: { workspaceId: WorkspaceId; sessionId: SessionId }): Promise<SessionId>
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
@@ -40,37 +40,42 @@ export function createTenderEntrySessionId(uuid: string): SessionId {
 }
 
 /**
- * Resolve the owning workspace's canonical directory path to seed a
- * `cwd`-owned entry Session. A `cwd`-only create deliberately does NOT attach
- * the Session to the workspace, so DSH's New-Session blank-session reuse skips it.
+ * Resolve Host-owned Workspace identity, not just a directory. Existing
+ * membership wins; a legacy ungrouped Session may match a registered path.
+ * Never register a new Workspace or create an ungrouped business Session here.
  */
-export function resolveTenderEntryWorkspacePath(
+export function resolveTenderEntryWorkspaceId(
   sessions: Pick<ISessions, 'list'>,
   workspaces: Pick<IWorkspaces, 'list'>,
-): string | undefined {
-  const current = sessions.list.getSnapshot().current
+): WorkspaceId | undefined {
+  const sessionSnapshot = sessions.list.getSnapshot()
+  const current = sessionSnapshot.current
   const workspaceSnapshot = workspaces.list.getSnapshot()
   const currentWorkspace = current === undefined
     ? undefined
     : workspaceSnapshot.items.find(workspace => workspace.sessionIds.includes(current))
-  return currentWorkspace?.path
-    ?? (current === undefined ? undefined : sessions.list.getSnapshot().byId[current]?.cwd)
-    ?? workspaceSnapshot.items[0]?.path
+  if (currentWorkspace !== undefined) return currentWorkspace.workspaceId
+  const cwd = current === undefined ? undefined : sessionSnapshot.byId[current]?.cwd
+  if (cwd !== undefined) {
+    // Do not silently redirect a selected but unregistered directory into an
+    // unrelated first Workspace. Ask the user to register/select it instead.
+    return workspaceSnapshot.items.find(workspace => workspace.path === cwd)?.workspaceId
+  }
+  return workspaceSnapshot.items[0]?.workspaceId
 }
 
 /**
- * Create a distinct native Session with `cwd` ownership only (no workspace
- * attachment). This keeps the Session out of the workspace's reusable blank-set,
- * so DSH's 新会话 action mints a fresh default Session instead of reopening the
- * workbench Session.
+ * Create a distinct native Session explicitly attached to its Workspace.
+ * Namespaced identity + ordinary-session-guard prevent New Session reuse;
+ * detaching the business Session from its Workspace is not an isolation method.
  */
 export async function createTenderEntrySession(
   sessions: ISessions,
   workspaces: IWorkspaces,
   uuid: () => string = browserUuid,
 ): Promise<SessionId> {
-  const cwd = resolveTenderEntryWorkspacePath(sessions, workspaces)
-  if (cwd === undefined) throw new TenderSessionEntryError('workspace-unavailable')
+  const workspaceId = resolveTenderEntryWorkspaceId(sessions, workspaces)
+  if (workspaceId === undefined) throw new TenderSessionEntryError('workspace-unavailable')
 
   const capability = sessions as ISessions & Partial<SessionCreateCapability>
   if (typeof capability.create !== 'function') {
@@ -78,7 +83,7 @@ export async function createTenderEntrySession(
   }
 
   const requestedId = createTenderEntrySessionId(uuid())
-  const createdId = await capability.create({ cwd, sessionId: requestedId })
+  const createdId = await capability.create({ workspaceId, sessionId: requestedId })
   if (createdId !== requestedId) throw new TenderSessionEntryError('invalid-session-id')
   return createdId
 }

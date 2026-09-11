@@ -8,7 +8,7 @@ import {
   createTenderEntrySession,
   createTenderEntrySessionId,
   isTenderEntrySessionId,
-  resolveTenderEntryWorkspacePath,
+  resolveTenderEntryWorkspaceId,
 } from '../src/client/tender-session-entry.ts'
 
 const firstWorkspaceId = 'workspace-1' as WorkspaceId
@@ -18,7 +18,7 @@ function runtime(current: SessionId | null = 'ordinary-session' as SessionId) {
   const currentSessionId = current ?? undefined
   const sessionSnapshot = {
     ids: [],
-    byId: {},
+    byId: {} as Record<string, { cwd: string }>,
     current: currentSessionId,
     phase: 'ready' as const,
     subagentsByParent: {},
@@ -46,7 +46,7 @@ function runtime(current: SessionId | null = 'ordinary-session' as SessionId) {
     connectWorkspace: vi.fn(),
     startSession: vi.fn(),
   } as unknown as IWorkspaces & { connectWorkspace: ReturnType<typeof vi.fn>; startSession: ReturnType<typeof vi.fn> }
-  return { create, sessions, workspaces, workspaceSnapshot }
+  return { create, sessions, workspaces, workspaceSnapshot, sessionSnapshot }
 }
 
 describe('dedicated tender Session entry', () => {
@@ -59,7 +59,7 @@ describe('dedicated tender Session entry', () => {
     expect(isTenderEntrySessionId(sessionId)).toBe(true)
     expect(isTenderEntrySessionId(`${TENDER_ENTRY_SESSION_ID_PREFIX}not-a-uuid`)).toBe(false)
     expect(test.create).toHaveBeenCalledWith({
-      cwd: 'C:\\one',
+      workspaceId: firstWorkspaceId,
       sessionId: createTenderEntrySessionId(uuid),
     })
     expect(test.workspaces.connectWorkspace).not.toHaveBeenCalled()
@@ -68,7 +68,31 @@ describe('dedicated tender Session entry', () => {
 
   it('falls back to the first registered workspace when no Session is selected', () => {
     const test = runtime(null)
-    expect(resolveTenderEntryWorkspacePath(test.sessions, test.workspaces)).toBe('C:\\one')
+    expect(resolveTenderEntryWorkspaceId(test.sessions, test.workspaces)).toBe(firstWorkspaceId)
+  })
+
+  it('uses explicit membership even when the Session cwd points at another registered path', () => {
+    const test = runtime()
+    test.workspaceSnapshot.items[0]!.sessionIds = []
+    test.workspaceSnapshot.items[1]!.sessionIds = ['ordinary-session' as SessionId]
+    test.sessionSnapshot.byId['ordinary-session'] = { cwd: 'C:\\one' }
+    expect(resolveTenderEntryWorkspaceId(test.sessions, test.workspaces)).toBe(recentWorkspaceId)
+  })
+
+  it('resolves a legacy ungrouped Session by an exact registered path', async () => {
+    const test = runtime()
+    test.workspaceSnapshot.items[0]!.sessionIds = []
+    test.sessionSnapshot.byId['ordinary-session'] = { cwd: 'C:\\two' }
+    await createTenderEntrySession(test.sessions, test.workspaces, () => '12345678-1234-4234-8234-123456789abc')
+    expect(test.create).toHaveBeenCalledWith({ workspaceId: recentWorkspaceId, sessionId: expect.stringContaining(TENDER_ENTRY_SESSION_ID_PREFIX) })
+  })
+
+  it('does not redirect an unregistered selected directory to an unrelated first Workspace', async () => {
+    const test = runtime()
+    test.workspaceSnapshot.items[0]!.sessionIds = []
+    test.sessionSnapshot.byId['ordinary-session'] = { cwd: 'C:\\not-registered' }
+    await expect(createTenderEntrySession(test.sessions, test.workspaces)).rejects.toMatchObject({ code: 'workspace-unavailable' })
+    expect(test.create).not.toHaveBeenCalled()
   })
 
   it('rejects a runtime without distinct Session creation instead of reusing a blank Session', async () => {

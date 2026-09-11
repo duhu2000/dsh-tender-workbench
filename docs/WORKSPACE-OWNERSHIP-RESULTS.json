@@ -1,0 +1,135 @@
+[
+  {
+    "version": "0.5.7",
+    "host": "0.1.2-rc.1",
+    "node": "v25.9.0",
+    "sidebar": "absent",
+    "context": "absent",
+    "home": "/var/folders/ws/tmsn44b140lf8b89ml5qqjf00000gn/T/tender-native-9uhBuB",
+    "port": 49736,
+    "tarball": "/var/folders/ws/tmsn44b140lf8b89ml5qqjf00000gn/T/tender-native-9uhBuB/dsh-tender-workbench-0.5.7.tgz",
+    "sha256": "fd83145a11c1d94ea786fba43f44a1f14a708d8723aa343f9bd66139acbe453c",
+    "status": "PASS",
+    "preflight": {
+      "errors": [],
+      "warnings": [],
+      "notes": [
+        "Better Sidebar absent: base conversation, prompt builder and Host tools remain available; visual workbench requires optional dsh-better-sidebar@0.18.1 and a full profile restart. No automatic Sidebar installation."
+      ],
+      "mode": "base",
+      "verifiedBaseline": true
+    },
+    "workspaceOwnership": {
+      "status": "PASS",
+      "workspaceId": "974bde02-64d7-4456-a988-10fb7dc9e837",
+      "memberships": [
+        "974bde02-64d7-4456-a988-10fb7dc9e837"
+      ],
+      "entryPanelClosed": true
+    },
+    "ordinaryKeepsBusinessMembership": "PASS",
+    "absentSidebar": {
+      "officialInstallerDidNotInstall": true,
+      "clientLoaded": true,
+      "repeatedShortcutsPreserveDraft": true,
+      "promptBuilderAppend": true,
+      "noExtraSessionsOrWorkbench": true
+    },
+    "navigationPreservesCompletedBusiness": "PASS",
+    "business": {
+      "status": "PASS",
+      "sourceCalls": 1,
+      "revision": 5,
+      "scope": "Real registered Host tool pipeline, Agent, Session projection, local Excel/PDF artifacts; synthetic QCC/user data, no model or real MCP"
+    },
+    "downloads": {
+      "excel": {
+        "status": "PASS",
+        "bytes": 24798,
+        "signature": "PK"
+      },
+      "pdf": {
+        "status": "PASS",
+        "bytes": 160970,
+        "signature": "%PDF-"
+      }
+    },
+    "realMcp": "NOT_TESTED",
+    "productionProfileUsed": false
+  },
+  {
+    "version": "0.5.7",
+    "host": "0.1.2-rc.1",
+    "node": "v25.9.0",
+    "sidebar": "0.18.1",
+    "context": "absent",
+    "home": "/var/folders/ws/tmsn44b140lf8b89ml5qqjf00000gn/T/tender-native-wAn9f4",
+    "port": 49623,
+    "tarball": "/var/folders/ws/tmsn44b140lf8b89ml5qqjf00000gn/T/tender-native-wAn9f4/dsh-tender-workbench-0.5.7.tgz",
+    "sha256": "fd83145a11c1d94ea786fba43f44a1f14a708d8723aa343f9bd66139acbe453c",
+    "status": "PASS",
+    "preflight": {
+      "errors": [],
+      "warnings": [],
+      "notes": [],
+      "mode": "base",
+      "verifiedBaseline": true
+    },
+    "workspaceOwnership": {
+      "status": "PASS",
+      "workspaceId": "8dc4449d-4f15-4ce8-bd58-9ed48fcccfbd",
+      "memberships": [
+        "8dc4449d-4f15-4ce8-bd58-9ed48fcccfbd"
+      ],
+      "entryPanelClosed": true
+    },
+    "ordinaryKeepsBusinessMembership": "PASS",
+    "hostCollapseAndRestore": "PASS",
+    "tabCloseFilesAndDraft": "PASS",
+    "navigationPreservesCompletedBusiness": "PASS",
+    "business": {
+      "status": "PASS",
+      "sourceCalls": 1,
+      "revision": 5,
+      "scope": "Real registered Host tool pipeline, Agent, Session projection, local Excel/PDF artifacts; synthetic QCC/user data, no model or real MCP"
+    },
+    "downloads": {
+      "excel": {
+        "status": "PASS",
+        "bytes": 24798,
+        "signature": "PK"
+      },
+      "pdf": {
+        "status": "PASS",
+        "bytes": 160970,
+        "signature": "%PDF-"
+      }
+    },
+    "realMcp": "NOT_TESTED",
+    "productionProfileUsed": false
+  },
+  {
+    "version": "0.5.7",
+    "host": "0.1.2-rc.1",
+    "node": "v25.9.0",
+    "sidebar": "0.17.1",
+    "context": "absent",
+    "home": "/var/folders/ws/tmsn44b140lf8b89ml5qqjf00000gn/T/tender-native-9ijuGt",
+    "port": 49959,
+    "tarball": "/var/folders/ws/tmsn44b140lf8b89ml5qqjf00000gn/T/tender-native-9ijuGt/dsh-tender-workbench-0.5.7.tgz",
+    "sha256": "fd83145a11c1d94ea786fba43f44a1f14a708d8723aa343f9bd66139acbe453c",
+    "status": "EXPECTED_STARTUP_FAILURE",
+    "preflight": {
+      "errors": [
+        "Known reverse mismatch: DSH 0.1.2-rc.1 + Better Sidebar 0.17.1 requires removed settingsNamespace. Use dsh plugin --profile web add dsh-better-sidebar@0.18.1 after backing up the full profile."
+      ],
+      "warnings": [],
+      "notes": [],
+      "mode": "base",
+      "verifiedBaseline": false
+    },
+    "observedError": "Error: dsh: plugin tree failed to load: failed to apply loader entry include (cordis:include): failed to import loader entry better-sidebar (dsh-better-sidebar): The requested module '@deepseek-ai/dsh-settings' does not provide an export named 'settingsNamespace'",
+    "realMcp": "NOT_TESTED",
+    "productionProfileUsed": false
+  }
+]
