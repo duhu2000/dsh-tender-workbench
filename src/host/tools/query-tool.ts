@@ -46,6 +46,9 @@ import {
 import { normalizeQccSources } from '../pipeline/normalize.ts'
 import { createScreeningDraftContext } from '../pipeline/screening-context.ts'
 import { resolveToolInvocation, toolOriginParameter } from '../tool-contract.ts'
+import { ProviderEnvelopeError, unwrapProviderEnvelope } from '../pipeline/provider-envelope.ts'
+import { emptyExecution, type ProviderOutcome } from '../../contracts/execution.ts'
+import type {} from '../projection.ts'
 
 const QueryToolResultV2Schema = z.object({
   domain: z.literal('dsh-tender-workbench'),
@@ -84,6 +87,7 @@ type SourceExecution =
     readonly source: SourceKey
     readonly status: 'failed'
     readonly message: string
+    readonly outcome: Extract<ProviderOutcome, 'failed' | 'no-permission' | 'unknown'>
   }
 
 function sanitizeMessage(value: string): string {
@@ -120,6 +124,7 @@ export function extractMcpCanonicalPayloadCandidates(value: unknown): readonly J
     throw new TypeError('MCP canonical value must be an object')
   }
   const record = value as Record<string, unknown>
+  if (record['isError'] === true) throw new ProviderEnvelopeError('failed')
   const candidates: JsonValue[] = []
   if (record['structuredContent'] !== undefined) candidates.push(jsonValue(record['structuredContent']))
   const content = record['content']
@@ -161,11 +166,17 @@ async function executeSource(
   const result = await dependencies.tools.execute(nestedToolExecution(exec, callId, name, args))
   exec.signal.throwIfAborted()
   if (result.isError) {
-    return { source, status: 'failed', message: sanitizeMessage(result.error.message || contentText(result)) }
+    const code = String(result.error.info?.code ?? '')
+    return { source, status: 'failed', outcome: /^(401|403|FORBIDDEN|UNAUTHORIZED|NO_PERMISSION)$/iu.test(code) ? 'no-permission' : 'failed', message: '来源工具调用失败，请检查连接与授权。' }
   }
   try {
     const candidates = [...extractMcpCanonicalPayloadCandidates(result.value)]
       .sort((left, right) => Number(hasSourceList(right, source)) - Number(hasSourceList(left, source)))
+    // Explicit denial/failure cannot be bypassed by a second valid-looking text payload.
+    for (const payload of candidates) {
+      try { unwrapProviderEnvelope(payload, source) }
+      catch (error) { if (error instanceof ProviderEnvelopeError && error.outcome !== 'unknown') throw error }
+    }
     let contractError: unknown
     for (const payload of candidates) {
       try {
@@ -182,6 +193,7 @@ async function executeSource(
     return {
       source,
       status: 'failed',
+      outcome: error instanceof ProviderEnvelopeError ? error.outcome : 'unknown',
       message: sanitizeMessage(error instanceof Error ? error.message : '来源结果无法校验。'),
     }
   }
@@ -224,9 +236,10 @@ function succeededState(
     ? {
       status: 'succeeded' as const,
       loaded: execution.adapted.rawRecordCount,
+      outcome: execution.adapted.rawRecordCount === 0 ? 'zero' : 'data',
       sourceData: sourceArtifacts[execution.source],
     }
-    : { status: 'failed' as const, loaded: 0, errorMessage: execution.message }]))
+    : { status: 'failed' as const, loaded: 0, outcome: execution.outcome, errorMessage: execution.message }]))
   return TenderWorkflowProjectionV2Schema.parse({
     schemaVersion: 2,
     revision,
@@ -367,8 +380,29 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
         revisionOf: result => QueryToolResultV2Schema.parse(result).state.revision,
         execute: async (nextRevision) => {
           const executions: SourceExecution[] = []
-          if (intent.tender !== undefined) executions.push(await executeSource(dependencies, exec, 'tender', intent.tender))
-          if (intent.proposed !== undefined) executions.push(await executeSource(dependencies, exec, 'proposed', intent.proposed))
+          let progress = emptyExecution(String(exec.callId), '准备查询已授权来源', Date.now())
+          progress.queryTarget = intent.target
+          progress.providers = { tender: intent.tender ? 'unknown' : 'not-needed', proposed: intent.proposed ? 'unknown' : 'not-needed' }
+          const publish = () => { exec.agent?.session.append?.('dsh-tender/progress', progress) }
+          publish()
+          for (const source of ['tender', 'proposed'] as const) {
+            const args = intent[source]
+            if (args === undefined) continue
+            progress = { ...progress, currentAction: source === 'tender' ? '正在查询招投标来源' : '正在查询拟建项目来源', updatedAt: Date.now() }
+            publish()
+            let execution: SourceExecution
+            try { execution = await executeSource(dependencies, exec, source, args) }
+            catch (error) { exec.signal.throwIfAborted(); execution = { source, status: 'failed', outcome: 'failed', message: '来源调用异常，请检查连接后重试。' } }
+            executions.push(execution)
+            const outcome = execution.status === 'succeeded' ? execution.adapted.rawRecordCount === 0 ? 'zero' : 'data' : execution.outcome
+            progress = { ...progress, updatedAt: Date.now(), recentItem: source === 'tender' ? '招投标来源已返回' : '拟建项目来源已返回',
+              providers: { ...progress.providers, [source]: outcome },
+              counts: { ...progress.counts, queried: progress.counts.queried + 1,
+                succeeded: progress.counts.succeeded + (execution.status === 'succeeded' ? execution.adapted.items.length : 0),
+                zero: progress.counts.zero + Number(outcome === 'zero'), failed: progress.counts.failed + Number(outcome === 'failed'),
+                noPermission: progress.counts.noPermission + Number(outcome === 'no-permission'), unknown: progress.counts.unknown + Number(outcome === 'unknown') } }
+            publish()
+          }
           exec.signal.throwIfAborted()
           const successes = executions.filter((execution): execution is Extract<SourceExecution, { readonly status: 'succeeded' }> => execution.status === 'succeeded')
           const now = new Date().toISOString()
@@ -379,7 +413,7 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
               intentId,
               outcome: 'failed',
               message: `查询失败：${message}`.slice(0, 512),
-              state: failedState(previous, nextRevision, intentId, message, now),
+              state: { ...failedState(previous, nextRevision, intentId, message, now), execution: progress },
               control: { status: 'failed', reasonCode: 'all-sources-failed', retryable: true },
             })) as ReceiptJsonValue
           }
@@ -421,6 +455,7 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
             executions,
             dataset.summary,
           )
+          state.execution = progress
           const outcome = successes.length === executions.length ? 'succeeded' : 'partial'
           const message = outcome === 'partial'
             ? `查询部分完成：已保留 ${successes.length} 个可用来源，失败来源已明确记录。`

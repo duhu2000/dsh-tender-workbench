@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { TechnicalInvalidRecordV1 } from '../../contracts/dataset.ts'
+import { unwrapProviderEnvelope } from './provider-envelope.ts'
 
 const sourceText = z.string().max(32_768)
 const requiredSourceText = sourceText.refine(value => value.trim() !== '', 'required source identifier is empty')
@@ -19,7 +20,7 @@ const sourceStringsSchema = z.preprocess(
 )
 
 const querySummarySchema = z.object({
-  命中总数: z.number().finite().nonnegative().optional(),
+  命中总数: z.preprocess(value => typeof value === 'string' && /^\d+$/u.test(value) ? Number(value) : value, z.number().int().nonnegative().safe().optional()),
   结果说明: optionalSourceText,
   生效筛选: z.preprocess(
     value => value === null ? undefined : value,
@@ -145,6 +146,7 @@ function hasEnvelopeMarker(value: unknown, listKey: '标讯列表' | '拟建项�
 }
 
 export function adaptQccTenderPayload(value: unknown): AdaptedQccSource<QccTenderSourceItem> {
+  value = unwrapProviderEnvelope(value, 'tender')
   if (!hasEnvelopeMarker(value, '标讯列表')) throw new QccSourceContractError('invalid-tender-payload')
   const envelope = qccTenderPayloadEnvelopeSchema.safeParse(value)
   if (!envelope.success) throw new QccSourceContractError('invalid-tender-payload')
@@ -156,6 +158,7 @@ export function adaptQccTenderPayload(value: unknown): AdaptedQccSource<QccTende
 }
 
 export function adaptQccProposedPayload(value: unknown): AdaptedQccSource<QccProposedSourceItem> {
+  value = unwrapProviderEnvelope(value, 'proposed')
   if (!hasEnvelopeMarker(value, '拟建项目列表')) throw new QccSourceContractError('invalid-proposed-payload')
   const envelope = qccProposedPayloadEnvelopeSchema.safeParse(value)
   if (!envelope.success) throw new QccSourceContractError('invalid-proposed-payload')

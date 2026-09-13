@@ -64,6 +64,7 @@ function RegisteredTenderWorkbenchTab({
   projectionPort,
   reveal,
   navigation,
+  openOriginSession,
   ...props
 }: TabComponentProps & {
   readonly locale: Pick<TenderClientContext['locale'], 'subscribe' | 'getSnapshot'>
@@ -72,6 +73,7 @@ function RegisteredTenderWorkbenchTab({
   readonly projectionPort: ReturnType<typeof createTenderProjectionPort>
   readonly reveal: ReturnType<typeof createTenderWorkbenchRevealController>
   readonly navigation: ReturnType<typeof createTenderWorkbenchNavigationController>
+  readonly openOriginSession: NonNullable<TenderWorkbenchTabProps['openOriginSession']>
 }) {
   useSyncExternalStore(
     listener => locale.subscribe(listener),
@@ -85,6 +87,7 @@ function RegisteredTenderWorkbenchTab({
       reveal={reveal}
       navigation={navigation}
       sendIntent={sendIntent}
+      openOriginSession={openOriginSession}
       t={t}
     />
   )
@@ -170,6 +173,12 @@ export function apply(ctx: TenderClientContext): void {
           projectionPort={projectionPort}
           reveal={controller}
           navigation={navigation}
+          openOriginSession={async (origin, from) => {
+            if (!active || sessions.list.getSnapshot().current !== from) throw new Error('Session changed')
+            await sessions.refresh()
+            if (!active || sessions.list.getSnapshot().current !== from) throw new Error('Session changed')
+            sessions.open(origin)
+          }}
         />
       ),
       () => t('sidebar.label'),

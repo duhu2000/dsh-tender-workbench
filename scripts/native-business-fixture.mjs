@@ -50,6 +50,11 @@ export async function runBusinessFixture(ctx, sessionId) {
     assert.equal(query.outcome, 'succeeded', JSON.stringify(query))
     assert.equal(query.state.query.total, 2); end()
     assert.equal(state().query.total, 2, 'Real Session projection must consume the tool result')
+    assert.equal(state().execution.status, 'succeeded')
+    assert.deepEqual(state().execution.providers, { tender: 'data', proposed: 'not-needed' })
+    assert.equal(state().execution.counts.queried, 1)
+    assert.equal(state().execution.counts.succeeded, 2)
+    assert.ok(session.snapshotEvents().some(event => event.type === 'dsh-tender/progress'), 'Real progress must be persisted Session events')
     begin('请生成规则建议并预览，不确认')
     const context = await invoke('tender_workbench_get_rule_drafting_context', binding())
     const preview = await invoke('tender_workbench_preview_rules', { ...binding(),

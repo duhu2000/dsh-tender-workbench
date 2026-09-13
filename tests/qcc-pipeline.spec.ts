@@ -156,7 +156,7 @@ describe('qcc source adapters and deterministic normalization', () => {
 
   it('rejects only definite payload-envelope contract violations and parses strict dates/amounts', () => {
     expect(() => adaptQccTenderPayload({ 查询摘要: summary, 标讯列表: 'not-an-array' }))
-      .toThrow(QccSourceContractError)
+      .toThrow('来源返回结构未知')
     expect(normalizeDate('2026-02-30').parseStatus).toBe('unparseable')
     expect(normalizeDate('2026-08').precision).toBe('month')
     expect(normalizeAmount('300万元以上', 'budget')).toMatchObject({ minCny: 3_000_000, parseStatus: 'range' })
@@ -208,12 +208,10 @@ describe('qcc source adapters and deterministic normalization', () => {
     expect(dataset.rows.find(row => row.sourceId === 'nullable-proposed')?.amount.parseStatus).toBe('missing')
   })
 
-  it('accepts an omitted or null source list as an empty source result', () => {
-    expect(adaptQccTenderPayload({ 查询摘要: {} })).toMatchObject({ items: [], rawRecordCount: 0 })
-    expect(adaptQccProposedPayload({ 查询摘要: {}, 拟建项目列表: null })).toMatchObject({
-      items: [],
-      rawRecordCount: 0,
-    })
-    expect(() => adaptQccTenderPayload({})).toThrow(QccSourceContractError)
+  it('does not equate missing/null/unknown payloads with explicit zero records', () => {
+    expect(() => adaptQccTenderPayload({ 查询摘要: {} })).toThrow('来源返回结构未知')
+    expect(() => adaptQccProposedPayload({ 查询摘要: {}, 拟建项目列表: null })).toThrow('来源返回结构未知')
+    expect(() => adaptQccTenderPayload({})).toThrow('来源返回结构未知')
+    expect(adaptQccTenderPayload({ 标讯列表: [] })).toMatchObject({ items: [], rawRecordCount: 0 })
   })
 })

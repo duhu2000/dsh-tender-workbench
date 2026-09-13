@@ -26,9 +26,10 @@ import {
   createTenderWorkbenchRetryReportTool,
 } from './host/tools/report-tools.ts'
 import { createTenderWorkbenchWorkflowStateTool } from './host/tools/workflow-state-tool.ts'
+import { registerTenderHistory } from './host/history.ts'
 
 /** Public Host services required by the S2/S3 workflow and Session-private Artifact seam. */
-export const inject = ['sessionProjections', 'tools', 'sessionPersistence', 'webServer', 'sessions', 'skills']
+export const inject = ['sessionProjections', 'tools', 'sessionPersistence', 'webServer', 'sessions', 'skills', 'workspaceRegistry']
 
 function sessionPersistenceLocator(ctx: Context): SessionPersistenceLocator {
   const candidate: unknown = ctx.get('sessionPersistence')
@@ -42,6 +43,7 @@ function sessionPersistenceLocator(ctx: Context): SessionPersistenceLocator {
 /** Register the whole-Session Projection, high-level tools, and read-only Artifact route. */
 export function apply(ctx: Context): void {
   ctx.sessionProjections.register(tenderWorkflowProjectionDefinition)
+  ctx.effect(() => registerTenderHistory(ctx), 'dsh-tender-workbench: Profile history')
   const persistence = sessionPersistenceLocator(ctx)
   const receipts = new IntentReceiptCoordinator()
   ctx.effect(() => ctx.tools.register(createTenderWorkbenchQueryTool({

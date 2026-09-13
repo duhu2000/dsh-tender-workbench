@@ -146,7 +146,8 @@ describe('Tender workflow V2 Projection', () => {
       tool: 'tender_workbench_run_query', intentId: 'query-intent', previousRevision: 0,
       state: completedState, control: { status: 'complete' },
     })))
-    expect(completed).toEqual(completedState)
+    expect(completed).toEqual({ ...completedState, execution: completed?.execution })
+    expect(completed?.execution?.status).toBe('succeeded')
     expect(completed?.pendingIntent).toBeUndefined()
   })
 
@@ -247,7 +248,7 @@ describe('Tender workflow V2 Projection', () => {
       tool: 'tender_workbench_commit_analysis_batch', intentId: 'analysis-intent', previousRevision: 1,
       state: terminalState, control: { status: 'complete' },
     })))
-    expect(completed).toEqual(terminalState)
+    expect(completed).toEqual({ ...terminalState, execution: completed?.execution })
   })
 
   it('requires a current-record answer turn to end after the read Tool completes', () => {
@@ -320,7 +321,7 @@ describe('Tender workflow V2 Projection', () => {
     expect(tenderWorkflowProjectionDefinition.apply(retried, result(6, 'query-retry', mutationMeta({
       tool: 'tender_workbench_run_query', intentId: 'query-intent', previousRevision: 0,
       state: completedState, control: { status: 'complete' },
-    })))).toEqual(completedState)
+    })))).toMatchObject(completedState)
   })
 
   it('creates conversation pending on the first single-step Tool call and keeps validation errors running', () => {
