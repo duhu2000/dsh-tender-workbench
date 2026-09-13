@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { TenderExecutionSchema, ProviderOutcomeSchema } from './execution.ts'
 import {
   TENDER_TOOLS,
   TENDER_INTENT_KINDS,
@@ -81,6 +82,7 @@ export const TenderWorkflowProjectionV2Schema = z.object({
   revision: z.number().int().nonnegative(),
   currentStage: z.enum(WORKFLOW_STAGES),
   observedTurn: z.number().int().positive().optional(),
+  execution: TenderExecutionSchema.optional(),
   pendingIntent: z.object({
     intentId: idText,
     kind: z.enum(TENDER_INTENT_KINDS),
@@ -111,10 +113,12 @@ export const TenderWorkflowProjectionV2Schema = z.object({
     sources: z.object({
       tender: z.object({
         status: z.enum(['succeeded', 'failed']), loaded: z.number().int().nonnegative(),
+        outcome: ProviderOutcomeSchema.optional(),
         errorMessage: errorText.optional(), sourceData: ArtifactRefV1Schema.optional(),
       }).strict().optional(),
       proposed: z.object({
         status: z.enum(['succeeded', 'failed']), loaded: z.number().int().nonnegative(),
+        outcome: ProviderOutcomeSchema.optional(),
         errorMessage: errorText.optional(), sourceData: ArtifactRefV1Schema.optional(),
       }).strict().optional(),
     }).strict(),

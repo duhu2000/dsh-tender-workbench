@@ -28,6 +28,20 @@ function isLoopbackHost(value: string): boolean {
   }
 }
 
+/** Profile metadata is same-origin read-only; no artifact capability is returned. */
+export function historyRequestIdentity(request: IncomingMessage): string | undefined {
+  if (!isLoopbackAddress(request.socket.remoteAddress)) return undefined
+  const hosts = rawHeaderValues(request, 'host'), sessions = rawHeaderValues(request, 'x-dsh-tender-session')
+  const origins = rawHeaderValues(request, 'origin'), sites = rawHeaderValues(request, 'sec-fetch-site')
+  if (hosts.length !== 1 || sessions.length !== 1 || origins.length > 1 || sites.length > 1) return undefined
+  if (!isLoopbackHost(hosts[0]!) || !sessions[0] || sessions[0].length > 128) return undefined
+  if (sites[0] !== undefined && sites[0] !== 'same-origin') return undefined
+  if (origins[0] !== undefined) {
+    try { const origin = new URL(origins[0]); if (origin.protocol !== 'http:' || origin.host !== hosts[0]) return undefined } catch { return undefined }
+  } else if (sites[0] !== 'same-origin') return undefined
+  return sessions[0]
+}
+
 export function artifactRequestIdentity(request: IncomingMessage): ArtifactRequestIdentity | undefined {
   if (!isLoopbackAddress(request.socket.remoteAddress)) return undefined
   const hosts = rawHeaderValues(request, 'host')

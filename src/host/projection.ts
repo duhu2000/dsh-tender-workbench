@@ -19,6 +19,11 @@ import {
   type WorkflowStage,
 } from '../contracts/workflow.ts'
 import { conversationIntentId, tenderBindingFingerprint, tenderIntentFingerprint } from './intent-fingerprint.ts'
+import { emptyExecution, TenderExecutionSchema, type TenderExecution } from '../contracts/execution.ts'
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface SessionEventMap { 'dsh-tender/progress': TenderExecution }
+}
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
@@ -279,7 +284,7 @@ function pendingFromConversation(
   }
 }
 
-function applyTenderProjection(
+function applyWorkflowFacts(
   state: TenderWorkflowProjectionV2 | null,
   event: SessionEvent,
 ): TenderWorkflowProjectionV2 | null {
@@ -401,9 +406,49 @@ type TenderProjectionDefinition = Omit<ProjectionDefinition<'dshTenderWorkflow'>
   readonly wire: NonNullable<ProjectionDefinition<'dshTenderWorkflow'>['wire']>
 }
 
+/** Execution telemetry is independent of business stages and has a one-way terminal latch. */
+function applyTenderProjection(state: TenderWorkflowProjectionV2 | null, event: SessionEvent): TenderWorkflowProjectionV2 | null {
+  if (event.type === 'dsh-tender/progress') {
+    const parsed = TenderExecutionSchema.safeParse(event.data)
+    if (!parsed.success || !state?.activeOperation || state.activeOperation.callId !== parsed.data.operationId) return state
+    if (state.execution?.operationId === parsed.data.operationId && state.execution.status !== 'running') return state
+    if (state.execution?.operationId === parsed.data.operationId && state.execution.updatedAt > parsed.data.updatedAt) return state
+    return { ...state, execution: parsed.data }
+  }
+  const next = applyWorkflowFacts(state, event)
+  if (next === null) return next
+  let execution = next.execution ?? state?.execution
+  if (event.type === 'tool/call' && next.activeOperation?.callId === String(event.data.callId)
+    && state?.activeOperation?.callId !== next.activeOperation.callId
+    && state?.execution?.operationId !== next.activeOperation.callId) {
+    execution = emptyExecution(next.activeOperation.callId, next.activeOperation.tool, event.time)
+    if (state?.query) {
+      if (state.execution) { execution.counts = { ...state.execution.counts }; execution.providers = { ...state.execution.providers } }
+      execution.counts.succeeded = state.query.total
+      execution.counts.queried = Object.keys(state.query.sources).length
+      execution.counts.needsReview = state.review?.pending ?? state.classification?.manualReview ?? 0
+    }
+  }
+  if (execution?.status === 'running' && ((event.type === 'tool/result' && String(event.data.message.source.callId) === execution.operationId)
+    || (event.type === 'turn/end' && state?.observedTurn === event.data.turn))) {
+    let reportedFailure = false
+    if (event.type === 'tool/result') {
+      try { reportedFailure = parseTenderToolMetaV2(event.data.meta).effect === 'failed' } catch { reportedFailure = true }
+    }
+    const failed = event.type === 'tool/result' && (event.data.error !== undefined || event.data.message.content[0].isError === true
+      || reportedFailure
+      || (next.lastFailure !== undefined && JSON.stringify(next.lastFailure) !== JSON.stringify(state?.lastFailure)))
+    execution = { ...execution, updatedAt: event.time, finishedAt: event.time,
+      status: event.type === 'turn/end' ? 'interrupted' : failed ? 'failed' : execution.counts.failed + execution.counts.noPermission + execution.counts.unknown > 0 ? 'partial' : 'succeeded',
+      currentAction: event.type === 'turn/end' ? '执行中断，请核对来源会话' : failed ? '本次操作失败' : '本次操作已结束',
+      counts: { ...execution.counts, needsReview: next.review?.pending ?? next.classification?.manualReview ?? 0 } }
+  }
+  return execution === undefined || next.execution === execution ? next : { ...next, execution }
+}
+
 export const tenderWorkflowProjectionDefinition: TenderProjectionDefinition = {
   key: 'dshTenderWorkflow',
-  stateVersion: 2,
+  stateVersion: 3,
   stateSchema: TenderWorkflowProjectionV2Schema.nullable(),
   init: () => null,
   apply: applyTenderProjection,

@@ -438,6 +438,15 @@
 
 .statePanel,
 .feedback,
+.historyEntry { border-bottom: 1px solid var(--tw-line); padding: 16px 0; overflow-wrap: anywhere; }
+.historyEntry dl { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, 3fr); gap: 8px; }
+.historyEntry dd { margin: 0; }
+.executionProgress { border-left: 3px solid var(--tw-brand); padding: 12px; margin: 12px 0; background: var(--tw-brand-soft); overflow-wrap: anywhere; }
+.executionProgress p { margin: 6px 0; }
+.executionProgress[data-execution-status="failed"], .executionProgress[data-execution-status="interrupted"] { border-color: var(--tw-danger); background: var(--tw-danger-soft); }
+.executionProgress[data-execution-status="succeeded"] { border-color: var(--tw-success); }
+.executionProgress[data-execution-status="partial"] { border-color: var(--tw-warning); }
+.inlineActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .writeProgress {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

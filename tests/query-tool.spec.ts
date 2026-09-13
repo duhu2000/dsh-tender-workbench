@@ -72,6 +72,7 @@ async function harness(execute: (name: string) => Promise<ToolExecutionResult>) 
   await writeFile(transcript, 'transcript-sentinel\n', 'utf8')
   const sessionId = 'session-query-test' as SessionId
   const session = {
+    append: vi.fn(),
     id: sessionId,
     header: { version: 0, isSeeded: false, id: sessionId, createdAt: 1 },
     snapshotEvents: () => [{ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }, {
@@ -110,6 +111,9 @@ describe('tender_workbench_run_query', () => {
     expect(test.tools.execute.mock.calls.map(call => call[0].name)).toEqual([
       'mcp__qcc-tender__search_tenders', 'mcp__qcc-tender__search_proposed_projects',
     ])
+    expect(test.session.append.mock.calls.at(-1)).toMatchObject(['dsh-tender/progress', {
+      operationId: 'query-call', counts: { queried: 2, succeeded: 3, failed: 0 }, providers: { tender: 'data', proposed: 'data' },
+    }])
     const artifactRoot = sessionArtifactRoot(test.persistence, test.session.header)
     const manifest = await readArtifactManifest(artifactRoot)
     const normalizedEntry = Object.values(manifest.artifacts).find(entry => entry.kind === 'normalized-data')
@@ -162,5 +166,12 @@ describe('tender_workbench_run_query', () => {
     expect(extractMcpCanonicalPayload({ structuredContent: payload, content: [] })).toEqual(payload)
     expect(extractMcpCanonicalPayloadCandidates({ content: [{ type: 'text', text: JSON.stringify(payload) }] })).toEqual([payload])
     expect(() => extractMcpCanonicalPayload({ content: [{ type: 'text', text: 'not-json' }] })).toThrow()
+  })
+
+  it('never hides structured denial behind a second valid-looking text payload', async () => {
+    const test = await harness(async () => ({ isError: false, value: { structuredContent: { code: '403', data: { 标讯列表: [] } }, content: [{ type: 'text', text: JSON.stringify(tenderPayload([])) }] }, content: [] }))
+    const result = await test.run({ ...queryInput(), scope: 'tender', proposed: undefined })
+    expect(result.outcome).toBe('failed')
+    expect(result.state.execution).toMatchObject({ counts: { queried: 1, noPermission: 1, zero: 0 }, providers: { tender: 'no-permission', proposed: 'not-needed' } })
   })
 })

@@ -44,6 +44,7 @@ import {
 import { useSessionWriteFlight } from './session-write-flight.ts'
 import {
   SessionWriteButtonLabel,
+  LongTaskProgress,
   SessionWriteProgress,
   sessionWriteProgressText,
 } from './SessionWriteProgress.tsx'
@@ -68,6 +69,7 @@ import { StatePanel } from './WorkbenchPrimitives.tsx'
 import { TenderQueryWorkspace } from './TenderQueryWorkspace.tsx'
 import css from './tender-workbench.module.css'
 import { useSessionViewState } from './session-view-memory.ts'
+import { TenderHistoryView, type HistoryLoader } from './TenderHistoryView.tsx'
 
 export { tenderWorkbenchDisplayStatus }
 export type { TenderWorkbenchDisplayStatus }
@@ -101,6 +103,8 @@ export interface TenderWorkbenchViewProps {
   readonly loadReportView?: ReportDeliveryViewLoader
   readonly downloadReport?: ReportArtifactDownloader
   readonly t: TenderTranslate
+  readonly loadHistory?: HistoryLoader
+  readonly openOriginSession?: (origin: SessionId, from: SessionId) => Promise<void>
 }
 
 const defaultRowsLoader: TenderRowsLoader = (sessionId, artifact, filter, signal) => fetchArtifactRows(
@@ -184,6 +188,8 @@ export function TenderWorkbenchView({
   loadReviewRows = defaultReviewRowsLoader,
   loadReportView = defaultReportViewLoader,
   downloadReport = defaultReportDownloader,
+  loadHistory,
+  openOriginSession,
   t,
 }: TenderWorkbenchViewProps) {
   const workflow = projectionOf(projection)
@@ -457,16 +463,9 @@ export function TenderWorkbenchView({
           </WorkbenchFeedback>
         )}
 
+        {destination !== 'history' && <LongTaskProgress execution={workflow?.execution} />}
         {destination === 'history' ? (
-          <section className={css.stagePanel} aria-label="任务历史">
-            <header className={css.pageHeading}><div><h2>任务历史</h2><p>当前仅提供本 Session 已保存的工作流记录；跨会话历史索引尚未接入。其他任务请从宿主历史会话进入。</p></div></header>
-            {workflow?.query ? <article className={css.emptyState}>
-              <h3>{workflow.query.targetSummary}</h3>
-              <p>会话 {sessionId.slice(-8)} · 查询记录 {workflow.query.querySpec.id.slice(-8)}</p>
-              <p>查询时间 {workflow.query.querySpec.createdAt} · 记录数量 {workflow.query.total} · {t(`workbench.status.${status}`)}</p>
-              <button type="button" className={css.secondary} onClick={() => setSelectedPhase(tenderWorkbenchPhaseForStage(workflow.currentStage))}>查看已保存任务</button>
-            </article> : <p>当前会话暂无可用的已保存查询记录；这不代表其他会话没有历史任务。</p>}
-          </section>
+          <TenderHistoryView key={String(sessionId)} sessionId={sessionId} load={loadHistory} openOriginSession={openOriginSession} />
         ) : selectedPhase === 'opportunity' ? (workflow !== undefined && activeDataset !== undefined && opportunityView === 'details' ? (
           <section
             className={css.stagePanel}
@@ -722,6 +721,7 @@ export function TenderWorkbenchView({
 }
 
 export interface TenderWorkbenchTabProps extends TabComponentProps {
+  readonly openOriginSession?: (origin: SessionId, from: SessionId) => Promise<void>
   readonly projectionPort: TenderProjectionPort
   readonly reveal: TenderWorkbenchRevealController
   readonly navigation: TenderWorkbenchNavigationController
@@ -740,6 +740,7 @@ export function TenderWorkbenchTab(props: TenderWorkbenchTabProps) {
       projection={projection}
       navigation={props.navigation}
       sendIntent={intent => props.sendIntent(sessionId, intent)}
+      openOriginSession={props.openOriginSession}
       t={props.t}
     />
   )

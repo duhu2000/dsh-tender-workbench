@@ -4,6 +4,13 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-09-13
+
+- 按共享规范 v1.5.3 增加 Profile 持久只读历史：来源 Workspace/Session 不变，显式导航来源会话，不复制或重绑旧 projection；完成记录锁定。
+- 真实 Session 事件驱动执行动作、已返回来源数、记录数、最近处理项和耗时；终态防迟到回调回退，不估算百分比，业务分类与执行状态分离。
+- 明确数据、零记录、不需要、无权限、失败、未知来源，支持已知包装及数字字符串；缺失或 null 列表不再伪装成零记录。
+- 保留 IME、Session 单例 Tab、人工确认、不可变报告快照、Excel/PDF 交付及 0.5.6 授权边界。
+
 ## [0.5.7] - 2026-09-11
 
 - 按 DSH-UX-001 v1.5.2，以 workspaceId + 命名空间 sessionId 创建业务会话，修复新会话落入“未分组”；保留普通会话防复用守卫及 0.5.6 Host 授权契约。

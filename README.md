@@ -7,7 +7,7 @@
 招投标智能体：支持招投标搜索、招标查询、投标查询、标讯查询、拟建项目与项目筛选，辅助商机发现、人工复核及 Excel/PDF 导出，使用客户自备授权的企查查 MCP。
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.7
+dsh plugin --profile web add dsh-tender-workbench@0.5.8
 ```
 
 请先满足下文的 DSH、连接器及侧边栏依赖要求；安装后完整停止并重启对应 Profile。
@@ -27,9 +27,9 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.7
 
 > 面向国内招投标团队的 DeepSeek Harness 开源智能体插件：在一个会话级工作台内完成标讯与拟建项目查询、确定性规则初筛、限定范围智能分析、人工复核，以及 Excel/PDF 报告交付。
 >
-> 当前稳定版本：**0.5.7**（正式版本）
+> 当前稳定版本：**0.5.8**（正式版本）
 
-0.5.7 修复新建业务 Session 的 Workspace 归组；发布状态及验收边界见 [发布记录](docs/RELEASE-0.5.7.md)。
+0.5.8 新增当前 Profile 持久只读任务历史、来源会话导航与真实执行进度，并区分零记录、无权限、失败和未知数据源结果；发布状态及验收边界见 [发布记录](docs/RELEASE-0.5.8.md)。
 
 [![CI](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/duhu2000/dsh-tender-workbench/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-tender-workbench)](https://www.npmjs.com/package/dsh-tender-workbench)
@@ -75,10 +75,10 @@ dsh web --no-open
 
 需要可视化工作台时，再自选安装 `dsh plugin --profile web add dsh-better-sidebar@0.18.1`、在宿主设置启用招投标 Tab，并完整重启。无需侧栏也可使用下方列明的基础功能。
 
-安装指定的 `0.5.7` 版本：
+安装指定的 `0.5.8` 版本：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.7
+dsh plugin --profile web add dsh-tender-workbench@0.5.8
 ```
 
 移除插件：
@@ -146,11 +146,11 @@ node scripts/check-host-compatibility.mjs --host-root /实际路径/node_modules
 从已有版本升级：
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.7
+dsh plugin --profile web add dsh-tender-workbench@0.5.8
 dsh web --no-open
 ```
 
-0.5.7 修复新建业务 Session 的 Workspace 归组，不自动搬迁已有未分组历史。保留 0.5.6 可选侧栏、`snapshotEvents()` / `turn/start` 授权绑定、Session 单例 Tab、五入口及草稿恢复。业务数据格式不变，历史仍仅限当前 Session，真实 MCP 连接未核验。回退应恢复备份的完整已验证宿主/插件组合，不能在新版宿主上单独安装原始 0.5.4 或更早版本。
+0.5.8 保留 Workspace 归组、0.5.6 可选侧栏与 `snapshotEvents()` / `turn/start` 授权绑定。业务任务仍属于原 Session；Profile 历史只存摘要，不复制旧 projection，也不自动搬迁未分组任务。旧会话在重新打开后才补入当前任务摘要，历史页不恢复旧快照到当前任务。索引位于对应 Profile 的 `.dsh-tender-workbench/history-v1.json`，备份时一并保留。真实 MCP 连接未核验。回退应恢复备份的完整已验证宿主/插件组合，不能在新版宿主上单独安装原始 0.5.4 或更早版本。
 
 ## 本地开发
 
@@ -165,7 +165,7 @@ corepack pnpm@11.7.0 run check
 
 `check` 会执行类型检查、完整 Vitest 测试、生产构建、README/发布状态校验以及 npm tarball 白名单预检。配置 npm Trusted Publishing 后，[发布工作流](.github/workflows/release.yml)可使用 OIDC 和 provenance；手工发布不得声称 provenance。
 
-省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.7 发布清单](docs/RELEASE-0.5.7.md)。
+省、市、区数据源快照维护在 [resources/area.ts](resources/area.ts)。版本变更见 [CHANGELOG.md](CHANGELOG.md)，发布检查见 [0.5.8 发布清单](docs/RELEASE-0.5.8.md)。
 
 ## 界面演示与市场投稿
 

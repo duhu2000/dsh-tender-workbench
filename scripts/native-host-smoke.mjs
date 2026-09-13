@@ -13,6 +13,7 @@ const root = process.cwd(), bin = resolve(process.env.TENDER_DSH_BIN || '')
 const sidebarMode = process.env.TENDER_TEST_SIDEBAR || 'compatible'
 assert.ok(['absent', 'compatible', 'incompatible'].includes(sidebarMode))
 const sidebarVersion = sidebarMode === 'absent' ? undefined : sidebarMode === 'incompatible' ? '0.17.1' : '0.18.1'
+const products = process.env.TENDER_TEST_PRODUCTS === '1' ? { 'dsh-data-cleaning-agent': '0.9.7', 'dsh-pre-duediligence': '0.1.22', 'dsh-form-fill-agent': '0.2.28' } : {}
 assert.ok(process.env.TENDER_DSH_BIN, 'Provide an explicit DSH 0.1.2-rc.1 bin; never bootstrap a production profile')
 const { chromium } = await import(pathToFileURL(process.env.TENDER_PLAYWRIGHT).href)
 const home = await mkdtemp(join(tmpdir(), 'tender-native-'))
@@ -47,9 +48,11 @@ export function apply(ctx) { ctx.effect(() => ctx.webServer.register({ kind: 'ex
 await writeFile(join(probe, 'cordis.patch.yml'), '- insert:\n    - name: tender-isolated-probe\n')
 await writeFile(join(probe, 'client.js'), `window.__ModuleLoader__.load({id:"tender-isolated-probe",factory:()=>({inject:${JSON.stringify(['uiConversation', 'conversation', 'sessions', 'workspaces', 'modules', ...(sidebarVersion ? ['betterSidebar'] : [])])},apply(ctx){window.__tenderNativeProbe=ctx;}})});`)
 await writeFile(join(profile, 'package.json'), JSON.stringify({ name: 'tender-isolated-profile', version: '0.0.0', private: true, type: 'module',
-  dependencies: { [pkg.name]: 'file:' + tarball, ...(sidebarVersion ? { 'dsh-better-sidebar': sidebarVersion } : {}), 'tender-isolated-probe': 'file:' + probe, ...(process.env.TENDER_TEST_CONTEXT === '1' ? { 'dsh-context': '0.48.0' } : {}) },
-  dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', ...(sidebarVersion ? ['dsh-better-sidebar'] : []), pkg.name, 'tender-isolated-probe', ...(process.env.TENDER_TEST_CONTEXT === '1' ? ['dsh-context'] : [])] } } }))
-execFileSync(process.execPath, [bin, 'plugin', '--profile', 'web', 'install', '--ignore-scripts', '--store-dir', process.env.TENDER_PNPM_STORE || join(home, 'pnpm-store')], { cwd: workspace, env, stdio: 'pipe' })
+  dependencies: { ...products, [pkg.name]: 'file:' + tarball, ...(sidebarVersion ? { 'dsh-better-sidebar': sidebarVersion } : {}), 'tender-isolated-probe': 'file:' + probe, ...(process.env.TENDER_TEST_CONTEXT === '1' ? { 'dsh-context': '0.48.0' } : {}) },
+  dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', ...(sidebarVersion ? ['dsh-better-sidebar'] : []), ...Object.keys(products), pkg.name, 'tender-isolated-probe', ...(process.env.TENDER_TEST_CONTEXT === '1' ? ['dsh-context'] : [])] } } }))
+try {
+  execFileSync(process.execPath, [bin, 'plugin', '--profile', 'web', 'install', '--ignore-scripts', '--store-dir', process.env.TENDER_PNPM_STORE || join(home, 'pnpm-store')], { cwd: workspace, env, stdio: 'pipe' })
+} catch (error) { throw new Error('Isolated dependency installation failed: ' + String(error.stdout).slice(-3000)) }
 if (!sidebarVersion) await assert.rejects(access(join(profile, 'node_modules/dsh-better-sidebar')), 'Official DSH install must not auto-install Sidebar')
 const preflight = assessCompatibility(inspectInstallation(resolve(bin, '../..'), profile))
 if (sidebarMode === 'incompatible') assert.ok(preflight.errors.some(e => e.includes('settingsNamespace')))
@@ -63,7 +66,7 @@ const port = reservation.address().port
 await new Promise(ok => reservation.close(ok))
 assert.notEqual(port, 3080)
 const origin = 'http://127.0.0.1:' + port
-const child = spawn(process.execPath, [bin, '--profile', 'web', '--port', String(port), '--no-open'], { cwd: workspace, env, stdio: ['ignore', 'pipe', 'pipe'] })
+let child = spawn(process.execPath, [bin, '--profile', 'web', '--port', String(port), '--no-open'], { cwd: workspace, env, stdio: ['ignore', 'pipe', 'pipe'] })
 let output = '', browser, phase = 'startup'
 child.stdout.on('data', b => { output += b }); child.stderr.on('data', b => { output += b })
 const report = { package: pkg.name, version: pkg.version, hostVersion, sidebar: sidebarVersion ?? 'absent', preflight, install: 'official DSH Profile template + dsh plugin install; core peers provided by host', context: process.env.TENDER_TEST_CONTEXT === '1' ? '0.48.0' : 'absent', node: process.version, home, port, tarball, tarballSha256, productionProfileUsed: false, realMcp: 'NOT_TESTED' }
@@ -187,7 +190,7 @@ try {
     const button = page.getByRole('navigation', { name: '招投标快捷导航' }).getByRole('button', { name: label, exact: true })
     await button.click(); await button.click()
     await page.waitForFunction(() => !!window.__tenderNativeProbe.betterSidebar.getSnapshot().state)
-    if (label === '任务历史') await page.getByRole('heading', { name: label, exact: true }).waitFor()
+    if (label === '任务历史') await page.getByRole('heading', { name: '任务历史 · 当前 Profile', exact: true }).waitFor()
     else assert.equal(await page.getByRole('tab', { name: label, exact: true }).getAttribute('aria-selected'), 'true')
     const count = await page.evaluate(() => {
       const state = window.__tenderNativeProbe.betterSidebar.getSnapshot().state
@@ -279,6 +282,80 @@ try {
   }
   assert.equal(await readState(), beforeNavigation, 'Navigation must preserve the complete real workflow projection')
   report.navigationPreservesCompletedBusiness = 'PASS'
+  phase = 'profile-history-and-progress'
+  const readHistory = id => page.evaluate(async sessionId => {
+    const response = await fetch('/dsh-tender-workbench/api/v1/history', { headers: { 'X-Dsh-Tender-Session': sessionId } })
+    if (!response.ok) throw Error('History HTTP ' + response.status)
+    return response.json()
+  }, id)
+  const history = await readHistory(session)
+  assert.equal(history.scope, 'profile'); assert.equal(history.total, 1)
+  assert.equal(history.entries[0].originSessionId, session)
+  assert.equal(history.entries[0].originWorkspaceId, selectedWorkspace)
+  assert.deepEqual(history.entries[0].deliverables, ['excel', 'pdf'])
+  assert.ok(!JSON.stringify(history).includes('accessToken'))
+  const execution = JSON.parse(beforeNavigation).execution
+  assert.equal(execution.status, 'succeeded'); assert.equal(execution.counts.succeeded, 2)
+  assert.equal(execution.counts.queried, 1); assert.equal(execution.providers.tender, 'data')
+  if (sidebarVersion) {
+    await page.getByRole('heading', { name: '任务历史 · 当前 Profile' }).waitFor()
+    await page.getByRole('button', { name: '打开来源会话', exact: true }).waitFor()
+  }
+  await page.evaluate(id => window.__tenderNativeProbe.sessions.open(id), ordinary)
+  const backgroundGeometry = sidebarVersion ? await page.evaluate(() => JSON.stringify(window.__tenderNativeProbe.betterSidebar.getSnapshot().state)) : null
+  assert.deepEqual(await readHistory(ordinary), history, 'B reads metadata without rebinding A projection')
+  if (sidebarVersion) assert.equal(await page.evaluate(() => JSON.stringify(window.__tenderNativeProbe.betterSidebar.getSnapshot().state)), backgroundGeometry)
+  assert.equal(await readState(), beforeNavigation)
+  report.profileHistoryAndRealProgress = 'PASS'
+  if (Object.keys(products).length) {
+    phase = 'four-product-navigation'
+    report.fourProductNavigation = { status: 'IN_PROGRESS', products, passedEntries: [] }
+    for (const [name, prefix, role] of [['数据清洗补全', 'session-dsh-data-cleaning', 'button'], ['访前尽调', 'session-dsh-pre-duediligence-', 'button'], ['AI填表', 'session-dsh-form-fill', 'link']]) {
+      const entry = page.getByRole(role, { name, exact: true })
+      if (role === 'link') assert.equal(await entry.getAttribute('href'), '/form-fill/', 'Verify the public entry target, not any same-label link')
+      await entry.click()
+      await page.waitForFunction(prefix => window.__tenderNativeProbe.sessions.list.getSnapshot().current?.startsWith(prefix), prefix)
+      await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor({ state: 'hidden' })
+      report.fourProductNavigation.passedEntries.push(name)
+    }
+    assert.equal(await readState(), beforeNavigation)
+    await page.getByRole('button', { name: '新建招投标会话', exact: true }).click()
+    await page.waitForFunction(() => window.__tenderNativeProbe.sessions.list.getSnapshot().current?.startsWith('session-dsh-tender-workbench-'))
+    await page.getByRole('navigation', { name: '招投标快捷导航' }).getByRole('button', { name: '任务历史', exact: true }).click()
+    await page.getByRole('button', { name: '打开来源会话', exact: true }).click()
+    await page.waitForFunction(id => window.__tenderNativeProbe.sessions.list.getSnapshot().current === id, session)
+    assert.equal(await readState(), beforeNavigation, 'Explicit history navigation must not restore/rebind a projection')
+    report.fourProductNavigation.status = 'PASS'
+    report.fourProductNavigation.scope = 'public button/link entries, cross-product Session switch, explicit history origin navigation and unchanged tender projection; other products business is not tested'
+  }
+  phase = 'restart-durable-history'
+  await page.close()
+  child.kill('SIGTERM')
+  if (child.exitCode === null) await Promise.race([new Promise(ok => child.once('exit', ok)), new Promise(ok => setTimeout(ok, 3000))])
+  assert.notEqual(child.exitCode, null, 'Isolated host must stop before restart')
+  output = ''
+  child = spawn(process.execPath, [bin, '--profile', 'web', '--port', String(port), '--no-open'], { cwd: workspace, env, stdio: ['ignore', 'pipe', 'pipe'] })
+  child.stdout.on('data', b => { output += b }); child.stderr.on('data', b => { output += b })
+  for (let i = 0; i < 160; i++) {
+    try { if ((await fetch(origin)).status < 500) break } catch {}
+    await new Promise(ok => setTimeout(ok, 250))
+  }
+  const restartPage = await browser.newPage()
+  restartPage.on('pageerror', e => errors.push(e.message))
+  await restartPage.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort())
+  const restartUrls = output.match(/http:\/\/(?:127\.0\.0\.1|localhost):\d+[^\s\x1b]*/g) || []
+  const restartLaunch = restartUrls.find(u => new URL(u).port === String(port) && u.includes('?')) || origin
+  await restartPage.goto(restartLaunch)
+  await restartPage.waitForFunction(() => window.__tenderNativeProbe?.sessions)
+  await restartPage.evaluate(async id => { const ctx = window.__tenderNativeProbe; await ctx.sessions.refresh(); ctx.sessions.open(id) }, ordinary)
+  await restartPage.waitForFunction(id => window.__tenderNativeProbe.sessions.list.getSnapshot().current === id, ordinary)
+  const recovered = await restartPage.evaluate(async id => {
+    const response = await fetch('/dsh-tender-workbench/api/v1/history', { headers: { 'X-Dsh-Tender-Session': id } })
+    if (!response.ok) throw Error('Restart history HTTP ' + response.status)
+    return response.json()
+  }, ordinary)
+  assert.deepEqual(recovered, history, 'Profile metadata survives real host restart before reopening business A')
+  report.restartDurableHistory = 'PASS'
   assert.deepEqual(errors, [])
   report.status = 'PASS'; report.nativeEntry = 'PASS'; report.ordinaryAndRestore = 'PASS'
   console.log(JSON.stringify(report, null, 2))
@@ -289,7 +366,7 @@ try {
   await writeFile(join(home, 'result.json'), JSON.stringify(report, null, 2))
   if (browser) {
     const page = browser.contexts()[0]?.pages()[0]
-    if (page) { console.log('Synthetic UI labels:', await page.locator('button,h1,h2').allTextContents()); await page.screenshot({ path: join(home, 'failure.png') }) }
+    if (page) { console.log('Synthetic UI labels:', await page.locator('button,a[aria-label],h1,h2').allTextContents()); await page.screenshot({ path: join(home, 'failure.png') }) }
   }
   throw new Error('Isolated smoke failed at ' + phase + ': ' + error.message.replace(/https?:\/\/\S+/g, '[url]') + '; isolated home=' + home)
 } finally {

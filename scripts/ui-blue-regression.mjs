@@ -138,7 +138,7 @@ try {
       await page.locator('#closeBench').click()
       await shortcuts.getByRole('button', { name: label, exact: true }).click()
       assert.equal(await page.locator('[data-visual-shell]').count(), 1)
-      if (label === '任务历史') await page.getByRole('heading', { name: label, exact: true }).waitFor()
+      if (label === '任务历史') await page.getByRole('heading', { name: '任务历史 · 当前 Profile', exact: true }).waitFor()
       else await page.getByRole('tab', { name: label, exact: true, selected: true }).waitFor()
     }
     if (width > 700) {

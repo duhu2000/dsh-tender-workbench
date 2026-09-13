@@ -15,17 +15,18 @@ describe('official Host seam contracts', () => {
     const skillRegister = vi.fn((_skill: unknown) => () => {})
     const effect = vi.fn((callback: () => unknown) => callback())
     apply({
-      sessionProjections: { register: projectionRegister },
+      sessionProjections: { register: projectionRegister, onChanged: () => () => {} },
       tools: { register: toolRegister },
       webServer: { host: '127.0.0.1', register: routeRegister },
-      sessions: { get: vi.fn() },
+      sessions: { get: vi.fn(), list: () => [] },
+      on: () => () => {},
       skills: { register: skillRegister },
       get: (name: string) => name === 'sessionPersistence' ? { locate: vi.fn() } : undefined,
       effect,
     } as unknown as Context)
 
     expect(projectionRegister).toHaveBeenCalledWith(expect.objectContaining({
-      key: 'dshTenderWorkflow', stateVersion: 2, wire: expect.any(Object),
+      key: 'dshTenderWorkflow', stateVersion: 3, wire: expect.any(Object),
     }))
     expect(toolRegister.mock.calls.map(call => (call[0] as { name: string }).name)).toEqual(TENDER_TOOLS)
     const queryTool = toolRegister.mock.calls
@@ -43,7 +44,7 @@ describe('official Host seam contracts', () => {
       TENDER_SKILL_REGISTRATIONS.map(skill => skill.name),
     )
     expect(routeRegister).toHaveBeenCalledWith(expect.objectContaining({ kind: 'prefix', path: ARTIFACT_ROUTE_PREFIX }))
-    expect(effect).toHaveBeenCalledTimes(15)
+    expect(effect).toHaveBeenCalledTimes(16)
   })
 
   it('keeps every Skill self-contained and marked as the workflow-v2 provider', () => {
