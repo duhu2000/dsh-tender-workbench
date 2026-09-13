@@ -13,7 +13,7 @@ const root = process.cwd(), bin = resolve(process.env.TENDER_DSH_BIN || '')
 const sidebarMode = process.env.TENDER_TEST_SIDEBAR || 'compatible'
 assert.ok(['absent', 'compatible', 'incompatible'].includes(sidebarMode))
 const sidebarVersion = sidebarMode === 'absent' ? undefined : sidebarMode === 'incompatible' ? '0.17.1' : '0.18.1'
-const products = process.env.TENDER_TEST_PRODUCTS === '1' ? { 'dsh-data-cleaning-agent': '0.9.7', 'dsh-pre-duediligence': '0.1.22', 'dsh-form-fill-agent': '0.2.27' } : {}
+const products = process.env.TENDER_TEST_PRODUCTS === '1' ? { 'dsh-data-cleaning-agent': '0.9.7', 'dsh-pre-duediligence': '0.1.22', 'dsh-form-fill-agent': '0.2.28' } : {}
 assert.ok(process.env.TENDER_DSH_BIN, 'Provide an explicit DSH 0.1.2-rc.1 bin; never bootstrap a production profile')
 const { chromium } = await import(pathToFileURL(process.env.TENDER_PLAYWRIGHT).href)
 const home = await mkdtemp(join(tmpdir(), 'tender-native-'))
@@ -310,15 +310,23 @@ try {
   if (Object.keys(products).length) {
     phase = 'four-product-navigation'
     report.fourProductNavigation = { status: 'IN_PROGRESS', products, passedEntries: [] }
-    for (const [name, prefix] of [['数据清洗补全', 'session-dsh-data-cleaning'], ['访前尽调', 'session-dsh-pre-duediligence-'], ['AI填表', 'session-dsh-form-fill']]) {
-      await page.getByRole('button', { name, exact: true }).click()
+    for (const [name, prefix, role] of [['数据清洗补全', 'session-dsh-data-cleaning', 'button'], ['访前尽调', 'session-dsh-pre-duediligence-', 'button'], ['AI填表', 'session-dsh-form-fill', 'link']]) {
+      const entry = page.getByRole(role, { name, exact: true })
+      if (role === 'link') assert.equal(await entry.getAttribute('href'), '/form-fill/', 'Verify the public entry target, not any same-label link')
+      await entry.click()
       await page.waitForFunction(prefix => window.__tenderNativeProbe.sessions.list.getSnapshot().current?.startsWith(prefix), prefix)
       await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor({ state: 'hidden' })
       report.fourProductNavigation.passedEntries.push(name)
     }
     assert.equal(await readState(), beforeNavigation)
+    await page.getByRole('button', { name: '新建招投标会话', exact: true }).click()
+    await page.waitForFunction(() => window.__tenderNativeProbe.sessions.list.getSnapshot().current?.startsWith('session-dsh-tender-workbench-'))
+    await page.getByRole('navigation', { name: '招投标快捷导航' }).getByRole('button', { name: '任务历史', exact: true }).click()
+    await page.getByRole('button', { name: '打开来源会话', exact: true }).click()
+    await page.waitForFunction(id => window.__tenderNativeProbe.sessions.list.getSnapshot().current === id, session)
+    assert.equal(await readState(), beforeNavigation, 'Explicit history navigation must not restore/rebind a projection')
     report.fourProductNavigation.status = 'PASS'
-    report.fourProductNavigation.scope = 'entry switching and unchanged tender projection; other products business is not tested'
+    report.fourProductNavigation.scope = 'public button/link entries, cross-product Session switch, explicit history origin navigation and unchanged tender projection; other products business is not tested'
   }
   phase = 'restart-durable-history'
   await page.close()
@@ -358,7 +366,7 @@ try {
   await writeFile(join(home, 'result.json'), JSON.stringify(report, null, 2))
   if (browser) {
     const page = browser.contexts()[0]?.pages()[0]
-    if (page) { console.log('Synthetic UI labels:', await page.locator('button,h1,h2').allTextContents()); await page.screenshot({ path: join(home, 'failure.png') }) }
+    if (page) { console.log('Synthetic UI labels:', await page.locator('button,a[aria-label],h1,h2').allTextContents()); await page.screenshot({ path: join(home, 'failure.png') }) }
   }
   throw new Error('Isolated smoke failed at ' + phase + ': ' + error.message.replace(/https?:\/\/\S+/g, '[url]') + '; isolated home=' + home)
 } finally {
