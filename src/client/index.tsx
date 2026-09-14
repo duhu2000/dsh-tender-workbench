@@ -18,6 +18,7 @@ import {
 } from './TenderEntry.tsx'
 import { TenderPromptEntry, type TenderPromptInjected } from './TenderPrompt.tsx'
 import { initialTenderPrompt, type TenderPromptMemory } from './tender-prompt.ts'
+import { installTenderSubmissionReveal } from './submission-reveal.ts'
 import {
   createTenderWorkbenchRevealController,
   assertBetterSidebarContract,
@@ -149,6 +150,10 @@ export function apply(ctx: TenderClientContext): void {
       throw new Error(t('sidebar.createFailed'), { cause: error })
     }
   }
+
+  ctx.effect(() => installTenderSubmissionReveal(sessions, sessionId => {
+    openSession(sessionId, 'opportunity')
+  }), 'dsh-tender-workbench: accepted submission reveal')
 
   // A dependency-scoped child follows provider arrival/removal, without taking
   // down the conversation entry, prompts, or supported Host tools.
