@@ -4,6 +4,12 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-09-14
+
+- 按 DSH-UX-001 1.5.4 删除首页副标题及占位，保留原生工作区、模式、输入框和业务导航。
+- 当前 Session 的品牌标题在原生 Hero 延迟加载、重建后恢复；退出时清理，不写用户自定义会话名称。
+- 保留固定入口名称、可选侧栏、Profile 历史和人工确认契约。
+
 ## [0.5.8] - 2026-09-13
 
 - 按共享规范 v1.5.3 增加 Profile 持久只读历史：来源 Workspace/Session 不变，显式导航来源会话，不复制或重绑旧 projection；完成记录锁定。
