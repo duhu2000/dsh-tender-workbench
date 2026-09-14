@@ -44,10 +44,13 @@ try {
       await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor()
     }
     assert.equal(await page.locator('[data-visual-shell]').count(), 0, 'entry leaves workbench closed')
+    assert.equal(await page.locator('[data-dsh-tender-hero] p').count(), 0, 'home has no subtitle or subtitle placeholder')
     const logo = await page.locator('[data-dsh-tender-hero] svg').boundingBox()
     const heading = await page.getByRole('heading', { name: '招投标智能体', exact: true }).boundingBox()
     assert.ok(Math.abs(logo.y+logo.height/2-heading.y-heading.height/2)<2, 'icon/title same row')
     const card = await page.locator('[data-composer-card]').boundingBox()
+    const selectors = await page.locator('[data-native-workspace-mode]').boundingBox()
+    assert.ok(selectors.y >= heading.y + heading.height && selectors.y + selectors.height <= card.y, 'native workspace/mode directly follow the title before composer')
     const menu = await page.getByRole('navigation', { name: '招投标快捷导航' }).boundingBox()
     assert.ok(menu.y>=card.y+card.height, 'navigation below native composer')
     assert.equal(await page.locator('.nativeHeadline').isVisible(), false)

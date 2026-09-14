@@ -66,7 +66,6 @@ export function TenderHeroTitleBridge({ sessionId, useSession, openPhase }: Tend
     <span ref={anchorRef} hidden data-dsh-tender-hero-anchor="true" />
     {owned && blank && heroMount && createPortal(<div className={css.hero}>
       <div className={css.heroRow}><span className={css.heroLogo} aria-hidden="true"><IconGoalOutline16 size={26} /></span><h1>招投标智能体</h1></div>
-      <p>发现项目机会，筛选相关标讯，协同复核与交付。</p>
     </div>, heroMount)}
     {owned && menuMount && createPortal(menu, menuMount)}
   </>

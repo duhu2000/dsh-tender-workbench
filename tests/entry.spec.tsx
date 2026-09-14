@@ -159,6 +159,37 @@ describe('S1a tender entries', () => {
     view.unmount()
   })
 
+  it('rebrands a delayed/replaced native headline and releases it on session exit', async () => {
+    const hero = document.createElement('div')
+    hero.dataset.phase = 'hero'
+    hero.innerHTML = '<div data-composer-seat><div data-testid="dock"></div><div data-composer-card>draft stays</div></div>'
+    document.body.append(hero)
+    const dock = hero.querySelector<HTMLElement>('[data-testid="dock"]')!
+    const props = { sessionId: `${TENDER_ENTRY_SESSION_ID_PREFIX}12345678-1234-4234-8234-123456789abc`,
+      t, openPhase: vi.fn(), useSession: () => true } as unknown as TenderHeroTitleBridgeProps
+    const view = render(<TenderHeroTitleBridge {...props} />, { container: dock })
+    const nativeRow = () => {
+      const row = document.createElement('div')
+      row.innerHTML = '<span class="fishHitbox">fish</span><span class="headlineText">User custom headline</span>'
+      return row
+    }
+    const first = nativeRow()
+    hero.prepend(first)
+    await waitFor(() => expect(screen.getByRole('heading', { name: '招投标智能体' })).toBeTruthy())
+    expect(hero.querySelector('[data-dsh-tender-hero] p')).toBeNull()
+    const replacement = nativeRow()
+    first.replaceWith(replacement)
+    await waitFor(() => expect(replacement.style.display).toBe('none'))
+    expect(hero.querySelectorAll('[data-dsh-tender-hero]')).toHaveLength(1)
+    expect(first.style.display).toBe('')
+    view.rerender(<TenderHeroTitleBridge {...props} sessionId={'ordinary-session' as TenderHeroTitleBridgeProps['sessionId']} />)
+    expect(replacement.style.display).toBe('')
+    expect(replacement.textContent).toBe('fishUser custom headline')
+    expect(hero.querySelector('[data-composer-card]')?.textContent).toBe('draft stays')
+    expect(hero.querySelector('[data-dsh-tender-hero]')).toBeNull()
+    view.unmount()
+  })
+
   it('leaves an unrecognized host hero intact', () => {
     const hero = document.createElement('div')
     hero.dataset.phase = 'hero'
