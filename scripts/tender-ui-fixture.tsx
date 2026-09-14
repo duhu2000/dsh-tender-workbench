@@ -27,6 +27,7 @@ function App() {
       <main><div data-phase="hero" data-composer-seat>
         <div className="nativeHeadline"><span className="fishHitbox">◇</span><span className="headlineText">探索未至之境</span><span className="preview">预览版</span></div>
         <div className="stack">
+          <div data-native-workspace-mode><button>workspace</button><button>标准模式</button></div>
           <div data-slot="conversation.input.dock"><TenderHeroTitleBridge {...{ sessionId, t, useSession: () => true, openPhase } as never} /></div>
           <div id="inputBranch"><div data-composer-card>
             <TenderPromptEntry {...{ sessionId, memory, draftPort: { read: () => draft, write: setDraft } } as never} />
