@@ -10,9 +10,9 @@ Related agents: [数据清洗补全](https://github.com/duhu2000/dsh-data-cleani
 
 `dsh-tender-workbench` is an open-source DeepSeek Harness plugin for finding, screening, reviewing, and delivering tender opportunities. It combines authorized `qcc-tender` data, deterministic screening rules, bounded Agent analysis, explicit human decisions, and immutable Excel/PDF reports in one Session-scoped Better Sidebar workbench.
 
-Current stable version: **0.5.10** (stable release).
+Current stable version: **0.5.11** (stable release).
 
-Version 0.5.10 opens the current workbench once after Host-observed submission admission. Draft fill and later progress never reopen it. Scoped home branding, Profile history and actual execution telemetry are retained. See the [release record](docs/RELEASE-0.5.10.md) for publication status and verification boundaries.
+Version 0.5.11 adds a one-time native introductory draft for new tender Sessions. Existing text, attachments, IME composition and user-cleared drafts are protected; initialization never sends, calls tools or opens the workbench. UX-48 admission reveal, Profile history and actual execution telemetry are retained. See the [release record](docs/RELEASE-0.5.11.md) for publication status and verification boundaries.
 
 Base mode targets the full DSH 0.1.2-rc.1 distribution; Better Sidebar 0.18.1 is optional and only provides the visual workbench. Legacy hosts remain unsupported. Back up the complete Profile and verify dependencies before upgrading.
 
@@ -84,11 +84,11 @@ dsh web --no-open
 
 Optionally enable the visual workbench with `dsh plugin --profile web add dsh-better-sidebar@0.18.1`, enable the tender Tab and fully restart the Profile.
 
-To install the exact 0.5.10 release:
+To install the exact 0.5.11 release:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
-dsh plugin --profile web add dsh-tender-workbench@0.5.10
+dsh plugin --profile web add dsh-tender-workbench@0.5.11
 ```
 
 To install base mode from an independent checkout:
@@ -105,7 +105,7 @@ To install a packed build:
 
 ```sh
 dsh plugin --profile web add 'dsh-mcp-connector@>=0.2.31'
-dsh plugin --profile web add ./dsh-tender-workbench-0.5.10.tgz
+dsh plugin --profile web add ./dsh-tender-workbench-0.5.11.tgz
 dsh web --no-open
 ```
 
@@ -122,11 +122,11 @@ dsh plugin --profile web remove dsh-tender-workbench
 Upgrade an existing installation by installing the stable version and fully restarting the Web profile:
 
 ```sh
-dsh plugin --profile web add dsh-tender-workbench@0.5.10
+dsh plugin --profile web add dsh-tender-workbench@0.5.11
 dsh web --no-open
 ```
 
-Version 0.5.10 retains Workspace ownership, the ordinary Session guard and the 0.5.6 snapshotEvents/turn-start authorization contract. Business state remains Session-local; Profile history stores metadata only, never writable projections or download capabilities. Existing unopened Sessions are not scanned: reopening indexes their current task, without restoring old snapshots. Back up the Profile's `.dsh-tender-workbench/history-v1.json` alongside task directories. Live MCP is not verified. Roll back the complete backed-up host/plugin combination, not an old plugin alone on the new host.
+Version 0.5.11 retains Workspace ownership, the ordinary Session guard and the 0.5.6 snapshotEvents/turn-start authorization contract. Business state remains Session-local; Profile history stores metadata only, never writable projections or download capabilities. Existing unopened Sessions are not scanned: reopening indexes their current task, without restoring old snapshots. Back up the Profile's `.dsh-tender-workbench/history-v1.json` alongside task directories. Live MCP is not verified. Roll back the complete backed-up host/plugin combination, not an old plugin alone on the new host.
 
 ## Using the workbench
 

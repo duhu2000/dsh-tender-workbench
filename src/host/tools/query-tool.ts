@@ -45,7 +45,7 @@ import {
 } from '../pipeline/qcc-adapters.ts'
 import { normalizeQccSources } from '../pipeline/normalize.ts'
 import { createScreeningDraftContext } from '../pipeline/screening-context.ts'
-import { resolveToolInvocation, toolOriginParameter } from '../tool-contract.ts'
+import { assertTenderQueryReady, resolveToolInvocation, toolOriginParameter } from '../tool-contract.ts'
 import { ProviderEnvelopeError, unwrapProviderEnvelope } from '../pipeline/provider-envelope.ts'
 import { emptyExecution, type ProviderOutcome } from '../../contracts/execution.ts'
 import type {} from '../projection.ts'
@@ -356,6 +356,7 @@ export function createTenderWorkbenchQueryTool(dependencies: QueryToolDependenci
     async execute(args, exec) {
       if (exec.agent === undefined) throw new Error('tender workbench tools require an Agent-owned Session')
       const intent = RunQueryToolInputV2Schema.parse(args)
+      assertTenderQueryReady(exec)
       const previous = dependencies.sessionProjections.stateOf(exec.agent.session, 'dshTenderWorkflow') ?? null
       const current = previous ?? createEmptyTenderWorkflowProjection()
       if (current.revision !== intent.projectionRevision) throw new Error('Projection revision 已变化；请重新提交查询。')

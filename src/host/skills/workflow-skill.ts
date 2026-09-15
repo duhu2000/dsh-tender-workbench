@@ -34,5 +34,5 @@ ${renderGlobalInvariants()}
 - 单条/批量人工决定或撤销：\`tender-workbench-review\`
 - 创建完整/阶段性报告或重试失败格式：\`tender-workbench-report\`
 
-普通对话中的修改请求只有在用户目标、作用范围和当前状态足够明确时才能加载对应行为 Skill 并执行。普通对话 Tool 的 origin 必须使用 \`{ kind: 'conversation' }\`，不得复用此前结构化页面 Intent 的 intentId；同一动作后续调用只按 \`control.nextTool\` 继续。信息不足时先读取状态并追问。Skill 或必需 Tool 不可用时明确失败。`,
+普通对话中的修改请求只有在用户目标、作用范围和当前状态足够明确时才能加载对应行为 Skill 并执行。普通对话 Tool 的 origin 必须使用 \`{ kind: 'conversation' }\`，不得复用此前结构化页面 Intent 的 intentId；同一动作后续调用只按 \`control.nextTool\` 继续。初始引导含占位符或查询信息不足时先追问，不读取状态或调用工具。Skill 或必需 Tool 不可用时明确失败。`,
 }

@@ -15,4 +15,5 @@ export function renderGlobalInvariants(indices?: readonly number[]): string {
     ? TENDER_SKILL_GLOBAL_INVARIANTS
     : indices.map(index => TENDER_SKILL_GLOBAL_INVARIANTS[index]).filter(value => value !== undefined)
   return selected.map((value, index) => `${index + 1}. ${value}`).join('\n')
+    + '\nUX-49：首页原生引导不是查询授权。用户提交仍含【】占位符或必要查询条件不足时，只用业务内对话询问真实地区（可明确不限）、行业/关键词、时间范围与筛选条件；不得读取工作流状态、创建 Projection/任务、调用 Provider 或分析 Agent。不要全局拦截 DSH 发送。用户修改过的引导按普通用户内容逐项处理，不得整段忽略；只有与 dsh-initial-draft/dsh-tender-workbench/1 完全一致的模板可在提取中排除。'
 }

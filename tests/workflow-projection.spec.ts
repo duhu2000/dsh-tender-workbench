@@ -8,6 +8,7 @@ import {
 } from '../src/contracts/workflow.ts'
 import { serializeTenderWorkbenchIntent } from '../src/client/intents/screening-intent.ts'
 import { tenderWorkflowProjectionDefinition } from '../src/host/projection.ts'
+import { TENDER_INITIAL_DRAFT } from '../src/contracts/initial-draft.ts'
 
 const baseTime = Date.UTC(2026, 8, 1)
 
@@ -359,6 +360,19 @@ describe('Tender workflow V2 Projection', () => {
     expect(fold([turnStart(), {
       seq: 2, time: baseTime + 2, type: 'user/message',
       data: { turn: 1, source: { kind: 'user' }, content: [{ type: 'text', text: '{"schemaVersion":1,"legacyIdentity":"old"}' }] },
-    } as unknown as SessionEvent])).toEqual({ ...createEmptyTenderWorkflowProjection(), observedTurn: 1 })
+    } as unknown as SessionEvent])).toBeNull()
+  })
+  it('does not materialize a Projection for accepted introductory text and clarification alone', () => {
+    expect(fold([turnStart(), {
+      seq: 2, time: baseTime + 2, type: 'user/message',
+      data: { source: { kind: 'user' }, content: [{ type: 'text', text: TENDER_INITIAL_DRAFT.text }] },
+    } as unknown as SessionEvent, turnEnd(3)])).toBeNull()
+  })
+  it('binds the first real query to its actual turn after multiple clarification turns', () => {
+    const event = conversationCall(6, 'actual-query', 'tender_workbench_run_query')
+    if (event.type !== 'tool/call') throw Error('fixture')
+    const state = fold([turnStart(), turnEnd(2), { ...event, data: { ...event.data, turn: 3 } }])
+    expect(state?.observedTurn).toBe(3)
+    expect(state?.pendingIntent?.turn).toBe(3)
   })
 })

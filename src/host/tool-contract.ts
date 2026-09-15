@@ -1,5 +1,7 @@
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { Session } from '@deepseek-ai/dsh-session'
+import { hasUnresolvedTenderPlaceholder, TENDER_INITIAL_CLARIFICATION } from '../contracts/initial-draft.ts'
+
 import {
   orchestrationFor,
   type TenderToolNameV2,
@@ -9,6 +11,12 @@ import { TenderWorkbenchIntentV2Schema, type TenderWorkbenchIntentV2 } from '../
 import { TenderToolOriginV2Schema, type TenderToolOriginV2 } from '../contracts/tool-results.ts'
 import type { TenderWorkflowProjectionV2 } from '../contracts/workflow.ts'
 import { canonicalJson, conversationIntentId, tenderIntentFingerprint } from './intent-fingerprint.ts'
+
+/** Business-local safety boundary: model-normalized args cannot erase a user's placeholder. */
+export function assertTenderQueryReady(exec: ToolRunContext): void {
+  const event = latestDirectUserEvent(exec)
+  if (event && hasUnresolvedTenderPlaceholder(directUserText(event))) throw new Error(TENDER_INITIAL_CLARIFICATION)
+}
 
 export interface ResolvedToolInvocation {
   readonly intentId?: string
