@@ -97,6 +97,21 @@ async function harness(execute: (name: string) => Promise<ToolExecutionResult>) 
 }
 
 describe('tender_workbench_run_query', () => {
+  it.each([{ keywords: [] }, { regions: [] }, { keywords: ['【行业】'] }, { regions: ['【地区】'] }])('clarifies invalid initial query %j without Provider or artifact execution', async tender => {
+    const test = await harness(async () => { throw Error('Provider must not run') })
+    await expect(test.run({ ...queryInput(), scope: 'tender', proposed: undefined, tender })).rejects.toThrow()
+    expect(test.tools.execute).not.toHaveBeenCalled()
+    expect(test.session.append).not.toHaveBeenCalled()
+  })
+  it('rejects an unresolved user placeholder even when Agent arguments silently removed it', async () => {
+    const test = await harness(async () => { throw Error('Provider must not run') })
+    const original = test.session.snapshotEvents
+    test.session.snapshotEvents = () => original().map(event => event.data.content
+      ? { ...event, data: { ...event.data, content: [{ type: 'text', text: '查找【地区】数据项目' }] } } : event)
+    await expect(test.run()).rejects.toThrow('请先补充真实地区')
+    expect(test.tools.execute).not.toHaveBeenCalled()
+    expect(test.session.append).not.toHaveBeenCalled()
+  })
   it('calls exact qcc Tools and atomically creates one V2 active dataset', async () => {
     const test = await harness(async name => name.endsWith('search_tenders')
       ? success(tenderPayload(['t-1', 't-2']))

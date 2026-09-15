@@ -253,6 +253,19 @@ describe('S1a client integration', () => {
     expect(test.disposeEntries).toHaveLength(4)
     for (const dispose of test.disposeEntries) expect(dispose).toHaveBeenCalledTimes(1)
   })
+  it('a late entry creation cannot navigate or initialize after the user switches Sessions', async () => {
+    const test = harness()
+    let resolve: (id: string) => void = () => {}
+    test.createSession.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    apply(test.ctx)
+    const entry = entryOf<{ inject(): { startTenderSession(): Promise<void> } }>(test.entries, 'sidebar.footer.action').inject()
+    const pending = entry.startTenderSession()
+    const id = test.createSession.mock.calls[0]![0].sessionId
+    test.setCurrent('session-2')
+    resolve(id); await pending
+    expect(test.openSession).not.toHaveBeenCalled()
+    expect(test.openTab).not.toHaveBeenCalled()
+  })
 
   it('renders a mounted Tab from narrow raw ports without reading an inactive plugin Context', () => {
     const test = harness()

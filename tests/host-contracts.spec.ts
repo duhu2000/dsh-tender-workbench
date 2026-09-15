@@ -26,7 +26,7 @@ describe('official Host seam contracts', () => {
     } as unknown as Context)
 
     expect(projectionRegister).toHaveBeenCalledWith(expect.objectContaining({
-      key: 'dshTenderWorkflow', stateVersion: 3, wire: expect.any(Object),
+      key: 'dshTenderWorkflow', stateVersion: 4, wire: expect.any(Object),
     }))
     expect(toolRegister.mock.calls.map(call => (call[0] as { name: string }).name)).toEqual(TENDER_TOOLS)
     const queryTool = toolRegister.mock.calls

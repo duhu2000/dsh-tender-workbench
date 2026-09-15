@@ -1,6 +1,7 @@
 import { z } from 'zod'
+import { hasUnresolvedTenderPlaceholder } from './initial-draft.ts'
 
-const shortText = z.string().trim().min(1).max(128)
+const shortText = z.string().trim().min(1).max(128).refine(value => !hasUnresolvedTenderPlaceholder(value), '请先替换【】占位符，再查询。')
 const dateText = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u)
 const optionalAmount = z.number().finite().nonnegative().optional()
 
@@ -36,5 +37,6 @@ export const QccProposedSearchArgsSchema = z.object({
 }).strict()
 
 export function hasSupportedQueryFilter(value: Record<string, unknown>): boolean {
-  return Object.keys(value).some(key => key !== 'smartSort')
+  return Object.entries(value).some(([key, entry]) => key !== 'smartSort'
+    && (Array.isArray(entry) ? entry.length > 0 : entry !== undefined && entry !== ''))
 }

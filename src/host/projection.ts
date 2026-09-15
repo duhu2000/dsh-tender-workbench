@@ -109,7 +109,9 @@ function runningState(
   turn: number,
   rawArguments: string,
 ): TenderWorkflowProjectionV2 {
-  const current = state ?? createEmptyTenderWorkflowProjection()
+  const current = { ...(state ?? createEmptyTenderWorkflowProjection()), observedTurn: turn,
+    ...(state?.pendingIntent && state.observedTurn === undefined
+      ? { pendingIntent: { ...state.pendingIntent, turn } } : {}) }
   if (current.activeOperation !== undefined) return current
   const contractStage = stageForTool(tool) ?? current.currentStage
   const pending = current.pendingIntent ?? (origin.kind === 'conversation'
@@ -289,7 +291,8 @@ function applyWorkflowFacts(
   event: SessionEvent,
 ): TenderWorkflowProjectionV2 | null {
   if (event.type === 'turn/start') {
-    return { ...(state ?? createEmptyTenderWorkflowProjection()), observedTurn: event.data.turn }
+    // A conversation/clarification is not a business task. Materialize on an actual action.
+    return state === null ? null : { ...state, observedTurn: event.data.turn }
   }
   if (event.type === 'user/message') {
     const intent = intentFrom(event)
@@ -334,7 +337,7 @@ function applyWorkflowFacts(
       const { pendingIntent: _pendingIntent, ...rest } = state
       return rest
     }
-    if (pending.turn !== event.data.turn) return state
+    if (state.observedTurn !== undefined && pending.turn !== event.data.turn) return state
     return failedState(state, event.time, 'intent-incomplete', 'Agent 未按工作流契约完成当前动作；可以基于当前状态重试。')
   }
   if (event.type === 'tool/call') {
@@ -448,7 +451,7 @@ function applyTenderProjection(state: TenderWorkflowProjectionV2 | null, event: 
 
 export const tenderWorkflowProjectionDefinition: TenderProjectionDefinition = {
   key: 'dshTenderWorkflow',
-  stateVersion: 3,
+  stateVersion: 4,
   stateSchema: TenderWorkflowProjectionV2Schema.nullable(),
   init: () => null,
   apply: applyTenderProjection,

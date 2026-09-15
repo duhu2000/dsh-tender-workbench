@@ -39,6 +39,8 @@ dsh plugin --profile web add dsh-tender-workbench@0.5.10
 
 ## 产品简介
 
+开发分支新增 UX-49 一次性原生首页引导（尚未发布）：只对本菜单新建的空业务 Session 生效，不覆盖已有文字/附件、IME 输入或清空后的草稿；不自动查询或打开工作台。依赖 DSH 0.1.2-rc.1 公开输入 shell、编辑器状态与可写浏览器存储，能力缺失时跳过预填。采用与验收边界见 [UX-49 采用记录](docs/UX49-INITIAL-DRAFT-ADOPTION.md)。
+
 `dsh-tender-workbench` 是 DeepSeek Harness 的 Host + Client 插件，适合需要持续发现、筛选、复核和交付招投标机会的国内业务团队。插件连接客户已安装并授权的 `qcc-tender` MCP，以结构化标讯事实为基础，将规则判断、Agent 建议和人工决策明确分开，形成可追溯的工作流。
 
 完整业务闭环为：

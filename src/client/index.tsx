@@ -19,6 +19,7 @@ import {
 import { TenderPromptEntry, type TenderPromptInjected } from './TenderPrompt.tsx'
 import { initialTenderPrompt, type TenderPromptMemory } from './tender-prompt.ts'
 import { installTenderSubmissionReveal } from './submission-reveal.ts'
+import { initializeTenderHostDraft } from './initial-draft-host.ts'
 import {
   createTenderWorkbenchRevealController,
   assertBetterSidebarContract,
@@ -117,6 +118,8 @@ export function apply(ctx: TenderClientContext): void {
   // Scoped to this Client lifetime, not shared between plugin sessions or clients.
   const promptMemory = new Map<SessionId, TenderPromptMemory>()
   let active = true
+  let stopInitialDraft = () => {}
+  let entryGeneration = 0
   const sendIntent: TenderWorkbenchTabProps['sendIntent'] = (sessionId, intent) => (
     sendSessionTenderWorkbenchIntent(sessions, connection, sessionId, intent)
   )
@@ -132,10 +135,15 @@ export function apply(ctx: TenderClientContext): void {
     return opened
   }
   const startTenderSession = async (): Promise<void> => {
+    const generation = ++entryGeneration
+    const previousSession = sessions.list.getSnapshot().current
+    stopInitialDraft()
     try {
       const sessionId = await createTenderEntrySession(sessions, ctx.workspaces)
-      if (!active) return
+      if (!active || generation !== entryGeneration || sessions.list.getSnapshot().current !== previousSession) return
+      stopInitialDraft()
       sessions.open(sessionId)
+      stopInitialDraft = initializeTenderHostDraft(ctx, sessionId)
       // The menu enters the landing page only. Create/reveal the workbench
       // on an explicit shortcut (or header recovery) action, never on entry.
     } catch (error: unknown) {
@@ -238,6 +246,7 @@ export function apply(ctx: TenderClientContext): void {
 
   ctx.effect(() => () => {
     active = false
+    stopInitialDraft()
     reveal?.dispose()
     navigation.dispose()
     promptMemory.clear()

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { hasUnresolvedTenderPlaceholder, TENDER_INITIAL_CLARIFICATION } from './initial-draft.ts'
 import {
   QccProposedSearchArgsSchema,
   QccTenderSearchArgsSchema,
@@ -44,6 +45,7 @@ export const RunQueryToolInputV2Schema = z.object({
   tender: QccTenderSearchArgsSchema.optional(),
   proposed: QccProposedSearchArgsSchema.optional(),
 }).strict().superRefine((value, context) => {
+  if (hasUnresolvedTenderPlaceholder(value)) context.addIssue({ code: 'custom', message: TENDER_INITIAL_CLARIFICATION })
   const valid = value.scope === 'tender'
     ? value.tender !== undefined && value.proposed === undefined
     : value.scope === 'proposed'

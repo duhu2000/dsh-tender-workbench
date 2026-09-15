@@ -10,10 +10,11 @@ import { createHash } from 'node:crypto'
 import { assessCompatibility, inspectInstallation } from './check-host-compatibility.mjs'
 
 const root = process.cwd(), bin = resolve(process.env.TENDER_DSH_BIN || '')
+const initialDraftText = '请帮我查找并评估招投标机会。请填写行业、地区、时间范围和筛选条件，也可点击左上角「提示词生成」整理查询口径。例如：查找近 30 天【地区】软件和数据服务相关招标项目，排除已截止项目，形成候选清单。'
 const sidebarMode = process.env.TENDER_TEST_SIDEBAR || 'compatible'
 assert.ok(['absent', 'compatible', 'incompatible'].includes(sidebarMode))
 const sidebarVersion = sidebarMode === 'absent' ? undefined : sidebarMode === 'incompatible' ? '0.17.1' : '0.18.1'
-const products = process.env.TENDER_TEST_PRODUCTS === '1' ? { 'dsh-data-cleaning-agent': '0.9.7', 'dsh-pre-duediligence': '0.1.22', 'dsh-form-fill-agent': '0.2.28' } : {}
+const products = process.env.TENDER_TEST_PRODUCTS === '1' ? { 'dsh-data-cleaning-agent': '0.9.15', 'dsh-pre-duediligence': '0.1.35', 'dsh-form-fill-agent': '0.2.30' } : {}
 assert.ok(process.env.TENDER_DSH_BIN, 'Provide an explicit DSH 0.1.2-rc.1 bin; never bootstrap a production profile')
 const { chromium } = await import(pathToFileURL(process.env.TENDER_PLAYWRIGHT).href)
 const home = await mkdtemp(join(tmpdir(), 'tender-native-'))
@@ -42,7 +43,7 @@ await writeFile(join(probe, 'index.js'), `import { runBusinessFixture } from './
 export const inject = ['tools', 'agents', 'sessions', 'sessionProjections', 'webServer'];
 export function apply(ctx) { ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/tender-isolated-fixture', async handler(req, res) {
   if (req.method !== 'POST' || req.headers.origin !== 'http://127.0.0.1:' + req.socket.localPort) { res.writeHead(403); res.end(); return }
-  try { const url = new URL(req.url, 'http://localhost'); const id = url.searchParams.get('session'); const result = url.searchParams.has('state') ? ctx.sessionProjections.stateOf(ctx.agents.get(id).session, 'dshTenderWorkflow') : await runBusinessFixture(ctx, id); res.setHeader('Content-Type','application/json'); res.end(JSON.stringify(result)); }
+  try { const url = new URL(req.url, 'http://localhost'); const id = url.searchParams.get('session'); const result = url.searchParams.has('events') ? ctx.agents.get(id).session.snapshotEvents().map(e => e.type) : url.searchParams.has('state') ? ctx.sessionProjections.stateOf(ctx.agents.get(id).session, 'dshTenderWorkflow') : await runBusinessFixture(ctx, id); res.setHeader('Content-Type','application/json'); res.end(JSON.stringify(result)); }
   catch(e) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({error:e.message})); }
 } })); }`)
 await writeFile(join(probe, 'cordis.patch.yml'), '- insert:\n    - name: tender-isolated-probe\n')
@@ -133,10 +134,60 @@ try {
     return { workspaceId: target.workspaceId, seed }
   }, { first: join(home, 'first-workspace'), selected: workspace })
   const selectedWorkspace = workspaceSetup.workspaceId
+  await page.evaluate(() => {
+    const hub = window.__tenderNativeProbe.conversation.input
+    const original = hub.shell.bind(hub), wrapped = new WeakSet()
+    window.__ux49Writes = []
+    hub.shell = id => {
+      const shell = original(id)
+      if (!wrapped.has(shell)) {
+        wrapped.add(shell)
+        const set = shell.setDraft.bind(shell)
+        shell.setDraft = text => {
+          const before = document.activeElement
+          set(text)
+          if (text.startsWith('请帮我查找并评估招投标机会。')) {
+            const record = { id, sameFocus: before === document.activeElement }
+            window.__ux49Writes.push(record)
+            queueMicrotask(() => { record.sameFocusAfterCommit = before === document.activeElement })
+          }
+        }
+      }
+      return shell
+    }
+  })
   phase = 'entry'
   await page.getByRole('button', { name: '新建招投标会话', exact: true }).click()
   await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor()
   const session = await page.evaluate(() => window.__tenderNativeProbe.sessions.list.getSnapshot().current)
+  phase = 'ux49-native-initial-draft'
+  await page.waitForFunction(({ session, text }) => window.__tenderNativeProbe.conversation.input.shell(session).state.getSnapshot().draft === text, { session, text: initialDraftText })
+  const initialWrites = await page.evaluate(() => window.__ux49Writes)
+  assert.equal(initialWrites.length, 1)
+  assert.ok(initialWrites[0].sameFocus && initialWrites[0].sameFocusAfterCommit, 'Native initialization must not steal focus')
+  const emptyProjection = await page.evaluate(async id => {
+    const response = await fetch('/tender-isolated-fixture?state&session=' + encodeURIComponent(id), { method: 'POST' })
+    if (!response.ok) throw Error('initial state probe failed')
+    return response.json()
+  }, session)
+  assert.equal(emptyProjection, null, 'Initial draft must not create a Projection')
+  const initialEvents = await page.evaluate(async id => {
+    const r = await fetch('/tender-isolated-fixture?events&session=' + encodeURIComponent(id), { method: 'POST' })
+    if (!r.ok) throw Error('initial events probe failed')
+    return r.json()
+  }, session)
+  assert.ok(!initialEvents.some(type => ['user/message', 'turn/start', 'tool/call'].includes(type)), 'Initialization must produce zero sends, turns, or tool calls')
+  // Real native editable, not a DOM placeholder; clearing is a user action.
+  const nativeEditor = page.locator('[contenteditable="true"]').first()
+  assert.equal(await nativeEditor.innerText(), initialDraftText)
+  await nativeEditor.fill('')
+  await page.reload()
+  await page.waitForFunction(() => window.__tenderNativeProbe?.sessions)
+  await page.evaluate(async id => { const c = window.__tenderNativeProbe; await c.sessions.refresh(); c.sessions.open(id) }, session)
+  await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor()
+  assert.equal(await page.evaluate(id => window.__tenderNativeProbe.conversation.input.shell(id).state.getSnapshot().draft, session), '')
+  report.initialDraft = { status: 'PASS', nativeEditable: true, oneWrite: true, noFocusSteal: true,
+    noProjection: true, zeroSendAndToolEvents: true, userClearAndReloadNotRefilled: true, templateFingerprint: 'sha256:f2bf291eec74a12873fb6178362b61ed032f50389186bc82eec9462fd0e745ed' }
   // Leave only the blank business Session reusable in this Workspace, so the
   // later native New Session click necessarily exercises the ordinary guard.
   await page.evaluate(id => window.__tenderNativeProbe.workspaces.archiveSession(id), workspaceSetup.seed)
@@ -310,12 +361,29 @@ try {
   if (Object.keys(products).length) {
     phase = 'four-product-navigation'
     report.fourProductNavigation = { status: 'IN_PROGRESS', products, passedEntries: [] }
-    for (const [name, prefix, role] of [['数据清洗补全', 'session-dsh-data-cleaning', 'button'], ['访前尽调', 'session-dsh-pre-duediligence-', 'button'], ['AI填表', 'session-dsh-form-fill', 'link']]) {
+    for (const [name, prefix, role] of [['数据清洗补全', 'session-dsh-data-cleaning', 'button'], ['访前尽调', 'session-dsh-pre-duediligence-', 'button'], ['AI 填表', 'session-dsh-form-fill', 'link']]) {
       const entry = page.getByRole(role, { name, exact: true })
       if (role === 'link') assert.equal(await entry.getAttribute('href'), '/form-fill/', 'Verify the public entry target, not any same-label link')
       await entry.click()
       await page.waitForFunction(prefix => window.__tenderNativeProbe.sessions.list.getSnapshot().current?.startsWith(prefix), prefix)
       await page.getByRole('heading', { name: '招投标智能体', exact: true }).waitFor({ state: 'hidden' })
+      const coexist = await page.evaluate(label => {
+        const c = window.__tenderNativeProbe, id = c.sessions.list.getSnapshot().current
+        const shell = c.conversation.input.shell(id)
+        const initial = shell.state.getSnapshot().draft
+        if (initial.startsWith('请帮我查找并评估招投标机会。')) throw Error('Tender draft leaked into ' + label)
+        const sentinel = 'UX49 跨产品用户草稿 ' + label
+        shell.setDraft(sentinel)
+        return { id, initial, sentinel }
+      }, name)
+      await page.evaluate(async ({ id, sentinel, tender }) => {
+        const c = window.__tenderNativeProbe
+        c.sessions.open(tender)
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        c.sessions.open(id)
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        if (c.conversation.input.shell(id).state.getSnapshot().draft !== sentinel) throw Error('Late callback overwrote other-product draft')
+      }, { ...coexist, tender: session })
       report.fourProductNavigation.passedEntries.push(name)
     }
     assert.equal(await readState(), beforeNavigation)
@@ -356,6 +424,10 @@ try {
   }, ordinary)
   assert.deepEqual(recovered, history, 'Profile metadata survives real host restart before reopening business A')
   report.restartDurableHistory = 'PASS'
+  await restartPage.evaluate(id => window.__tenderNativeProbe.sessions.open(id), session)
+  await restartPage.waitForFunction(id => window.__tenderNativeProbe.sessions.list.getSnapshot().current === id, session)
+  assert.equal(await restartPage.evaluate(id => window.__tenderNativeProbe.conversation.input.shell(id).state.getSnapshot().draft, session), '', 'Host restart must not refill a cleared old business Session')
+  report.initialDraft.restartNotRefilled = true
   assert.deepEqual(errors, [])
   report.status = 'PASS'; report.nativeEntry = 'PASS'; report.ordinaryAndRestore = 'PASS'
   console.log(JSON.stringify(report, null, 2))

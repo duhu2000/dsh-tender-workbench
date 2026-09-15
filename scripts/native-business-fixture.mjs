@@ -45,6 +45,22 @@ export async function runBusinessFixture(ctx, sessionId) {
   const state = () => ctx.sessionProjections.stateOf(session, 'dshTenderWorkflow')
   const binding = () => ({ schemaVersion: 2, origin: { kind: 'conversation' }, activeDatasetRef: state().query.normalizedData.id, projectionRevision: state().revision })
   try {
+    // Real registered Host guard, but deliberately no model or synthetic tool/call event:
+    // user clarification alone must leave projection null, and even bad Agent args fail before Provider.
+    for (const [text, tender] of [
+      ['查找【地区】数据项目', { keywords: ['数据'] }],
+      ['请帮我查找机会', { keywords: [] }],
+    ]) {
+      begin(text)
+      assert.equal(state(), null, 'Clarification must not materialize a business Projection')
+      const rejected = await ctx.tools.execute({ name: 'tender_workbench_run_query',
+        arguments: { schemaVersion: 2, origin: { kind: 'conversation' }, projectionRevision: 0, scope: 'tender', target: '隔离查询校验', tender },
+        callId: 'ux49-invalid-' + turn, agent, signal: AbortSignal.timeout(30000) })
+      assert.equal(rejected.isError, true)
+      assert.equal(calls.length, 0)
+      assert.equal(state(), null)
+      end()
+    }
     begin('查询隔离数据项目')
     const query = await invoke('tender_workbench_run_query', { schemaVersion: 2, origin: { kind: 'conversation' }, projectionRevision: 0, scope: 'tender', target: '隔离演练', tender: { keywords: ['隔离'] } })
     assert.equal(query.outcome, 'succeeded', JSON.stringify(query))
@@ -85,7 +101,7 @@ export async function runBusinessFixture(ctx, sessionId) {
     assert.equal(current.context.query.total, 2)
     assert.deepEqual(calls, [name], 'Navigation/report must not repeat the source query')
     await ctx.sessions.flush(session)
-    return { status: 'PASS', tools, sourceCalls: calls.length, queryTotal: 2, previewInclude: 1, confirmedInclude: 1,
+    return { status: 'PASS', ux49InvalidQueryZeroProviderAndProjection: true, tools, sourceCalls: calls.length, queryTotal: 2, previewInclude: 1, confirmedInclude: 1,
       reviewed: 1, report: state().report, sessionId, revision: state().revision,
       scope: 'Real registered Host tool pipeline, Agent, Session projection, local Excel/PDF artifacts; synthetic QCC/user data, no model or real MCP' }
   } finally { stop() }

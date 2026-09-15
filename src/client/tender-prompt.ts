@@ -1,3 +1,5 @@
+import { isTenderInitialDraft } from '../contracts/initial-draft.ts'
+
 export interface TenderPromptDraft {
   scope: 'combined' | 'tender' | 'proposed'
   keywords: string
@@ -31,6 +33,7 @@ export function formatTenderPromptDraft(draft: TenderPromptDraft): string {
 
 /** Replace only an intact previous generated block; edited/manual text needs a choice. */
 export function planTenderDraftFill(current: string, generated: string, previous?: string): string | undefined {
+  if (isTenderInitialDraft(current)) return generated
   if (!current.trim()) return generated
   if (previous && current.includes(previous)) return current.replace(previous, generated)
   return undefined
