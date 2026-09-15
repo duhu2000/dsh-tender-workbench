@@ -4,6 +4,8 @@ All notable changes to `dsh-tender-workbench` are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.11] - 2026-09-15
+
 - 采用 UX-49：仅业务入口新建 Session 预填一次原生可编辑引导；双快照保护草稿、附件、IME 与晚到回调，不抢焦点、不自动发送/调用工具/开台，清空及历史恢复不补回。
 - 以稳定模板 ID、版本和精确指纹区分未改系统引导与用户内容；缺项/未替换占位符由本业务澄清，空条件不能发起查询。
 - 普通对话不实例化空业务 Projection；保留 UX-48 接纳后展开、只读 Profile 历史、来源归属、真实 progress、人工复核与不可变交付。

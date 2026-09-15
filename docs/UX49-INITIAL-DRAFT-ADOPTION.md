@@ -1,12 +1,12 @@
 # UX49-TENDER 采用记录（DSH-UX-001 v1.5.6）
 
-日期：2026-09-15。状态：本地实施、PR 待审；不等于合并或 npm 上线。
+日期：2026-09-15。实施 PR #8 已通过 CI；用户随后明确授权 commit、push、tag、npm，现准备 0.5.11 发布。历史验收基线不变，实际发布状态以 release.yml 和 npm registry 为准。
 
 ## 权威基线与审计
 
 已完整阅读共享规范（UX-49、11.1、14，并核对 UX-48）、`DSH-UX-049-四智能体首页初始引导协同.md` 和总账 2026-09-15 移交单。不复制规范全文；业务文案严格采用 11.1 的招投标首版，不宣传材料上传、附件解析或自动读取本地文件。
 
-开始时原仓 main 无改动，远端 main 与 npm latest 0.5.10 的 gitHead 均为 `4e6f4b4e09ad803590877b47f6977f1f09141aa6`，tree `e7fa1ba64b7851c31cfdf801bf36b79b14dfeac8`；开放 PR 为 0。审计已有 worktree，使用独立 `feat/ux49-initial-draft` 分支，未修改原 main、其他分支及并行插件仓。版本保持 0.5.10，变更只写 Unreleased；本轮无 merge/tag/Release/npm 权限。
+开始时原仓 main 无改动，远端 main 与 npm latest 0.5.10 的 gitHead 均为 `4e6f4b4e09ad803590877b47f6977f1f09141aa6`，tree `e7fa1ba64b7851c31cfdf801bf36b79b14dfeac8`；开放 PR 为 0。审计已有 worktree，使用独立 `feat/ux49-initial-draft` 分支，未修改原 main、其他分支及并行插件仓。原实施阶段保持 0.5.10，仅写 Unreleased 并提交 PR；后续收到明确发布授权，追加 0.5.11 版本资料提交并重新执行 CI，发布沿用既有 release.yml。
 
 ## 实现与可复用契约
 
